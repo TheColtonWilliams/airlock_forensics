@@ -1,0 +1,57 @@
+# Control 6.5: Cast installs teamdfir/sift-saltstack in server mode for the analyst account
+# while the image is built (it needs the network). The hardening roles run again in the last
+# play of site.yml, after this one, so SIFT cannot undo them. When provisioning offline the role
+# only checks SIFT is there.
+# Test: tests/goss/sift.yaml (radios still blocked, automount still off, udisks2 still masked
+# after SIFT); tests/unit/test_tools_sift.py (hardening re-applied after tools_sift).
+- name: SIFT | Install SIFT with Cast (6.5)
+  ansible.builtin.command:
+    argv:
+      - cast
+      - install
+      - --mode
+      - "{{ tools_sift_mode }}"
+      - --user
+      - "{{ tools_sift_user }}"
+      - --cache-path
+      - "{{ tools_sift_cache_path }}"
+      - "{{ tools_sift_distro }}"
+    creates: "{{ tools_sift_marker }}"
+  register: tools_sift_cast_run
+  when: airlock_phase == 'image'
+
+- name: SIFT | Record the install (6.5)
+  ansible.builtin.copy:
+    dest: "{{ tools_sift_marker }}"
+    content: >-
+      {{ {'cast_version': pins[tools_sift_cast_pin].version, 'distro': tools_sift_distro,
+          'mode': tools_sift_mode, 'user': tools_sift_user} | to_json(sort_keys=true) }}
+    owner: root
+    group: root
+    mode: "0644"
+  when:
+    - airlock_phase == 'image'
+    - tools_sift_cast_run is changed
+
+- name: SIFT | Remove Cast's download cache and package folder (6.5)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ tools_sift_cache_path }}"
+    - "{{ tools_sift_deb_dir }}"
+  when: airlock_phase == 'image'
+
+- name: SIFT | Check SIFT was installed in the image (6.5)
+  ansible.builtin.stat:
+    path: "{{ tools_sift_marker }}"
+  register: tools_sift_installed
+
+- name: SIFT | Stop if SIFT is asked for but missing (6.5)
+  ansible.builtin.assert:
+    that:
+      - tools_sift_installed.stat.exists
+    fail_msg: >-
+      install_sift is true but this image was built without SIFT. SIFT needs the network, so it
+      can only be added at build time: rebuild the image with -e install_sift=true.
+    quiet: true

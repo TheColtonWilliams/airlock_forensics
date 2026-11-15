@@ -1,0 +1,6 @@
+# Control 4.1: hashdeep (md5deep, sha256deep, audit mode) and ssdeep fuzzy hashes.
+# Test: tests/goss/tools.yaml (acquire-hashing: each binary present and its version flag runs).
+- name: Acquire | Install hashdeep and ssdeep (4.1)
+  ansible.builtin.apt:
+    name: "{{ tools_acquire_hash_packages }}"
+    state: present

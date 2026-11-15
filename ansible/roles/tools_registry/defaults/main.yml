@@ -1,0 +1,16 @@
+# tools_registry: Windows registry hive parsers (task 4.8). Ubuntu 24.04 (noble) archive
+# packages only. Controls and tests are listed in docs/controls.md.
+
+# RegRipper 3.0 (Perl; command 'regripper', also linked as rip.pl, the name most guides use).
+tools_registry_regripper_packages:
+  - regripper
+tools_registry_regripper_aliases:
+  - rip.pl
+
+# libregf: regfinfo, regfexport.
+tools_registry_libregf_packages:
+  - libregf-utils
+
+# hivex: hivexget, hivexml, hivexsh.
+tools_registry_hivex_packages:
+  - libhivex-bin

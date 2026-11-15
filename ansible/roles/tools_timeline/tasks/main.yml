@@ -1,0 +1,7 @@
+# tools_timeline: one control per file. Each file names its test in its first comment.
+# Controls and tests are listed in docs/controls.md (section "Forensic tools").
+- name: Timeline | Hash-pinned Plaso venv under /opt/plaso
+  ansible.builtin.import_tasks: plaso_venv.yml
+
+- name: Timeline | Plaso commands on PATH
+  ansible.builtin.import_tasks: commands.yml

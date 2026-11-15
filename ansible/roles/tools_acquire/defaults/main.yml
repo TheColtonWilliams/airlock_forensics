@@ -1,0 +1,24 @@
+# tools_acquire: imaging and hashing tools (task 4.1). Ubuntu 24.04 (noble) archive packages
+# only, installed during the image build from the dated snapshot (task 6.1); already present when
+# provisioning runs offline. Controls and tests are listed in docs/controls.md.
+
+# E01 (ewfacquire, ewfverify, ewfexport, ewfinfo), dc3dd, GNU ddrescue, AFF (affinfo, affcat).
+tools_acquire_imaging_packages:
+  - ewf-tools
+  - libewf2
+  - dc3dd
+  - gddrescue
+  - afflib-tools
+
+# Guymager: Linux-native GUI imager (E01, AFF, dd) for people who prefer a window.
+tools_acquire_gui_packages:
+  - guymager
+
+# Hash sets and fuzzy hashes: hashdeep (md5deep, sha256deep, ...), ssdeep.
+tools_acquire_hash_packages:
+  - hashdeep
+  - ssdeep
+
+# Volume Shadow Copies: vshadowinfo, vshadowmount (libvshadow).
+tools_acquire_vss_packages:
+  - libvshadow-utils

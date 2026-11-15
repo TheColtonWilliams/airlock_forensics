@@ -1,0 +1,13 @@
+# tools_eztools: one control per file. Each file names its test in its first comment.
+# Controls and tests are listed in docs/controls.md (section "Forensic tools").
+- name: EZ Tools | .NET 9 runtime from pinned Microsoft packages
+  ansible.builtin.import_tasks: dotnet_runtime.yml
+
+- name: EZ Tools | Staged features from the profile
+  ansible.builtin.import_tasks: profile_features.yml
+
+- name: EZ Tools | Verify and unpack the staged tool zips
+  ansible.builtin.import_tasks: unpack.yml
+
+- name: EZ Tools | Wrapper commands on PATH
+  ansible.builtin.import_tasks: wrappers.yml

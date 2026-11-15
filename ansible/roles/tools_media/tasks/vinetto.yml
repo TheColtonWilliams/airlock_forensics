@@ -1,0 +1,6 @@
+# Control 4.7: vinetto parses Windows Thumbs.db files (Ubuntu archive).
+# Test: tests/goss/tools.yaml (media-vinetto: vinetto --version runs).
+- name: Media | Install vinetto (4.7)
+  ansible.builtin.apt:
+    name: "{{ tools_media_vinetto_packages }}"
+    state: present

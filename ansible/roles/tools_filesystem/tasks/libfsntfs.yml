@@ -1,0 +1,6 @@
+# Control 4.2: libfsntfs: fsntfsinfo and the Python bindings (pyfsntfs) for the system Python.
+# Test: tests/goss/tools.yaml (filesystem-libfsntfs: fsntfsinfo -V runs, pyfsntfs imports).
+- name: Filesystem | Install libfsntfs tools and Python bindings (4.2)
+  ansible.builtin.apt:
+    name: "{{ tools_filesystem_libfsntfs_packages }}"
+    state: present

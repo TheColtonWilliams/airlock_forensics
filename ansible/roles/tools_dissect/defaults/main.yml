@@ -1,0 +1,32 @@
+# tools_dissect: Dissect (Fox-IT) in its own venv (task 4.3). One Python API over E01, NTFS,
+# the USN journal, the registry, BitLocker, and thumbcache. Licence AGPL-3.0-or-later (decision
+# log 2026-11-15). Controls and tests are listed in docs/controls.md (section "Forensic tools").
+
+# pins.yml entry for the top-level package; the whole dependency closure is pinned by SHA-256
+# in files/requirements.txt (tests/unit/test_tools_pins.py checks the two agree).
+tools_dissect_pin: dissect_pypi
+tools_dissect_venv: /opt/dissect
+
+# Commands linked into /usr/local/bin. thumbcache-extract is linked by tools_media (task 4.7).
+tools_dissect_commands:
+  - target-query
+  - target-shell
+  - target-fs
+  - target-info
+  - target-dump
+  - target-reg
+  - target-dd
+  - target-mount
+  - rdump
+  - fve-dd
+  - parse-lnk
+
+# pip in the venv: hashes required, nothing resolved from outside the requirement file.
+tools_dissect_pip:
+  - "{{ tools_dissect_venv }}/bin/pip"
+  - install
+  - --require-hashes
+  - --no-deps
+  - --no-cache-dir
+  - --disable-pip-version-check
+  - --no-input

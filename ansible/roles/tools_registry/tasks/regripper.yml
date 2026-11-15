@@ -1,0 +1,16 @@
+# Control 4.8: RegRipper 3.0 (package regripper) with its plugins, plus a rip.pl link for the
+# command name most guides use.
+# Test: tests/goss/tools.yaml (registry-regripper: regripper -l lists plugins; rip.pl resolves).
+- name: Registry | Install RegRipper (4.8)
+  ansible.builtin.apt:
+    name: "{{ tools_registry_regripper_packages }}"
+    state: present
+
+- name: Registry | Link rip.pl to regripper (4.8)
+  ansible.builtin.file:
+    src: /usr/bin/regripper
+    dest: "/usr/local/bin/{{ item }}"
+    state: link
+    owner: root
+    group: root
+  loop: "{{ tools_registry_regripper_aliases }}"

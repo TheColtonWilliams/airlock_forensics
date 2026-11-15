@@ -1,0 +1,28 @@
+# tools_media: media metadata and thumbnail-cache parsers (task 4.7). Ubuntu 24.04 (noble)
+# archive packages; the Dissect thumbcache parser comes from the Dissect venv (tools_dissect),
+# because noble has no python3-dissect.thumbcache package. Controls and tests: docs/controls.md.
+
+# exiftool: noble ships 12.76. Versions before 12.24 run code from crafted DjVu files
+# (CVE-2021-22204), so the role refuses anything older.
+tools_media_exiftool_packages:
+  - libimage-exiftool-perl
+tools_media_exiftool_min_version: "12.24"
+
+# Audio and video metadata: mediainfo, ffprobe/ffmpeg.
+tools_media_av_packages:
+  - mediainfo
+  - ffmpeg
+
+# Image metadata (EXIF, IPTC, XMP).
+tools_media_exiv2_packages:
+  - exiv2
+
+# Windows Thumbs.db parser.
+tools_media_vinetto_packages:
+  - vinetto
+
+# Windows thumbcache_*.db parser from the Dissect venv.
+tools_media_thumbcache_venv: "{{ tools_dissect_venv | default('/opt/dissect') }}"
+tools_media_thumbcache_commands:
+  - thumbcache-extract
+  - thumbcache-extract-indexed

@@ -1,0 +1,9 @@
+# Control 4.9: Java 17 (the version Autopsy 4.23.1's Running_Linux_OSX.md names) and the
+# libraries the Sleuth Kit Java package and Autopsy need, from the Ubuntu archive, so the
+# offline first boot can install Autopsy without a network.
+# Test: tests/goss/tools.yaml (autopsy-installed: java -version shows 17 when Autopsy is
+# installed); tests/unit/test_tools_autopsy.py (Java version, optional role).
+- name: Autopsy | Install Java 17 and the libraries Autopsy needs (4.9)
+  ansible.builtin.apt:
+    name: "{{ tools_autopsy_packages }}"
+    state: present

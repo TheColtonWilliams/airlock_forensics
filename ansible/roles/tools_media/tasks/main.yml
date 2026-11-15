@@ -1,0 +1,16 @@
+# tools_media: one control per file. Each file names its test in its first comment.
+# Controls and tests are listed in docs/controls.md (section "Forensic tools").
+- name: Media | exiftool, version 12.24 or later
+  ansible.builtin.import_tasks: exiftool.yml
+
+- name: Media | mediainfo and ffmpeg
+  ansible.builtin.import_tasks: av_metadata.yml
+
+- name: Media | exiv2
+  ansible.builtin.import_tasks: exiv2.yml
+
+- name: Media | vinetto (Thumbs.db)
+  ansible.builtin.import_tasks: vinetto.yml
+
+- name: Media | Dissect thumbcache parser
+  ansible.builtin.import_tasks: thumbcache.yml

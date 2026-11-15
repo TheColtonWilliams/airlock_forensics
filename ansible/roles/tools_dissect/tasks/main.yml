@@ -1,0 +1,7 @@
+# tools_dissect: one control per file. Each file names its test in its first comment.
+# Controls and tests are listed in docs/controls.md (section "Forensic tools").
+- name: Dissect | Hash-pinned venv under /opt/dissect
+  ansible.builtin.import_tasks: venv.yml
+
+- name: Dissect | Commands on PATH
+  ansible.builtin.import_tasks: commands.yml

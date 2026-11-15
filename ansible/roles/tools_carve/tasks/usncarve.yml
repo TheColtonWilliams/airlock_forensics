@@ -1,0 +1,59 @@
+# Control 4.6: usncarve 1.2.2 (carves NTFS USN records out of unallocated space or any binary
+# file) from PyPI in its own venv /opt/usncarve, pinned by SHA-256 (files/requirements.txt);
+# wrapper /usr/local/bin/usncarve. Installed during the image build; checked when provisioning.
+# Test: tests/goss/tools.yaml (carve-usncarve: usncarve --help runs);
+# tests/unit/test_tools_pins.py (requirements fully hashed, pin agrees).
+- name: Usncarve | Refuse an unpinned package (4.6)
+  ansible.builtin.assert:
+    that:
+      - pins[tools_carve_usncarve_pin].sha256 is not none
+      - pins[tools_carve_usncarve_pin].sha256 | length == 64
+    fail_msg: "pins.{{ tools_carve_usncarve_pin }}.sha256 is null. Pin it in ansible/group_vars/all/pins.yml."
+    quiet: true
+
+- name: Usncarve | Install python3-venv (4.6)
+  ansible.builtin.apt:
+    name: python3-venv
+    state: present
+
+- name: Usncarve | Create the venv (4.6)
+  ansible.builtin.command:
+    argv: [/usr/bin/python3, -m, venv, "{{ tools_carve_usncarve_venv }}"]
+    creates: "{{ tools_carve_usncarve_venv }}/bin/python"
+  register: tools_carve_usncarve_venv_created
+  when: airlock_phase == 'image'
+
+- name: Usncarve | Copy the hash-pinned requirement files (4.6)
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ tools_carve_usncarve_venv }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: [build-requirements.txt, requirements.txt]
+  register: tools_carve_usncarve_reqs
+  when: airlock_phase == 'image'
+
+- name: Usncarve | Install the build backend (4.6)
+  ansible.builtin.command:
+    argv: "{{ tools_carve_usncarve_pip + ['-r', tools_carve_usncarve_venv ~ '/build-requirements.txt'] }}"
+  when:
+    - airlock_phase == 'image'
+    - tools_carve_usncarve_venv_created is changed or tools_carve_usncarve_reqs is changed
+  changed_when: true
+
+- name: Usncarve | Install usncarve (4.6)
+  ansible.builtin.command:
+    argv: "{{ tools_carve_usncarve_pip + ['--no-build-isolation', '-r', tools_carve_usncarve_venv ~ '/requirements.txt'] }}"
+  when:
+    - airlock_phase == 'image'
+    - tools_carve_usncarve_venv_created is changed or tools_carve_usncarve_reqs is changed
+  changed_when: true
+
+- name: Usncarve | Link the command into /usr/local/bin as usncarve (4.6)
+  ansible.builtin.file:
+    src: "{{ tools_carve_usncarve_venv }}/bin/usncarve.py"
+    dest: /usr/local/bin/usncarve
+    state: link
+    owner: root
+    group: root

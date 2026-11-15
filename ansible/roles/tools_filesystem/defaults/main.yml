@@ -1,0 +1,34 @@
+# tools_filesystem: file system parsers that read images and devices without mounting them
+# (task 4.2). Ubuntu 24.04 (noble) archive packages only. Controls and tests: docs/controls.md.
+
+# The Sleuth Kit: mmls, fls, istat, icat, ifind, tsk_recover, blkls, fsstat, mactime, usnjls.
+tools_filesystem_tsk_packages:
+  - sleuthkit
+
+# libfsntfs: fsntfsinfo and the Python bindings (import pyfsntfs).
+tools_filesystem_libfsntfs_packages:
+  - libfsntfs-utils
+  - python3-libfsntfs
+
+# ntfs-3g stays for ntfsinfo, ntfsls, ntfscat and evidence-mount's read-only FUSE mount; the tools
+# that format, repair, resize, wipe, relabel or write into an NTFS volume are moved off PATH
+# with dpkg-divert, so an analyst cannot run them on evidence by accident.
+tools_filesystem_ntfs3g_packages:
+  - ntfs-3g
+tools_filesystem_ntfs3g_divert_dir: /usr/lib/airlock/ntfs-3g-disabled
+# Paths as dpkg knows them (ntfs-3g ships them under /bin and /sbin; /usr is merged on noble).
+tools_filesystem_ntfs3g_write_tools:
+  - /bin/ntfsfix
+  - /bin/ntfswipe
+  - /bin/ntfstruncate
+  - /bin/ntfsfallocate
+  - /bin/ntfsmove
+  - /bin/ntfsrecover
+  - /bin/ntfssecaudit
+  - /sbin/mkntfs
+  - /sbin/mkfs.ntfs
+  - /sbin/ntfsclone
+  - /sbin/ntfscp
+  - /sbin/ntfslabel
+  - /sbin/ntfsresize
+  - /sbin/ntfsundelete

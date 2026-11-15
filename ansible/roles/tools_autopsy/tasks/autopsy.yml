@@ -1,0 +1,65 @@
+# Control 4.9: the Autopsy zip staged on ASSETS, checked against its pinned SHA-256, unpacked to
+# /opt/autopsy-<version>, and prepared with the zip's own unix_setup.sh (-j Java 17 home).
+# Test: tests/goss/tools.yaml (autopsy-installed: bin/autopsy present and executable when
+# Autopsy is installed); tests/unit/test_tools_autopsy.py (pin checked before unpacking).
+- name: Autopsy | Refuse an unpinned zip (4.9)
+  ansible.builtin.assert:
+    that:
+      - pins[tools_autopsy_zip_pin].sha256 is not none
+      - pins[tools_autopsy_zip_pin].sha256 | length == 64
+    fail_msg: "pins.{{ tools_autopsy_zip_pin }}.sha256 is null. Pin it and restage the drive."
+    quiet: true
+  when: &tools_autopsy_zip_when
+    - airlock_phase == 'provision'
+    - tools_autopsy_staged.autopsy | default(false) | bool
+
+- name: Autopsy | Hash the staged zip (4.9)
+  ansible.builtin.stat:
+    path: "{{ airlock_assets_files }}/{{ pins[tools_autopsy_zip_pin].target }}"
+    checksum_algorithm: sha256
+    get_checksum: true
+  register: tools_autopsy_zip
+  when: *tools_autopsy_zip_when
+
+- name: Autopsy | Check the zip is staged and unchanged (4.9)
+  ansible.builtin.assert:
+    that:
+      - tools_autopsy_zip.stat.exists
+      - tools_autopsy_zip.stat.checksum == pins[tools_autopsy_zip_pin].sha256
+    fail_msg: >-
+      {{ pins[tools_autopsy_zip_pin].target }} is missing from ASSETS or does not match its
+      pinned hash. Restage the drive with fetch-assets.
+    quiet: true
+  when: *tools_autopsy_zip_when
+
+- name: Autopsy | Unpack the checked zip (4.9)
+  ansible.builtin.unarchive:
+    src: "{{ airlock_assets_files }}/{{ pins[tools_autopsy_zip_pin].target }}"
+    dest: "{{ tools_autopsy_install_root }}"
+    remote_src: true
+    owner: root
+    group: root
+    creates: "{{ tools_autopsy_prefix }}/unix_setup.sh"
+  when: *tools_autopsy_zip_when
+
+- name: Autopsy | Run Autopsy's unix_setup.sh with Java 17 (4.9)
+  ansible.builtin.command:
+    argv: [bash, "{{ tools_autopsy_prefix }}/unix_setup.sh", -j, "{{ tools_autopsy_java_home }}"]
+    chdir: "{{ tools_autopsy_prefix }}"
+    creates: "{{ tools_autopsy_prefix }}/autopsy/modules/ext/sleuthkit-{{ tools_autopsy_tsk_version }}.jar.airlock-setup"
+  environment:
+    JAVA_HOME: "{{ tools_autopsy_java_home }}"
+  register: tools_autopsy_setup
+  when: *tools_autopsy_zip_when
+
+- name: Autopsy | Mark the setup as done (4.9)
+  ansible.builtin.copy:
+    dest: "{{ tools_autopsy_prefix }}/autopsy/modules/ext/sleuthkit-{{ tools_autopsy_tsk_version }}.jar.airlock-setup"
+    content: "unix_setup.sh -j {{ tools_autopsy_java_home }}\n"
+    owner: root
+    group: root
+    mode: "0644"
+  when:
+    - airlock_phase == 'provision'
+    - tools_autopsy_staged.autopsy | default(false) | bool
+    - tools_autopsy_setup is changed

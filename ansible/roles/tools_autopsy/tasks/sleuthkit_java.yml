@@ -1,0 +1,41 @@
+# Control 4.9: the Sleuth Kit Java package (libtsk_jni and sleuthkit-<version>.jar) staged on
+# ASSETS, checked against its pinned SHA-256, then installed offline with apt from the file.
+# Test: tests/goss/tools.yaml (autopsy-installed: sleuthkit jar present when Autopsy is
+# installed); tests/unit/test_tools_autopsy.py (pin checked before install).
+- name: Sleuth Kit Java | Refuse an unpinned package (4.9)
+  ansible.builtin.assert:
+    that:
+      - pins[tools_autopsy_tsk_java_pin].sha256 is not none
+      - pins[tools_autopsy_tsk_java_pin].sha256 | length == 64
+    fail_msg: >-
+      pins.{{ tools_autopsy_tsk_java_pin }}.sha256 is null. Pin the Sleuth Kit Java .deb in
+      ansible/group_vars/all/pins.yml and restage the drive.
+    quiet: true
+  when: &tools_autopsy_when
+    - airlock_phase == 'provision'
+    - tools_autopsy_staged.autopsy | default(false) | bool
+
+- name: Sleuth Kit Java | Hash the staged package (4.9)
+  ansible.builtin.stat:
+    path: "{{ airlock_assets_files }}/{{ pins[tools_autopsy_tsk_java_pin].target }}"
+    checksum_algorithm: sha256
+    get_checksum: true
+  register: tools_autopsy_tsk_deb
+  when: *tools_autopsy_when
+
+- name: Sleuth Kit Java | Check the package is staged and unchanged (4.9)
+  ansible.builtin.assert:
+    that:
+      - tools_autopsy_tsk_deb.stat.exists
+      - tools_autopsy_tsk_deb.stat.checksum == pins[tools_autopsy_tsk_java_pin].sha256
+    fail_msg: >-
+      {{ pins[tools_autopsy_tsk_java_pin].target }} is missing from ASSETS or does not match its
+      pinned hash. Restage the drive with fetch-assets.
+    quiet: true
+  when: *tools_autopsy_when
+
+- name: Sleuth Kit Java | Install the package offline (4.9)
+  ansible.builtin.apt:
+    deb: "{{ airlock_assets_files }}/{{ pins[tools_autopsy_tsk_java_pin].target }}"
+    state: present
+  when: *tools_autopsy_when

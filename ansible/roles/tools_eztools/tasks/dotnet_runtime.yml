@@ -1,0 +1,69 @@
+# Control 4.4: the .NET 9 runtime (dotnet-runtime-9.0 and its host packages) from Microsoft's
+# package repository, installed during the image build from four .deb files pinned by SHA-256.
+# No Microsoft apt source is left on the image. Provisioning (offline) checks it is there.
+# Test: tests/goss/tools.yaml (eztools-dotnet: dotnet --list-runtimes shows
+# Microsoft.NETCore.App 9.); tests/unit/test_tools_eztools.py (pins, order, no apt source).
+- name: Dotnet | Refuse unpinned packages (4.4)
+  ansible.builtin.assert:
+    that:
+      - pins[item].sha256 is not none
+      - pins[item].sha256 | length == 64
+      - pins[item].stage == 'image'
+    fail_msg: "pins.{{ item }}.sha256 is null or not stage=image. Pin it in ansible/group_vars/all/pins.yml."
+    quiet: true
+  loop: "{{ tools_eztools_dotnet_pins }}"
+  when: airlock_phase == 'image'
+
+- name: Dotnet | Create the download folder (4.4)
+  ansible.builtin.file:
+    path: "{{ tools_eztools_deb_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: airlock_phase == 'image'
+
+- name: Dotnet | Download the pinned .deb files (4.4)
+  ansible.builtin.get_url:
+    url: "{{ pins[item].url }}"
+    dest: "{{ tools_eztools_deb_dir }}/{{ pins[item].url | basename }}"
+    checksum: "sha256:{{ pins[item].sha256 }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ tools_eztools_dotnet_pins }}"
+  when: airlock_phase == 'image'
+
+- name: Dotnet | Install the runtime from the downloaded files (4.4)
+  ansible.builtin.apt:
+    deb: "{{ tools_eztools_deb_dir }}/{{ pins[item].url | basename }}"
+    state: present
+  loop: "{{ tools_eztools_dotnet_pins }}"
+  when: airlock_phase == 'image'
+
+- name: Dotnet | Remove the download folder (4.4)
+  ansible.builtin.file:
+    path: "{{ tools_eztools_deb_dir }}"
+    state: absent
+  when: airlock_phase == 'image'
+
+- name: Dotnet | Install unzip for the tool zips (4.4)
+  ansible.builtin.apt:
+    name: "{{ tools_eztools_packages }}"
+    state: present
+  when: tools_eztools_packages | length > 0
+
+- name: Dotnet | List the installed runtimes (4.4)
+  ansible.builtin.command:
+    argv: ["{{ tools_eztools_dotnet_bin }}", --list-runtimes]
+  register: tools_eztools_runtimes
+  changed_when: false
+
+- name: Dotnet | Check the .NET 9 runtime is installed (4.4)
+  ansible.builtin.assert:
+    that:
+      - ("Microsoft.NETCore.App " ~ tools_eztools_dotnet_major ~ ".") in tools_eztools_runtimes.stdout
+    fail_msg: >-
+      dotnet does not list a Microsoft.NETCore.App {{ tools_eztools_dotnet_major }}.x runtime.
+      Rebuild the image.
+    quiet: true

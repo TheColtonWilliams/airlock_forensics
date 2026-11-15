@@ -1,0 +1,42 @@
+# tools_autopsy: Autopsy, optional and off by default (task 4.9; site.yml runs this role only
+# when install_autopsy is true). Image phase: Java 17 and the libraries the Sleuth Kit Java
+# package needs, from the Ubuntu archive. Provision phase (offline): the Autopsy zip and the
+# Sleuth Kit Java .deb staged on ASSETS (profile feature "autopsy") are checked against their
+# pins, installed, and set up with Autopsy's own unix_setup.sh. Controls and tests:
+# docs/controls.md (section "Forensic tools").
+
+tools_autopsy_zip_pin: autopsy_zip
+tools_autopsy_tsk_java_pin: sleuthkit_java_deb
+
+# Java version from Autopsy 4.23.1's Running_Linux_OSX.md ("the path to the Java 17
+# installation"); unix_setup.sh in that zip asks for sleuthkit-4.15.0.jar.
+tools_autopsy_java_home: /usr/lib/jvm/java-17-openjdk-amd64
+tools_autopsy_tsk_version: "4.15.0"
+
+# Autopsy is unpacked to /opt/autopsy-<version>; /usr/local/bin/autopsy starts it.
+tools_autopsy_install_root: /opt
+tools_autopsy_prefix: "{{ tools_autopsy_install_root }}/autopsy-{{ pins[tools_autopsy_zip_pin].version }}"
+
+# Java 17, PhotoRec (unix_setup.sh checks for it), the run-time and -dev libraries the
+# sleuthkit-java .deb depends on, and the HEIF and GStreamer libraries Autopsy's media viewer uses
+# (from Autopsy's install_prereqs_ubuntu.sh, run-time parts only).
+tools_autopsy_packages:
+  - openjdk-17-jre
+  - testdisk
+  - unzip
+  - libafflib-dev
+  - libewf-dev
+  - libvhdi-dev
+  - libvmdk-dev
+  - libsqlite3-dev
+  - libc3p0-java
+  - libde265-0
+  - libheif1
+  - libpq5
+  - libgstreamer1.0-0
+  - gstreamer1.0-plugins-base
+  - gstreamer1.0-plugins-good
+  - gstreamer1.0-libav
+  - gstreamer1.0-gtk3
+
+tools_autopsy_features: "{{ airlock_profile_features | default({}) }}"

@@ -1,0 +1,6 @@
+# Control 4.6: scalpel and foremost, header and footer carvers driven by their config files.
+# Test: tests/goss/tools.yaml (carve-scalpel, carve-foremost: -V runs).
+- name: Carve | Install scalpel and foremost (4.6)
+  ansible.builtin.apt:
+    name: "{{ tools_carve_header_packages }}"
+    state: present

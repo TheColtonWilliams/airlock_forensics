@@ -1,0 +1,11 @@
+# usncarve, for the venv /opt/usncarve (task 4.6).
+# Every line is pinned by version and SHA-256 and installed with 'pip install --require-hashes
+# --no-deps'. Wheels are for CPython 3.12 on manylinux x86_64 (Ubuntu 24.04).
+# Generated 2026-11-15 from PyPI with Python 3.12 in an empty folder:
+#   pip download --prefer-binary usncarve==1.2.2
+# then one 'name==version --hash=sha256:...' line per downloaded file.
+# Licences: docs/decision-log.md (2026-11-15). After an update, change the matching entry in
+# ansible/group_vars/all/pins.yml too (tests/unit/test_tools_pins.py checks they agree).
+# usncarve-1.2.2.tar.gz
+usncarve==1.2.2 \
+    --hash=sha256:fa566a81b2a735cad54df1def9f9bb8f84da560b30a47d49e54f81b8f794fa3c

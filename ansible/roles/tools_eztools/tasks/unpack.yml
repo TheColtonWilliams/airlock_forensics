@@ -1,0 +1,109 @@
+# Control 4.4: at first boot (offline), every EZ Tools zip staged on ASSETS by the host fetcher
+# is checked against its pinned SHA-256 before it is unpacked into /opt/eztools/<Tool>/. A zip
+# that is missing or does not match stops provisioning with its name. Runs only when the
+# profile staged the eztools feature; nothing is downloaded on the USB system.
+# Test: tests/goss/tools.yaml (eztools-installed: each listed tool's wrapper runs on .NET 9);
+# tests/unit/test_tools_eztools.py (pins are stage=assets, checked before unpacking).
+- name: EZ Tools | Refuse unpinned zips (4.4)
+  ansible.builtin.assert:
+    that:
+      - pins[item.pin].sha256 is not none
+      - pins[item.pin].sha256 | length == 64
+    fail_msg: >-
+      pins.{{ item.pin }}.sha256 is null, so {{ item.name }} cannot be checked. Pin it in
+      ansible/group_vars/all/pins.yml and restage the drive.
+    quiet: true
+  loop: "{{ tools_eztools_tools }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: &tools_eztools_when
+    - airlock_phase == 'provision'
+    - tools_eztools_staged.eztools | default(false) | bool
+
+- name: EZ Tools | Hash the staged zips (4.4)
+  ansible.builtin.stat:
+    path: "{{ airlock_assets_files }}/{{ pins[item.pin].target }}"
+    checksum_algorithm: sha256
+    get_checksum: true
+  loop: "{{ tools_eztools_tools }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: tools_eztools_zips
+  when: *tools_eztools_when
+
+- name: EZ Tools | Check every zip is staged and unchanged (4.4)
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.checksum == pins[item.item.pin].sha256
+    fail_msg: >-
+      {{ pins[item.item.pin].target }} is missing from ASSETS or does not match its pinned hash.
+      Restage the drive with fetch-assets.
+    quiet: true
+  loop: "{{ tools_eztools_zips.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  when: *tools_eztools_when
+
+- name: EZ Tools | Look for the marker of the installed zip (4.4)
+  ansible.builtin.stat:
+    path: "{{ tools_eztools_prefix }}/{{ item.name }}/.airlock-sha256-{{ pins[item.pin].sha256 }}"
+  loop: "{{ tools_eztools_tools }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: tools_eztools_markers
+  when: *tools_eztools_when
+
+- name: EZ Tools | Remove an older unpacked copy (4.4)
+  ansible.builtin.file:
+    path: "{{ tools_eztools_prefix }}/{{ item.item.name }}"
+    state: absent
+  loop: "{{ tools_eztools_markers.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  when:
+    - airlock_phase == 'provision'
+    - tools_eztools_staged.eztools | default(false) | bool
+    - not item.stat.exists
+
+- name: EZ Tools | Create the tool folders (4.4)
+  ansible.builtin.file:
+    path: "{{ tools_eztools_prefix }}/{{ item.name }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop: "{{ tools_eztools_tools }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: *tools_eztools_when
+
+- name: EZ Tools | Unpack the checked zips (4.4)
+  ansible.builtin.unarchive:
+    src: "{{ airlock_assets_files }}/{{ pins[item.item.pin].target }}"
+    dest: "{{ tools_eztools_prefix }}/{{ item.item.name }}"
+    remote_src: true
+    owner: root
+    group: root
+  loop: "{{ tools_eztools_markers.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  when:
+    - airlock_phase == 'provision'
+    - tools_eztools_staged.eztools | default(false) | bool
+    - not item.stat.exists
+
+- name: EZ Tools | Record which zip each folder came from (4.4)
+  ansible.builtin.copy:
+    dest: "{{ tools_eztools_prefix }}/{{ item.item.name }}/.airlock-sha256-{{ pins[item.item.pin].sha256 }}"
+    content: "{{ pins[item.item.pin].target }} {{ pins[item.item.pin].version }}\n"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ tools_eztools_markers.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  when:
+    - airlock_phase == 'provision'
+    - tools_eztools_staged.eztools | default(false) | bool
+    - not item.stat.exists

@@ -1,0 +1,8 @@
+# Control 4.1: Guymager, the Linux-native GUI imager, from the Ubuntu archive. It writes images
+# only to the destination the operator picks; the source stays under the software read-only
+# policy like every other attached disk.
+# Test: tests/goss/tools.yaml (acquire-guymager: package installed, binary present).
+- name: Acquire | Install Guymager (4.1)
+  ansible.builtin.apt:
+    name: "{{ tools_acquire_gui_packages }}"
+    state: present

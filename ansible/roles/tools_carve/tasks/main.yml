@@ -1,0 +1,13 @@
+# tools_carve: one control per file. Each file names its test in its first comment.
+# Controls and tests are listed in docs/controls.md (section "Forensic tools").
+- name: Carve | PhotoRec (testdisk)
+  ansible.builtin.import_tasks: photorec.yml
+
+- name: Carve | Header and footer carvers (scalpel, foremost)
+  ansible.builtin.import_tasks: header_carvers.yml
+
+- name: Carve | bulk_extractor from its pinned source
+  ansible.builtin.import_tasks: bulk_extractor.yml
+
+- name: Carve | usncarve in a hash-pinned venv
+  ansible.builtin.import_tasks: usncarve.yml

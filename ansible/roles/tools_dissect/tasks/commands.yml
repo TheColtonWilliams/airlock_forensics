@@ -1,0 +1,12 @@
+# Control 4.3: the Dissect commands (target-query, target-shell, target-fs, target-info, ...)
+# on PATH as links into the venv, so they run the venv's Python and nothing else.
+# Test: tests/goss/tools.yaml (dissect-commands: every link resolves and target-query
+# --version runs).
+- name: Dissect | Link the commands into /usr/local/bin (4.3)
+  ansible.builtin.file:
+    src: "{{ tools_dissect_venv }}/bin/{{ item }}"
+    dest: "/usr/local/bin/{{ item }}"
+    state: link
+    owner: root
+    group: root
+  loop: "{{ tools_dissect_commands }}"

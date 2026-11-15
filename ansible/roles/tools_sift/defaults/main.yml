@@ -1,0 +1,15 @@
+# tools_sift: SANS SIFT, optional and off by default (task 6.5; site.yml runs this role only
+# when install_sift is true, and the last play re-applies every hardening role after it).
+# Image phase only: Cast (pinned .deb) installs teamdfir/sift-saltstack, which needs the network,
+# so SIFT can only be added while the image is built, never on the running USB system.
+# Controls and tests are listed in docs/controls.md (section "Forensic tools").
+
+tools_sift_cast_pin: cast_deb
+tools_sift_deb_dir: /var/tmp/airlock-cast
+tools_sift_distro: teamdfir/sift-saltstack
+# server: command-line tools only. The desktop mode changes the GNOME session the hardening
+# roles lock down, so it is not used.
+tools_sift_mode: server
+tools_sift_user: "{{ airlock_user | default('analyst') }}"
+tools_sift_cache_path: /var/cache/cast
+tools_sift_marker: "{{ airlock_state_dir | default('/var/lib/airlock') }}/sift-installed.json"

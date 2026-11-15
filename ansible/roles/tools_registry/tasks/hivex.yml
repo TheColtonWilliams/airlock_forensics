@@ -1,0 +1,7 @@
+# Control 4.8: hivex tools hivexget, hivexml and hivexsh (package libhivex-bin). Open hives
+# read-only (hivexsh without -w).
+# Test: tests/goss/tools.yaml (registry-hivex: package installed, hivexget prints its usage).
+- name: Registry | Install hivex tools (4.8)
+  ansible.builtin.apt:
+    name: "{{ tools_registry_hivex_packages }}"
+    state: present

@@ -1,0 +1,25 @@
+# Control 4.9: /usr/local/bin/autopsy and a desktop launcher, written only once Autopsy is
+# installed. Autopsy keeps its case and user files in the analyst's home folder.
+# Test: tests/goss/tools.yaml (autopsy-installed: launcher present when Autopsy is installed).
+- name: Autopsy | Look for the installed Autopsy (4.9)
+  ansible.builtin.stat:
+    path: "{{ tools_autopsy_prefix }}/bin/autopsy"
+  register: tools_autopsy_bin
+
+- name: Autopsy | Write the autopsy command (4.9)
+  ansible.builtin.template:
+    src: autopsy.sh.j2
+    dest: /usr/local/bin/autopsy
+    owner: root
+    group: root
+    mode: "0755"
+  when: tools_autopsy_bin.stat.exists
+
+- name: Autopsy | Write the desktop launcher (4.9)
+  ansible.builtin.template:
+    src: autopsy.desktop.j2
+    dest: /usr/share/applications/airlock-autopsy.desktop
+    owner: root
+    group: root
+    mode: "0644"
+  when: tools_autopsy_bin.stat.exists

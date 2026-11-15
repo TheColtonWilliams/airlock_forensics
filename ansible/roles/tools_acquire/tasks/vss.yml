@@ -1,0 +1,6 @@
+# Control 4.1: Volume Shadow Copy tools vshadowinfo and vshadowmount (libvshadow-utils).
+# Test: tests/goss/tools.yaml (acquire-vss: vshadowinfo -V runs).
+- name: Acquire | Install the Volume Shadow Copy tools (4.1)
+  ansible.builtin.apt:
+    name: "{{ tools_acquire_vss_packages }}"
+    state: present

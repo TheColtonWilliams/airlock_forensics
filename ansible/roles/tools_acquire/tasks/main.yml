@@ -1,0 +1,13 @@
+# tools_acquire: one control per file. Each file names its test in its first comment.
+# Controls and tests are listed in docs/controls.md (section "Forensic tools").
+- name: Acquire | Imaging tools (ewf-tools, dc3dd, ddrescue, afflib)
+  ansible.builtin.import_tasks: imaging.yml
+
+- name: Acquire | Guymager GUI imager
+  ansible.builtin.import_tasks: guymager.yml
+
+- name: Acquire | Hashing tools (hashdeep, ssdeep)
+  ansible.builtin.import_tasks: hashing.yml
+
+- name: Acquire | Volume Shadow Copy tools (libvshadow)
+  ansible.builtin.import_tasks: vss.yml

@@ -1,0 +1,425 @@
+# goss checks for the forensic tool roles (task 4.13; tasks 4.1 to 4.9): every tool is installed,
+# its binary is present and its version flag runs (the right flag for each tool), the .NET 9
+# runtime is there for EZ Tools, Dissect and Plaso run from their pinned venvs, and the helpers
+# are present and executable. Run inside the booted image by tests/run-qemu-tests.sh (guest
+# network off). Check syntax with: goss -g tests/goss/tools.yaml render
+# EZ Tools and Autopsy are staged on ASSETS and installed at first boot only when the profile
+# asks for them; their checks run against what /opt/eztools/INSTALLED and /usr/local/bin/autopsy
+# say is installed and pass with a note when nothing is.
+
+package:
+  # 4.1 tools_acquire
+  ewf-tools:
+    installed: true
+  libewf2:
+    installed: true
+  dc3dd:
+    installed: true
+  gddrescue:
+    installed: true
+  afflib-tools:
+    installed: true
+  guymager:
+    installed: true
+  hashdeep:
+    installed: true
+  ssdeep:
+    installed: true
+  libvshadow-utils:
+    installed: true
+  # 4.2 tools_filesystem
+  sleuthkit:
+    installed: true
+  libfsntfs-utils:
+    installed: true
+  python3-libfsntfs:
+    installed: true
+  ntfs-3g:
+    installed: true
+  # 4.3, 4.5, 4.6: the venvs need the system venv module.
+  python3-venv:
+    installed: true
+  # 4.4 tools_eztools: .NET 9 runtime from the pinned Microsoft packages.
+  dotnet-runtime-9.0:
+    installed: true
+  unzip:
+    installed: true
+  # 4.6 tools_carve
+  testdisk:
+    installed: true
+  scalpel:
+    installed: true
+  foremost:
+    installed: true
+  # 4.7 tools_media
+  libimage-exiftool-perl:
+    installed: true
+  mediainfo:
+    installed: true
+  ffmpeg:
+    installed: true
+  exiv2:
+    installed: true
+  vinetto:
+    installed: true
+  # 4.8 tools_registry
+  regripper:
+    installed: true
+  libregf-utils:
+    installed: true
+  libhivex-bin:
+    installed: true
+
+file:
+  # 4.1: Guymager is a GUI; its version flag needs a display, so presence is checked.
+  /usr/bin/guymager:
+    title: '4.1: Guymager installed'
+    exists: true
+    mode: "0755"
+  # 4.2: ntfs-3g for information only; the write-capable tools are moved off PATH.
+  /usr/lib/airlock/ntfs-3g-disabled:
+    title: '4.2: diverted ntfs-3g tools are root-only'
+    exists: true
+    filetype: directory
+    owner: root
+    mode: "0700"
+  /usr/bin/ntfsfix:
+    title: '4.2: ntfsfix is not on PATH'
+    exists: false
+  /usr/sbin/mkntfs:
+    title: '4.2: mkntfs is not on PATH'
+    exists: false
+  /usr/sbin/mkfs.ntfs:
+    title: '4.2: mkfs.ntfs is not on PATH'
+    exists: false
+  /usr/sbin/ntfsresize:
+    title: '4.2: ntfsresize is not on PATH'
+    exists: false
+  /usr/bin/ntfsinfo:
+    title: '4.2: ntfsinfo stays'
+    exists: true
+  # 4.3: Dissect venv and its commands on PATH.
+  /opt/dissect/bin/python:
+    title: '4.3: Dissect venv'
+    exists: true
+  /opt/dissect/requirements.txt:
+    title: '4.3: the hash-pinned requirements the venv was built from'
+    exists: true
+    contents:
+      - 'dissect==3.22 \'
+      - '--hash=sha256:'
+  /usr/local/bin/target-query:
+    title: '4.3: target-query on PATH'
+    exists: true
+    filetype: symlink
+    linked-to: /opt/dissect/bin/target-query
+  # 4.5: Plaso venv.
+  /opt/plaso/bin/python:
+    title: '4.5: Plaso venv'
+    exists: true
+  /usr/local/bin/log2timeline:
+    title: '4.5: log2timeline on PATH'
+    exists: true
+    filetype: symlink
+    linked-to: /opt/plaso/bin/log2timeline
+  # 4.6: bulk_extractor from source, usncarve venv.
+  /opt/bulk_extractor/VERSION:
+    title: '4.6: bulk_extractor built from the pinned tarball'
+    exists: true
+    contents:
+      - '/^2\.1\.1 sha256:0cd57c743581a66ea94d49edac2e89210c80a2a7cc90dd254d56940b3d41b7f7/'
+  /usr/local/bin/usncarve:
+    title: '4.6: usncarve on PATH'
+    exists: true
+    filetype: symlink
+    linked-to: /opt/usncarve/bin/usncarve.py
+  # 4.8: rip.pl alias.
+  /usr/local/bin/rip.pl:
+    title: '4.8: rip.pl runs RegRipper'
+    exists: true
+    filetype: symlink
+    linked-to: /usr/bin/regripper
+  # 4.8: hivex tools without a version flag.
+  /usr/bin/hivexml:
+    title: '4.8: hivexml installed'
+    exists: true
+    mode: "0755"
+  /usr/bin/hivexsh:
+    title: '4.8: hivexsh installed'
+    exists: true
+    mode: "0755"
+  # 4.13: the session helpers are present and executable (owner and mode details:
+  # tests/goss/session_tools.yaml).
+  /usr/local/bin/forensic-session-start:
+    title: '4.13: helper present'
+    exists: true
+    mode: "0755"
+  /usr/local/bin/forensic-analyze:
+    title: '4.13: helper present'
+    exists: true
+    mode: "0755"
+  /usr/local/bin/evidence-mount:
+    title: '4.13: helper present'
+    exists: true
+    mode: "0755"
+  /usr/local/bin/evidence-hash:
+    title: '4.13: helper present'
+    exists: true
+    mode: "0755"
+  /usr/local/bin/evidence-triage:
+    title: '4.13: helper present'
+    exists: true
+    mode: "0755"
+  /usr/local/bin/evidence-unlock-output:
+    title: '4.13: helper present'
+    exists: true
+    mode: "0755"
+
+command:
+  # ------------------------------------------------------------------ 4.1 tools_acquire
+  acquire-ewf:
+    title: '4.1: ewfacquire, ewfverify, ewfexport, ewfinfo run'
+    exec: "ewfacquire -V 2>&1 && ewfverify -V 2>&1 && ewfexport -V 2>&1 && ewfinfo -V 2>&1"
+    exit-status: 0
+    stdout:
+      - '/^ewfacquire [0-9]{8}/'
+      - '/^ewfverify [0-9]{8}/'
+      - '/^ewfexport [0-9]{8}/'
+      - '/^ewfinfo [0-9]{8}/'
+    timeout: 20000
+  acquire-dc3dd:
+    title: '4.1: dc3dd --version runs'
+    exec: "dc3dd --version 2>&1"
+    exit-status: 0
+    stdout:
+      - '/dc3dd \(dc3dd\) [0-9]+\./'
+    timeout: 20000
+  acquire-ddrescue:
+    title: '4.1: ddrescue --version runs'
+    exec: "ddrescue --version"
+    exit-status: 0
+    stdout:
+      - '/^GNU ddrescue [0-9]/'
+    timeout: 20000
+  acquire-afflib:
+    title: '4.1: affinfo -V runs'
+    exec: "affinfo -V"
+    exit-status: 0
+    stdout:
+      - '/affinfo version [0-9]/'
+    timeout: 20000
+  acquire-hashing:
+    title: '4.1: hashdeep, sha256deep, ssdeep run'
+    exec: "hashdeep -V && sha256deep -v && ssdeep -V"
+    exit-status: 0
+    stdout:
+      - '/^4\.[0-9]/'
+      - '/^2\.[0-9]+/'
+    timeout: 20000
+  acquire-vss:
+    title: '4.1: vshadowinfo -V runs'
+    exec: "vshadowinfo -V && vshadowmount -V"
+    exit-status: 0
+    stdout:
+      - '/^vshadowinfo [0-9]{8}/'
+      - '/^vshadowmount [0-9]{8}/'
+    timeout: 20000
+  # ------------------------------------------------------------------ 4.2 tools_filesystem
+  filesystem-sleuthkit:
+    title: '4.2: The Sleuth Kit tools run'
+    exec: >-
+      for t in mmls fls istat icat ifind tsk_recover blkls fsstat mactime usnjls; do $t -V
+      2>/dev/null | grep -q '^The Sleuth Kit ver' || { echo "$t failed"; exit 1; }; done; echo
+      sleuthkit-ok
+    exit-status: 0
+    stdout:
+      - sleuthkit-ok
+    timeout: 30000
+  filesystem-libfsntfs:
+    title: '4.2: fsntfsinfo -V runs and pyfsntfs imports'
+    exec: >-
+      fsntfsinfo -V && /usr/bin/python3 -I -c 'import pyfsntfs; print("pyfsntfs",
+      pyfsntfs.get_version())'
+    exit-status: 0
+    stdout:
+      - '/^fsntfsinfo [0-9]{8}/'
+      - '/^pyfsntfs [0-9]{8}/'
+    timeout: 20000
+  filesystem-ntfs3g:
+    title: '4.2: ntfsinfo runs; write-capable ntfs-3g tools are diverted off PATH'
+    exec: >-
+      ntfsinfo --version 2>&1 | grep '^ntfsinfo v'; for t in ntfsfix ntfswipe ntfstruncate
+      ntfsfallocate ntfsmove ntfsrecover ntfssecaudit mkntfs mkfs.ntfs ntfsclone ntfscp ntfslabel
+      ntfsresize ntfsundelete; do if command -v "$t" >/dev/null; then echo "$t is on PATH"; exit
+      1; fi; done; echo diverted=$(dpkg-divert --list | grep -c
+      '/usr/lib/airlock/ntfs-3g-disabled/')
+    exit-status: 0
+    stdout:
+      - '/^ntfsinfo v[0-9]/'
+      - diverted=14
+    timeout: 20000
+  # ------------------------------------------------------------------ 4.3 tools_dissect
+  dissect-version:
+    title: '4.3: the pinned Dissect is installed; target-query --version runs'
+    exec: >-
+      /opt/dissect/bin/python -I -c 'import importlib.metadata as m; print("dissect",
+      m.version("dissect"))' && target-query --version
+    exit-status: 0
+    stdout:
+      - dissect 3.22
+      - '/dissect\.target version [0-9]/'
+    timeout: 120000
+  dissect-commands:
+    title: '4.3: every Dissect command on PATH resolves into the venv'
+    exec: >-
+      for t in target-query target-shell target-fs target-info target-dump target-reg target-dd
+      target-mount rdump fve-dd parse-lnk; do [ "$(readlink -f /usr/local/bin/$t)" =
+      "/opt/dissect/bin/$t" ] && [ -x "/opt/dissect/bin/$t" ] || { echo "$t missing"; exit 1; };
+      done; echo dissect-commands-ok
+    exit-status: 0
+    stdout:
+      - dissect-commands-ok
+    timeout: 20000
+  # ------------------------------------------------------------------ 4.4 tools_eztools
+  eztools-dotnet:
+    title: '4.4: dotnet --list-runtimes shows the .NET 9 runtime'
+    exec: "dotnet --list-runtimes"
+    exit-status: 0
+    stdout:
+      - '/^Microsoft\.NETCore\.App 9\./'
+    timeout: 60000
+  eztools-installed:
+    title: '4.4: each installed EZ tool runs on .NET 9 (none installed: noted)'
+    exec: >-
+      if [ ! -s /opt/eztools/INSTALLED ]; then echo 'eztools-ok (not staged in this profile)';
+      exit 0; fi; while read -r t; do [ -n "$t" ] || continue; out=$("/usr/local/bin/$t" --help
+      2>&1) || true; case "$out" in *'Unhandled exception'*|*'You must install or update
+      .NET'*|*'framework was not found'*) echo "$t: $out" | head -n 3; exit 1;; esac; printf '%s'
+      "$out" | grep -qi -e usage -e description -e "$t" || { echo "$t printed no help"; exit 1; };
+      done </opt/eztools/INSTALLED; echo eztools-ok
+    exit-status: 0
+    stdout:
+      - eztools-ok
+    timeout: 300000
+  # ------------------------------------------------------------------ 4.5 tools_timeline
+  plaso-version:
+    title: '4.5: log2timeline, psort, pinfo, psteal run the pinned Plaso'
+    exec: "log2timeline --version && psort --version && pinfo --version && psteal --version"
+    exit-status: 0
+    stdout:
+      - log2timeline version 20261027
+      - psort version 20261027
+      - pinfo version 20261027
+    timeout: 180000
+  # ------------------------------------------------------------------ 4.6 tools_carve
+  carve-photorec:
+    title: '4.6: photorec /version runs'
+    exec: "photorec /version"
+    exit-status: 0
+    stdout:
+      - '/^PhotoRec [0-9]/'
+    timeout: 20000
+  carve-scalpel:
+    title: '4.6: scalpel -V prints its version (scalpel exits 1 after -V)'
+    exec: "scalpel -V"
+    exit-status: 1
+    stdout:
+      - '/^Scalpel version [0-9]/'
+    timeout: 20000
+  carve-foremost:
+    title: '4.6: foremost -V runs'
+    exec: "foremost -V"
+    exit-status: 0
+    stdout:
+      - '/^1\.[0-9]/'
+    timeout: 20000
+  carve-bulk-extractor:
+    title: '4.6: bulk_extractor -V shows the pinned version'
+    exec: "bulk_extractor -V"
+    exit-status: 0
+    stdout:
+      - bulk_extractor 2.1.1
+    timeout: 20000
+  carve-usncarve:
+    title: '4.6: usncarve --help runs'
+    exec: "usncarve --help"
+    exit-status: 0
+    stdout:
+      - 'usage: usncarve'
+    timeout: 20000
+  # ------------------------------------------------------------------ 4.7 tools_media
+  media-exiftool:
+    title: '4.7: exiftool -ver is 12.24 or later'
+    exec: >-
+      v=$(exiftool -ver) && echo "exiftool $v" && awk -v v="$v" 'BEGIN { split(v, p, "."); exit
+      !((p[1] > 12) || (p[1] == 12 && p[2] >= 24)) }' && echo exiftool-version-ok
+    exit-status: 0
+    stdout:
+      - exiftool-version-ok
+    timeout: 20000
+  media-av:
+    title: '4.7: mediainfo, ffprobe, ffmpeg run'
+    exec: "mediainfo --Version && ffprobe -version | head -n 1 && ffmpeg -version | head -n 1"
+    exit-status: 0
+    stdout:
+      - '/MediaInfoLib - v[0-9]/'
+      - '/^ffprobe version /'
+      - '/^ffmpeg version /'
+    timeout: 20000
+  media-exiv2:
+    title: '4.7: exiv2 --version runs'
+    exec: "exiv2 --version"
+    exit-status: 0
+    stdout:
+      - '/^exiv2 [0-9]/'
+    timeout: 20000
+  media-vinetto:
+    title: '4.7: vinetto --version runs'
+    exec: "vinetto --version"
+    exit-status: 0
+    stdout:
+      - '/Vinetto [0-9]/'
+    timeout: 20000
+  media-thumbcache:
+    title: '4.7: Dissect thumbcache parser imports and its command runs'
+    exec: "/opt/dissect/bin/python -I -c 'import dissect.thumbcache' && thumbcache-extract --help"
+    exit-status: 0
+    stdout:
+      - '/^usage: /'
+    timeout: 60000
+  # ------------------------------------------------------------------ 4.8 tools_registry
+  registry-regripper:
+    title: '4.8: RegRipper lists its plugins; rip.pl runs it'
+    exec: "regripper -l | head -n 3 && rip.pl -h | head -n 1"
+    exit-status: 0
+    stdout:
+      - '/^1\. /'
+      - '/^Rip v\.[0-9]/'
+    timeout: 30000
+  registry-libregf:
+    title: '4.8: regfinfo -V and regfexport -V run'
+    exec: "regfinfo -V && regfexport -V"
+    exit-status: 0
+    stdout:
+      - '/^regfinfo [0-9]{8}/'
+      - '/^regfexport [0-9]{8}/'
+    timeout: 20000
+  registry-hivex:
+    title: '4.8: hivexget prints its usage (hivex has no version flag)'
+    exec: "hivexget"
+    exit-status: 1
+    stdout:
+      - 'hivexget hivefile path [key]'
+    timeout: 20000
+  # ------------------------------------------------------------------ 4.9 tools_autopsy
+  autopsy-installed:
+    title: '4.9: when Autopsy is installed, it has Java 17 and the Sleuth Kit Java jar'
+    exec: >-
+      if [ ! -e /usr/local/bin/autopsy ]; then echo 'autopsy-ok (optional, not installed)'; exit
+      0; fi; set -e; ls /opt/autopsy-*/bin/autopsy >/dev/null; test -x /opt/autopsy-*/bin/autopsy;
+      java -version 2>&1 | grep -q 'version "17'; ls /usr/share/java/sleuthkit-*.jar >/dev/null;
+      test -f /usr/share/applications/airlock-autopsy.desktop; echo autopsy-ok
+    exit-status: 0
+    stdout:
+      - autopsy-ok
+    timeout: 30000

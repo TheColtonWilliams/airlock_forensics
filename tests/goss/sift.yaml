@@ -1,0 +1,73 @@
+# goss checks for task 6.5: the optional SIFT layer (role tools_sift, install_sift=false by
+# default) cannot undo the lockdown. site.yml re-applies every hardening role after the tool
+# roles; these checks prove radios stay blocked and automount stays off. They hold on every
+# image, so they run whether or not SIFT was installed; the SIFT-specific check runs only when
+# /var/lib/airlock/sift-installed.json says SIFT is there. Run inside the booted image by
+# tests/run-qemu-tests.sh. Check syntax with: goss -g tests/goss/sift.yaml render
+
+file:
+  /etc/modprobe.d/forensic-radios.conf:
+    title: '6.5: radio modules still cannot load after the tool layers'
+    exists: true
+    contents:
+      - install cfg80211 /bin/false
+      - install bluetooth /bin/false
+  /etc/systemd/system/forensic-rfkill.service:
+    title: '6.5: rfkill block-all unit still installed after the tool layers'
+    exists: true
+    contents:
+      - ExecStart=/usr/sbin/rfkill block all
+  /etc/systemd/system/udisks2.service:
+    title: '6.5: udisks2 still masked after the tool layers'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/NetworkManager.service:
+    title: '6.5: NetworkManager still masked after the tool layers'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+
+service:
+  forensic-rfkill.service:
+    title: '6.5: rfkill block-all unit still enabled after the tool layers'
+    enabled: true
+  udisks2.service:
+    title: '6.5: udisks2 not running after the tool layers'
+    running: false
+
+command:
+  sift-rfkill-nothing-unblocked:
+    title: '6.5: rfkill lists no radio that is not soft-blocked'
+    exec: "rfkill -n -o SOFT list 2>/dev/null | grep -c '^unblocked' || true"
+    exit-status: 0
+    stdout:
+      - '/^0$/'
+  sift-radio-modules-not-loaded:
+    title: '6.5: no Wi-Fi or Bluetooth stack is loaded'
+    exec: >-
+      lsmod | awk '{print $1}' | grep -xE 'cfg80211|mac80211|bluetooth|btusb' || echo none-loaded
+    exit-status: 0
+    stdout:
+      - none-loaded
+  sift-automount-off:
+    title: '6.5: GNOME automount and automount-open still false, autorun-never still true'
+    exec: >-
+      for k in automount automount-open autorun-never; do printf '%s=%s\n' "$k" "$(dconf read
+      /org/gnome/desktop/media-handling/$k)"; done
+    exit-status: 0
+    stdout:
+      - '/^automount=false$/'
+      - '/^automount-open=false$/'
+      - '/^autorun-never=true$/'
+  sift-layer:
+    title: '6.5: when SIFT is installed, Cast is the pinned version and units SIFT could enable stay masked'
+    exec: >-
+      m=/var/lib/airlock/sift-installed.json; if [ ! -e "$m" ]; then echo 'sift-ok (optional, not
+      installed)'; exit 0; fi; cast --version | grep -q 'v1.0.13' || { echo 'cast is not the
+      pinned 1.0.13'; exit 1; }; for u in /etc/systemd/system/udisks2.service
+      /etc/systemd/system/NetworkManager.service; do [ "$(readlink "$u")" = /dev/null ] || { echo
+      "$u is not masked"; exit 1; }; done; echo sift-ok
+    exit-status: 0
+    stdout:
+      - sift-ok

@@ -1,0 +1,24 @@
+# tools_timeline: Plaso super-timelines (task 4.5). Plaso 20261027 from PyPI in its own venv
+# /opt/plaso, every package pinned by SHA-256 (files/requirements.txt). The GIFT PPA is not used
+# and noble's own plaso package (20201007) is six years old (decision log 2026-11-15).
+# Timesketch is deferred (needs Docker and a database). Controls and tests: docs/controls.md.
+
+tools_timeline_pin: plaso_pypi
+tools_timeline_venv: /opt/plaso
+
+# Commands linked into /usr/local/bin.
+tools_timeline_commands:
+  - log2timeline
+  - psort
+  - pinfo
+  - psteal
+  - image_export
+
+tools_timeline_pip:
+  - "{{ tools_timeline_venv }}/bin/pip"
+  - install
+  - --require-hashes
+  - --no-deps
+  - --no-cache-dir
+  - --disable-pip-version-check
+  - --no-input

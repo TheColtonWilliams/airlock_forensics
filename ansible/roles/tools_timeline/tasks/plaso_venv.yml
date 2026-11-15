@@ -1,0 +1,64 @@
+# Control 4.5: Plaso (log2timeline, psort) in its own venv /opt/plaso, installed during the image
+# build from PyPI with every package pinned by version and SHA-256 (files/requirements.txt, pip
+# --require-hashes). Provisioning runs offline, so it only checks the venv is there.
+# Test: tests/goss/tools.yaml (plaso-version: log2timeline and psort --version show the pinned
+# version); tests/unit/test_tools_pins.py (requirements fully hashed, pin agrees).
+- name: Plaso | Refuse an unpinned package (4.5)
+  ansible.builtin.assert:
+    that:
+      - pins[tools_timeline_pin].sha256 is not none
+      - pins[tools_timeline_pin].sha256 | length == 64
+    fail_msg: "pins.{{ tools_timeline_pin }}.sha256 is null. Pin it in ansible/group_vars/all/pins.yml."
+    quiet: true
+
+- name: Plaso | Install python3-venv (4.5)
+  ansible.builtin.apt:
+    name: python3-venv
+    state: present
+
+- name: Plaso | Create the venv (4.5)
+  ansible.builtin.command:
+    argv: [/usr/bin/python3, -m, venv, "{{ tools_timeline_venv }}"]
+    creates: "{{ tools_timeline_venv }}/bin/python"
+  register: tools_timeline_venv_created
+  when: airlock_phase == 'image'
+
+- name: Plaso | Copy the hash-pinned requirement files (4.5)
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ tools_timeline_venv }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: [build-requirements.txt, requirements.txt]
+  register: tools_timeline_reqs
+  when: airlock_phase == 'image'
+
+- name: Plaso | Install the build backend for the source-only packages (4.5)
+  ansible.builtin.command:
+    argv: "{{ tools_timeline_pip + ['-r', tools_timeline_venv ~ '/build-requirements.txt'] }}"
+  when:
+    - airlock_phase == 'image'
+    - tools_timeline_venv_created is changed or tools_timeline_reqs is changed
+  changed_when: true
+
+- name: Plaso | Install Plaso and its pinned dependencies (4.5)
+  ansible.builtin.command:
+    argv: "{{ tools_timeline_pip + ['--no-build-isolation', '-r', tools_timeline_venv ~ '/requirements.txt'] }}"
+  when:
+    - airlock_phase == 'image'
+    - tools_timeline_venv_created is changed or tools_timeline_reqs is changed
+  changed_when: true
+
+- name: Plaso | Check the pinned version is installed (4.5)
+  ansible.builtin.command:
+    argv:
+      - "{{ tools_timeline_venv }}/bin/python"
+      - -I
+      - -c
+      - >-
+        import importlib.metadata as m, sys; v = m.version('plaso');
+        sys.exit(0 if v == sys.argv[1] else 'plaso ' + v + ' is installed but ' + sys.argv[1]
+        + ' is pinned. Rebuild the image.')
+      - "{{ pins[tools_timeline_pin].version }}"
+  changed_when: false

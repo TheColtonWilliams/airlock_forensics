@@ -1,0 +1,17 @@
+# Build backend for the source-only packages in requirements.txt (installed first; requirements.txt then installs with --no-build-isolation).
+# Every line is pinned by version and SHA-256 and installed with 'pip install --require-hashes
+# --no-deps'. Wheels are for CPython 3.12 on manylinux x86_64 (Ubuntu 24.04).
+# Generated 2026-11-15 from PyPI with Python 3.12 in an empty folder:
+#   pip download --prefer-binary --only-binary=:all: setuptools wheel
+# then one 'name==version --hash=sha256:...' line per downloaded file.
+# Licences: docs/decision-log.md (2026-11-15). After an update, change the matching entry in
+# ansible/group_vars/all/pins.yml too (tests/unit/test_tools_pins.py checks they agree).
+# packaging-26.3-py3-none-any.whl
+packaging==26.3 \
+    --hash=sha256:d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c
+# setuptools-84.2.1-py3-none-any.whl
+setuptools==84.2.1 \
+    --hash=sha256:ca140b45d5325a9478f880e351484f62fef15f336462e449ca0c03c873d589c2
+# wheel-0.48.0-py3-none-any.whl
+wheel==0.48.0 \
+    --hash=sha256:3217dcc807155e45db462d7ef2431f5ddda0d7273b700d05a67b271ceb1287ab

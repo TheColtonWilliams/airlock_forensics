@@ -1,0 +1,6 @@
+# Control 4.7: exiv2 for EXIF, IPTC and XMP image metadata (Ubuntu archive).
+# Test: tests/goss/tools.yaml (media-exiv2: exiv2 --version runs).
+- name: Media | Install exiv2 (4.7)
+  ansible.builtin.apt:
+    name: "{{ tools_media_exiv2_packages }}"
+    state: present

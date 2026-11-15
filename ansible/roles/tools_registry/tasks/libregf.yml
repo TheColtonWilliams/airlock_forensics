@@ -1,0 +1,6 @@
+# Control 4.8: libregf tools regfinfo and regfexport (package libregf-utils).
+# Test: tests/goss/tools.yaml (registry-libregf: regfinfo -V and regfexport -V run).
+- name: Registry | Install libregf tools (4.8)
+  ansible.builtin.apt:
+    name: "{{ tools_registry_libregf_packages }}"
+    state: present

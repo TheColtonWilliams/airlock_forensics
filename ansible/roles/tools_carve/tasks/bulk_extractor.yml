@@ -1,0 +1,135 @@
+# Control 4.6: bulk_extractor (feature extraction and carving) built from the pinned 2.1.1
+# release tarball, because noble has no bulk-extractor package. Image phase only (the build
+# needs the network for apt and the tarball); installed to /opt/bulk_extractor and linked into
+# /usr/local/bin. Decision log 2026-11-15.
+# Test: tests/goss/tools.yaml (carve-bulk-extractor: bulk_extractor -V shows the pinned version);
+# tests/unit/test_tools_pins.py (the pin exists and is hashed).
+- name: Bulk_extractor | Refuse an unpinned source tarball (4.6)
+  ansible.builtin.assert:
+    that:
+      - pins[tools_carve_bulk_extractor_pin].sha256 is not none
+      - pins[tools_carve_bulk_extractor_pin].sha256 | length == 64
+    fail_msg: >-
+      pins.{{ tools_carve_bulk_extractor_pin }}.sha256 is null. Pin the bulk_extractor tarball in
+      ansible/group_vars/all/pins.yml before building.
+    quiet: true
+  when: airlock_phase == 'image'
+
+- name: Bulk_extractor | Install the run-time libraries (4.6)
+  ansible.builtin.apt:
+    name: "{{ tools_carve_bulk_extractor_runtime_packages }}"
+    state: present
+
+- name: Bulk_extractor | Check whether the pinned version is installed (4.6)
+  ansible.builtin.stat:
+    path: "{{ tools_carve_bulk_extractor_prefix }}/VERSION"
+  register: tools_carve_be_version_file
+
+- name: Bulk_extractor | Read the installed version (4.6)
+  ansible.builtin.slurp:
+    src: "{{ tools_carve_bulk_extractor_prefix }}/VERSION"
+  register: tools_carve_be_version_raw
+  when: tools_carve_be_version_file.stat.exists
+
+- name: Bulk_extractor | Decide whether to build (4.6)
+  ansible.builtin.set_fact:
+    tools_carve_be_build: >-
+      {{ airlock_phase == 'image' and
+         (tools_carve_be_version_raw.content | default('') | b64decode | trim) !=
+         (pins[tools_carve_bulk_extractor_pin].version ~ ' sha256:' ~ pins[tools_carve_bulk_extractor_pin].sha256) }}
+
+- name: Bulk_extractor | Install the build tools (4.6)
+  ansible.builtin.apt:
+    name: "{{ tools_carve_bulk_extractor_build_packages }}"
+    state: present
+  when:
+    - airlock_phase == 'image'
+    - tools_carve_be_build | bool
+
+- name: Bulk_extractor | Create the build folder (4.6)
+  ansible.builtin.file:
+    path: "{{ tools_carve_bulk_extractor_build_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when:
+    - airlock_phase == 'image'
+    - tools_carve_be_build | bool
+
+- name: Bulk_extractor | Download the pinned source tarball (4.6)
+  ansible.builtin.get_url:
+    url: "{{ pins[tools_carve_bulk_extractor_pin].url }}"
+    dest: "{{ tools_carve_bulk_extractor_build_dir }}/bulk_extractor.tar.gz"
+    checksum: "sha256:{{ pins[tools_carve_bulk_extractor_pin].sha256 }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when:
+    - airlock_phase == 'image'
+    - tools_carve_be_build | bool
+
+- name: Bulk_extractor | Unpack the source (4.6)
+  ansible.builtin.unarchive:
+    src: "{{ tools_carve_bulk_extractor_build_dir }}/bulk_extractor.tar.gz"
+    dest: "{{ tools_carve_bulk_extractor_build_dir }}"
+    remote_src: true
+    extra_opts: [--strip-components=1]
+    creates: "{{ tools_carve_bulk_extractor_build_dir }}/configure"
+  when:
+    - airlock_phase == 'image'
+    - tools_carve_be_build | bool
+
+- name: Bulk_extractor | Configure (4.6)
+  ansible.builtin.command:
+    argv: [./configure, -q, "--prefix={{ tools_carve_bulk_extractor_prefix }}"]
+    chdir: "{{ tools_carve_bulk_extractor_build_dir }}"
+  when:
+    - airlock_phase == 'image'
+    - tools_carve_be_build | bool
+  changed_when: true
+
+- name: Bulk_extractor | Build (4.6)
+  ansible.builtin.command:
+    argv: [make, -j, "{{ ansible_facts['processor_vcpus'] | default(2) | string }}"]
+    chdir: "{{ tools_carve_bulk_extractor_build_dir }}"
+  when:
+    - airlock_phase == 'image'
+    - tools_carve_be_build | bool
+  changed_when: true
+
+- name: Bulk_extractor | Install into the prefix (4.6)
+  ansible.builtin.command:
+    argv: [make, install]
+    chdir: "{{ tools_carve_bulk_extractor_build_dir }}"
+  when:
+    - airlock_phase == 'image'
+    - tools_carve_be_build | bool
+  changed_when: true
+
+- name: Bulk_extractor | Record the pinned version (4.6)
+  ansible.builtin.copy:
+    dest: "{{ tools_carve_bulk_extractor_prefix }}/VERSION"
+    content: >-
+      {{ pins[tools_carve_bulk_extractor_pin].version }}
+      sha256:{{ pins[tools_carve_bulk_extractor_pin].sha256 }}
+    owner: root
+    group: root
+    mode: "0644"
+  when:
+    - airlock_phase == 'image'
+    - tools_carve_be_build | bool
+
+- name: Bulk_extractor | Remove the build folder (4.6)
+  ansible.builtin.file:
+    path: "{{ tools_carve_bulk_extractor_build_dir }}"
+    state: absent
+  when: airlock_phase == 'image'
+
+- name: Bulk_extractor | Link the command into /usr/local/bin (4.6)
+  ansible.builtin.file:
+    src: "{{ tools_carve_bulk_extractor_prefix }}/bin/bulk_extractor"
+    dest: /usr/local/bin/bulk_extractor
+    state: link
+    owner: root
+    group: root

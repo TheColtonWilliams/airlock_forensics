@@ -1,0 +1,8 @@
+# Control 4.2: The Sleuth Kit (mmls, fls, istat, icat, ifind, tsk_recover, blkls, fsstat,
+# mactime, usnjls) reads images and devices directly, without mounting them.
+# Test: tests/goss/tools.yaml (filesystem-sleuthkit: each binary present, -V runs);
+# tests/functional/test_parsers_ntfs.sh (fls -rd finds the fixture's deleted files).
+- name: Filesystem | Install The Sleuth Kit (4.2)
+  ansible.builtin.apt:
+    name: "{{ tools_filesystem_tsk_packages }}"
+    state: present

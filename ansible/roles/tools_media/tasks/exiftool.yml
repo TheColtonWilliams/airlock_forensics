@@ -1,0 +1,24 @@
+# Control 4.7: exiftool (libimage-exiftool-perl) installed and at version 12.24 or later; older
+# versions run code from crafted DjVu files (CVE-2021-22204). Noble ships 12.76.
+# Test: tests/goss/tools.yaml (media-exiftool: exiftool -ver is 12.24 or later);
+# tests/unit/test_tools_roles.py (minimum version is enforced).
+- name: Exiftool | Install exiftool (4.7)
+  ansible.builtin.apt:
+    name: "{{ tools_media_exiftool_packages }}"
+    state: present
+
+- name: Exiftool | Read the installed version (4.7)
+  ansible.builtin.command:
+    argv: [exiftool, -ver]
+  register: tools_media_exiftool_ver
+  changed_when: false
+
+- name: Exiftool | Refuse a version older than 12.24 (4.7)
+  ansible.builtin.assert:
+    that:
+      - tools_media_exiftool_ver.stdout | trim is version(tools_media_exiftool_min_version, '>=')
+    fail_msg: >-
+      exiftool {{ tools_media_exiftool_ver.stdout | trim }} is older than
+      {{ tools_media_exiftool_min_version }} and unsafe on hostile files. Build from a newer apt
+      snapshot.
+    quiet: true

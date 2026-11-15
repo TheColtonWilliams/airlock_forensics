@@ -1,0 +1,37 @@
+# Control 4.2: ntfs-3g is installed for ntfsinfo (and the read-only FUSE mount evidence-mount
+# uses); every ntfs-3g tool that formats, repairs, resizes, wipes, relabels or writes into an
+# NTFS volume is diverted off PATH into tools_filesystem_ntfs3g_divert_dir (root only).
+# Test: tests/goss/tools.yaml (filesystem-ntfs3g: ntfsinfo runs; ntfsfix, mkntfs and the
+# others are not on PATH and are listed by dpkg-divert).
+- name: Filesystem | Install ntfs-3g (4.2)
+  ansible.builtin.apt:
+    name: "{{ tools_filesystem_ntfs3g_packages }}"
+    state: present
+
+- name: Filesystem | Create the folder for the diverted ntfs-3g tools (4.2)
+  ansible.builtin.file:
+    path: "{{ tools_filesystem_ntfs3g_divert_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Filesystem | List the current dpkg diversions (4.2)
+  ansible.builtin.command:
+    argv: [dpkg-divert, --list]
+  register: tools_filesystem_diversions
+  changed_when: false
+
+- name: Filesystem | Divert the write-capable ntfs-3g tools off PATH (4.2)
+  ansible.builtin.command:
+    argv:
+      - dpkg-divert
+      - --local
+      - --rename
+      - --divert
+      - "{{ tools_filesystem_ntfs3g_divert_dir }}/{{ item | basename }}"
+      - --add
+      - "{{ item }}"
+  loop: "{{ tools_filesystem_ntfs3g_write_tools }}"
+  when: ('diversion of ' ~ item ~ ' to ') not in tools_filesystem_diversions.stdout
+  changed_when: true

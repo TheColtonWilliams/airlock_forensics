@@ -1,0 +1,10 @@
+# tools_registry: one control per file. Each file names its test in its first comment.
+# Controls and tests are listed in docs/controls.md (section "Forensic tools").
+- name: Registry | RegRipper
+  ansible.builtin.import_tasks: regripper.yml
+
+- name: Registry | libregf tools
+  ansible.builtin.import_tasks: libregf.yml
+
+- name: Registry | hivex tools
+  ansible.builtin.import_tasks: hivex.yml

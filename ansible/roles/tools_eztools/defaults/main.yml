@@ -1,0 +1,45 @@
+# tools_eztools: Eric Zimmerman's tools on the .NET 9 runtime (task 4.4).
+# Image phase: the .NET 9 runtime from Microsoft's package repository, as four .deb files
+# pinned by SHA-256 (pins.yml dotnet_*_9_deb). Noble's Microsoft suite carries no .NET 9, so the
+# debs come from Microsoft's Ubuntu 22.04 suite; they depend only on libraries noble ships
+# (decision log 2026-11-15). No apt source is added to the image.
+# Provision phase (offline): each tool zip staged on ASSETS by the host fetcher is checked
+# against its pin and unpacked into /opt/eztools/<Tool>/, with a wrapper /usr/local/bin/<Tool>.
+# Controls and tests are listed in docs/controls.md (section "Forensic tools").
+
+# Microsoft (Release signing) key that signs the suite the debs' hashes were read from
+# (InRelease of packages.microsoft.com/ubuntu/22.04/prod, checked with gpgv on 2026-11-15).
+tools_eztools_ms_key_fingerprint: BC528686B50D79E339D3721CEB3E94ADBE1229CF
+
+# Install order matters only to dpkg; apt sorts it out from local files.
+tools_eztools_dotnet_pins:
+  - dotnet_host_9_deb
+  - dotnet_hostfxr_9_deb
+  - dotnet_runtime_deps_9_deb
+  - dotnet_runtime_9_deb
+tools_eztools_dotnet_major: "9"
+tools_eztools_dotnet_bin: /usr/bin/dotnet
+tools_eztools_deb_dir: /var/tmp/airlock-dotnet
+# unzip is what ansible.builtin.unarchive uses for .zip files.
+tools_eztools_packages:
+  - unzip
+
+tools_eztools_prefix: /opt/eztools
+tools_eztools_bin_dir: /usr/local/bin
+# Every tool the plan names (4.4), with its pins.yml entry (stage: assets).
+tools_eztools_tools:
+  - {name: MFTECmd, pin: eztools_mftecmd}
+  - {name: RBCmd, pin: eztools_rbcmd}
+  - {name: LECmd, pin: eztools_lecmd}
+  - {name: JLECmd, pin: eztools_jlecmd}
+  - {name: PECmd, pin: eztools_pecmd}
+  - {name: EvtxECmd, pin: eztools_evtxecmd}
+  - {name: AmcacheParser, pin: eztools_amcacheparser}
+  - {name: AppCompatCacheParser, pin: eztools_appcompatcacheparser}
+  - {name: RECmd, pin: eztools_recmd}
+  - {name: SBECmd, pin: eztools_sbecmd}
+  - {name: bstrings, pin: eztools_bstrings}
+
+# Which staged features to install at provisioning. forensic-provision may pass
+# airlock_profile_features; otherwise the role reads ASSETS/profile.json.
+tools_eztools_features: "{{ airlock_profile_features | default({}) }}"

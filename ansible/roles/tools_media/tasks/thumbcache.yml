@@ -1,0 +1,18 @@
+# Control 4.7: the Dissect thumbcache parser (dissect.thumbcache, part of the pinned Dissect
+# venv built by tools_dissect; noble has no python3-dissect.thumbcache) with its commands
+# thumbcache-extract and thumbcache-extract-indexed linked into /usr/local/bin.
+# Test: tests/goss/tools.yaml (media-thumbcache: dissect.thumbcache imports, thumbcache-extract
+# --help runs).
+- name: Thumbcache | Check dissect.thumbcache is in the Dissect venv (4.7)
+  ansible.builtin.command:
+    argv: ["{{ tools_media_thumbcache_venv }}/bin/python", -I, -c, "import dissect.thumbcache"]
+  changed_when: false
+
+- name: Thumbcache | Link the commands into /usr/local/bin (4.7)
+  ansible.builtin.file:
+    src: "{{ tools_media_thumbcache_venv }}/bin/{{ item }}"
+    dest: "/usr/local/bin/{{ item }}"
+    state: link
+    owner: root
+    group: root
+  loop: "{{ tools_media_thumbcache_commands }}"

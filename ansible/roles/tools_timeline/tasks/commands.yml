@@ -1,0 +1,11 @@
+# Control 4.5: log2timeline, psort, pinfo, psteal, and image_export on PATH as links into the
+# Plaso venv.
+# Test: tests/goss/tools.yaml (plaso-version: every link resolves and --version runs).
+- name: Plaso | Link the commands into /usr/local/bin (4.5)
+  ansible.builtin.file:
+    src: "{{ tools_timeline_venv }}/bin/{{ item }}"
+    dest: "/usr/local/bin/{{ item }}"
+    state: link
+    owner: root
+    group: root
+  loop: "{{ tools_timeline_commands }}"

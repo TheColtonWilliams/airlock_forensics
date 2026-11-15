@@ -1,0 +1,7 @@
+# tools_sift: one control per file. Each file names its test in its first comment.
+# Controls and tests are listed in docs/controls.md (section "Forensic tools").
+- name: SIFT | Cast from its pinned .deb
+  ansible.builtin.import_tasks: cast.yml
+
+- name: SIFT | Install SIFT with Cast (image build only)
+  ansible.builtin.import_tasks: sift_install.yml

@@ -1,0 +1,44 @@
+# tools_carve: carving tools (task 4.6). PhotoRec (testdisk), scalpel and foremost come from the
+# Ubuntu 24.04 archive. bulk_extractor is not in noble, so it is built from its pinned release
+# tarball during the image build. usncarve (USN records from unallocated space) comes from PyPI
+# in its own hash-pinned venv. Decision log 2026-11-15. Controls and tests: docs/controls.md.
+
+tools_carve_photorec_packages:
+  - testdisk
+
+tools_carve_header_packages:
+  - scalpel
+  - foremost
+
+# bulk_extractor 2.1.1 from source (pins.yml bulk_extractor_source).
+tools_carve_bulk_extractor_pin: bulk_extractor_source
+tools_carve_bulk_extractor_prefix: /opt/bulk_extractor
+tools_carve_bulk_extractor_build_dir: /var/tmp/airlock-bulk-extractor-build
+tools_carve_bulk_extractor_build_packages:
+  - build-essential
+  - flex
+  - pkg-config
+  - libewf-dev
+  - libexpat1-dev
+  - libssl-dev
+  - zlib1g-dev
+  - libncurses-dev
+  - libsqlite3-dev
+tools_carve_bulk_extractor_runtime_packages:
+  - libewf2
+  - libexpat1
+  - zlib1g
+  - libtinfo6
+  - libssl3t64
+
+# usncarve 1.2.2 in /opt/usncarve (pins.yml usncarve_pypi, files/requirements.txt).
+tools_carve_usncarve_pin: usncarve_pypi
+tools_carve_usncarve_venv: /opt/usncarve
+tools_carve_usncarve_pip:
+  - "{{ tools_carve_usncarve_venv }}/bin/pip"
+  - install
+  - --require-hashes
+  - --no-deps
+  - --no-cache-dir
+  - --disable-pip-version-check
+  - --no-input

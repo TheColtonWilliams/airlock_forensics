@@ -1,0 +1,37 @@
+# Control 6.5: Cast (the SIFT installer) from its pinned release .deb, checked by SHA-256.
+# Image phase only; the role runs only when install_sift is true.
+# Test: tests/goss/sift.yaml (cast --version shows the pin when SIFT is installed);
+# tests/unit/test_tools_sift.py (pin, optional role, order in site.yml).
+- name: Cast | Refuse an unpinned package (6.5)
+  ansible.builtin.assert:
+    that:
+      - pins[tools_sift_cast_pin].sha256 is not none
+      - pins[tools_sift_cast_pin].sha256 | length == 64
+    fail_msg: "pins.{{ tools_sift_cast_pin }}.sha256 is null. Pin it in ansible/group_vars/all/pins.yml."
+    quiet: true
+  when: airlock_phase == 'image'
+
+- name: Cast | Create the download folder (6.5)
+  ansible.builtin.file:
+    path: "{{ tools_sift_deb_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: airlock_phase == 'image'
+
+- name: Cast | Download the pinned package (6.5)
+  ansible.builtin.get_url:
+    url: "{{ pins[tools_sift_cast_pin].url }}"
+    dest: "{{ tools_sift_deb_dir }}/cast.deb"
+    checksum: "sha256:{{ pins[tools_sift_cast_pin].sha256 }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when: airlock_phase == 'image'
+
+- name: Cast | Install the package (6.5)
+  ansible.builtin.apt:
+    deb: "{{ tools_sift_deb_dir }}/cast.deb"
+    state: present
+  when: airlock_phase == 'image'

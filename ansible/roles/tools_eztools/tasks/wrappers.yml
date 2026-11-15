@@ -1,0 +1,57 @@
+# Control 4.4: one wrapper per EZ tool, /usr/local/bin/<Tool>, that runs
+# 'dotnet /opt/eztools/<Tool>/.../<Tool>.dll' on the .NET 9 runtime; /opt/eztools/INSTALLED
+# lists the tools that have one.
+# Test: tests/goss/tools.yaml (eztools-installed: every listed wrapper runs);
+# tests/unit/test_tools_eztools.py (wrapper template renders a working script).
+- name: EZ Tools | Find each tool's main assembly (4.4)
+  ansible.builtin.find:
+    paths: "{{ tools_eztools_prefix }}/{{ item.name }}"
+    patterns: "(?i)^{{ item.name }}\\.dll$"
+    use_regex: true
+    recurse: true
+    file_type: file
+  loop: "{{ tools_eztools_tools }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: tools_eztools_dlls
+  when: &tools_eztools_wrap_when
+    - airlock_phase == 'provision'
+    - tools_eztools_staged.eztools | default(false) | bool
+
+- name: EZ Tools | Check each zip held exactly one main assembly (4.4)
+  ansible.builtin.assert:
+    that:
+      - item.files | length == 1
+    fail_msg: >-
+      {{ item.item.name }}.dll was found {{ item.files | length }} times under
+      {{ tools_eztools_prefix }}/{{ item.item.name }}. The staged zip is not the expected .NET 9
+      build; restage it with fetch-assets.
+    quiet: true
+  loop: "{{ tools_eztools_dlls.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  when: *tools_eztools_wrap_when
+
+- name: EZ Tools | Write the wrapper commands (4.4)
+  ansible.builtin.template:
+    src: eztool-wrapper.sh.j2
+    dest: "{{ tools_eztools_bin_dir }}/{{ item.item.name }}"
+    owner: root
+    group: root
+    mode: "0755"
+  vars:
+    tools_eztools_tool: "{{ item.item }}"
+    tools_eztools_dll: "{{ item.files[0].path }}"
+  loop: "{{ tools_eztools_dlls.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  when: *tools_eztools_wrap_when
+
+- name: EZ Tools | List the installed tools (4.4)
+  ansible.builtin.copy:
+    dest: "{{ tools_eztools_prefix }}/INSTALLED"
+    content: "{{ tools_eztools_tools | map(attribute='name') | join('\n') }}\n"
+    owner: root
+    group: root
+    mode: "0644"
+  when: *tools_eztools_wrap_when

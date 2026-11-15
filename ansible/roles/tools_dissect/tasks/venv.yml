@@ -1,0 +1,64 @@
+# Control 4.3: Dissect in its own venv /opt/dissect, installed during the image build from PyPI
+# with every package pinned by version and SHA-256 (files/requirements.txt, pip
+# --require-hashes). Provisioning runs offline, so it only checks the venv is there.
+# Test: tests/goss/tools.yaml (dissect-version: the pinned version imports, target-query
+# --version runs); tests/unit/test_tools_pins.py (requirements fully hashed, pin agrees).
+- name: Dissect | Refuse an unpinned package (4.3)
+  ansible.builtin.assert:
+    that:
+      - pins[tools_dissect_pin].sha256 is not none
+      - pins[tools_dissect_pin].sha256 | length == 64
+    fail_msg: "pins.{{ tools_dissect_pin }}.sha256 is null. Pin it in ansible/group_vars/all/pins.yml."
+    quiet: true
+
+- name: Dissect | Install python3-venv (4.3)
+  ansible.builtin.apt:
+    name: python3-venv
+    state: present
+
+- name: Dissect | Create the venv (4.3)
+  ansible.builtin.command:
+    argv: [/usr/bin/python3, -m, venv, "{{ tools_dissect_venv }}"]
+    creates: "{{ tools_dissect_venv }}/bin/python"
+  register: tools_dissect_venv_created
+  when: airlock_phase == 'image'
+
+- name: Dissect | Copy the hash-pinned requirement files (4.3)
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ tools_dissect_venv }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: [build-requirements.txt, requirements.txt]
+  register: tools_dissect_reqs
+  when: airlock_phase == 'image'
+
+- name: Dissect | Install the build backend for the source-only packages (4.3)
+  ansible.builtin.command:
+    argv: "{{ tools_dissect_pip + ['-r', tools_dissect_venv ~ '/build-requirements.txt'] }}"
+  when:
+    - airlock_phase == 'image'
+    - tools_dissect_venv_created is changed or tools_dissect_reqs is changed
+  changed_when: true
+
+- name: Dissect | Install Dissect and its pinned dependencies (4.3)
+  ansible.builtin.command:
+    argv: "{{ tools_dissect_pip + ['--no-build-isolation', '-r', tools_dissect_venv ~ '/requirements.txt'] }}"
+  when:
+    - airlock_phase == 'image'
+    - tools_dissect_venv_created is changed or tools_dissect_reqs is changed
+  changed_when: true
+
+- name: Dissect | Check the pinned version is installed (4.3)
+  ansible.builtin.command:
+    argv:
+      - "{{ tools_dissect_venv }}/bin/python"
+      - -I
+      - -c
+      - >-
+        import importlib.metadata as m, sys; v = m.version('dissect');
+        sys.exit(0 if v == sys.argv[1] else 'dissect ' + v + ' is installed but ' + sys.argv[1]
+        + ' is pinned. Rebuild the image.')
+      - "{{ pins[tools_dissect_pin].version }}"
+  changed_when: false

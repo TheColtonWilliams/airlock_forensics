@@ -1,0 +1,7 @@
+# Control 4.1: imaging tools from the Ubuntu archive: ewfacquire/ewfverify/ewfexport (ewf-tools,
+# libewf2), dc3dd, ddrescue (gddrescue), affinfo/affcat (afflib-tools).
+# Test: tests/goss/tools.yaml (acquire-imaging: each binary present and its version flag runs).
+- name: Acquire | Install the imaging tools (4.1)
+  ansible.builtin.apt:
+    name: "{{ tools_acquire_imaging_packages }}"
+    state: present

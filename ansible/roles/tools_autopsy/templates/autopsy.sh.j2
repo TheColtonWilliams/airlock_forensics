@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Start Autopsy {{ pins[tools_autopsy_zip_pin].version }} on Java 17. Written by the tools_autopsy role (task 4.9).
+# Autopsy is optional. It reads evidence through The Sleuth Kit; attached disks stay under the
+# software read-only policy. While a case is open it runs a search server on this computer only.
+set -euo pipefail
+export JAVA_HOME={{ tools_autopsy_java_home | quote }}
+exec {{ (tools_autopsy_prefix ~ '/bin/autopsy') | quote }} --nosplash "$@"

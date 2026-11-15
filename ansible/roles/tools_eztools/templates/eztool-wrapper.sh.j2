@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# {{ tools_eztools_tool.name }} (Eric Zimmerman's tools) on the .NET {{ tools_eztools_dotnet_major }} runtime.
+# Written by the tools_eztools role (task 4.4) from ASSETS/files/{{ pins[tools_eztools_tool.pin].target }}
+# (sha256 {{ pins[tools_eztools_tool.pin].sha256 }}). Do not edit: provisioning rewrites it.
+set -euo pipefail
+export DOTNET_CLI_TELEMETRY_OPTOUT=1
+export DOTNET_NOLOGO=1
+export DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1
+exec {{ tools_eztools_dotnet_bin | quote }} {{ tools_eztools_dll | quote }} "$@"

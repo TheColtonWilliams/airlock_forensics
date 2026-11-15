@@ -1,0 +1,6 @@
+# Control 4.7: audio and video metadata: mediainfo, ffprobe and ffmpeg (Ubuntu archive).
+# Test: tests/goss/tools.yaml (media-av: mediainfo --Version, ffprobe -version, ffmpeg -version).
+- name: Media | Install mediainfo and ffmpeg (4.7)
+  ansible.builtin.apt:
+    name: "{{ tools_media_av_packages }}"
+    state: present

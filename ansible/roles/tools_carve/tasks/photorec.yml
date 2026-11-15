@@ -1,0 +1,7 @@
+# Control 4.6: PhotoRec and TestDisk (package testdisk) for file carving; forensic-analyze's
+# carve module runs PhotoRec on unallocated space only, in the parser sandbox.
+# Test: tests/goss/tools.yaml (carve-photorec: photorec /version runs).
+- name: Carve | Install PhotoRec (4.6)
+  ansible.builtin.apt:
+    name: "{{ tools_carve_photorec_packages }}"
+    state: present

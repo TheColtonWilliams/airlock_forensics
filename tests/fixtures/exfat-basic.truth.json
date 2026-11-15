@@ -1,0 +1,135 @@
+{
+  "built_by": "tests/fixtures/build-exfat-fixture.sh",
+  "deleted": [
+    {
+      "dir_entry": 653,
+      "path": "/DCIM/notes/deleted-large.txt",
+      "sha256": "8e3e25f1244a9295aa4e985ea690ca3a0d5e61dd68decec5ed652ccabbefd964",
+      "size": 100000
+    },
+    {
+      "dir_entry": 649,
+      "path": "/DCIM/notes/deleted-small.txt",
+      "sha256": "e88d7e47394c25004357fe83b7f35693836d0fa693232a610421d7528caefa70",
+      "size": 300
+    }
+  ],
+  "deleted_names": [
+    "=deleted-sum.txt",
+    "deleted-large.txt",
+    "deleted-small.txt"
+  ],
+  "files": [
+    {
+      "deleted": false,
+      "dir_entry": 398,
+      "hostile_name": true,
+      "kind": "file",
+      "mtime": "2026-03-03T12:02:00Z",
+      "name": "+cmd.txt",
+      "path": "/+cmd.txt",
+      "sha256": "cdeeb046335523f7f4d1608eab8fd49e7c98013e9aeefefa7d1a5db726f805b5",
+      "size": 30
+    },
+    {
+      "deleted": false,
+      "dir_entry": 394,
+      "hostile_name": true,
+      "kind": "file",
+      "mtime": "2026-03-03T12:00:00Z",
+      "name": "=HYPERLINK(1).txt",
+      "path": "/=HYPERLINK(1).txt",
+      "sha256": "65d6144f2c9a655a44e7ba1f6d3bf672a40c8b3157531db0c951d2a124767b95",
+      "size": 30
+    },
+    {
+      "deleted": true,
+      "dir_entry": 404,
+      "hostile_name": true,
+      "kind": "file",
+      "mtime": "2026-03-04T10:00:00Z",
+      "name": "=deleted-sum.txt",
+      "path": "/=deleted-sum.txt",
+      "sha256": "53eeb59711583f4f222c27eb3cb5aa9b6665c8440e2a902e9c073f373e1ed5ed",
+      "size": 30
+    },
+    {
+      "deleted": true,
+      "dir_entry": 653,
+      "hostile_name": false,
+      "kind": "file",
+      "mtime": "2026-03-04T09:00:00Z",
+      "name": "deleted-large.txt",
+      "path": "/DCIM/notes/deleted-large.txt",
+      "sha256": "8e3e25f1244a9295aa4e985ea690ca3a0d5e61dd68decec5ed652ccabbefd964",
+      "size": 100000
+    },
+    {
+      "deleted": true,
+      "dir_entry": 649,
+      "hostile_name": false,
+      "kind": "file",
+      "mtime": "2026-03-04T08:00:00Z",
+      "name": "deleted-small.txt",
+      "path": "/DCIM/notes/deleted-small.txt",
+      "sha256": "e88d7e47394c25004357fe83b7f35693836d0fa693232a610421d7528caefa70",
+      "size": 300
+    },
+    {
+      "deleted": false,
+      "dir_entry": 646,
+      "hostile_name": false,
+      "kind": "file",
+      "mtime": "2026-03-02T11:30:00Z",
+      "name": "log-2026.txt",
+      "path": "/DCIM/notes/log-2026.txt",
+      "sha256": "906a299ff7d8c2fa6a067d899c761c51748ea9e89084dbb6595b4defdd3b70af",
+      "size": 40000
+    },
+    {
+      "deleted": false,
+      "dir_entry": 643,
+      "hostile_name": false,
+      "kind": "file",
+      "mtime": "2026-03-01T10:00:00Z",
+      "name": "readme.txt",
+      "path": "/DCIM/notes/readme.txt",
+      "sha256": "9612218f1711e6235cd47ab19fda7d12b0198658d4cf682790bf4afb915a967a",
+      "size": 200
+    },
+    {
+      "deleted": false,
+      "dir_entry": 401,
+      "hostile_name": true,
+      "kind": "file",
+      "mtime": "2026-03-03T12:04:00Z",
+      "name": "photo‮gpj.exe",
+      "path": "/photo‮gpj.exe",
+      "sha256": "8340b65d7e481570628fdcca651f7fac4951c3ae05ee2aa04e4fcd80cdcb0385",
+      "size": 30
+    }
+  ],
+  "filesystem": "exfat",
+  "fixture": "exfat-basic",
+  "hostile_names": [
+    "+cmd.txt",
+    "=HYPERLINK(1).txt",
+    "=deleted-sum.txt",
+    "photo‮gpj.exe"
+  ],
+  "image": "exfat-basic.img",
+  "image_sha256": "33880e5af3a0f71f7a356b6494f76ac566eec9567cb21665e5a2ca15e40c5d51",
+  "live": [
+    "/+cmd.txt",
+    "/=HYPERLINK(1).txt",
+    "/DCIM/notes/log-2026.txt",
+    "/DCIM/notes/readme.txt",
+    "/photo‮gpj.exe"
+  ],
+  "notes": "Modified times were set through exfat-fuse (2-second resolution); other times are the build time. 'deleted' lists the plainly named deleted files; 'files' has every file.",
+  "partition_table": null,
+  "schema": 1,
+  "size_bytes": 8388608,
+  "volume_label": "AIRLOCKEXF",
+  "volume_serial": "0x1a2b3c4d"
+}

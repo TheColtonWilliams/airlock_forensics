@@ -1,0 +1,10 @@
+# tools_filesystem: one control per file. Each file names its test in its first comment.
+# Controls and tests are listed in docs/controls.md (section "Forensic tools").
+- name: Filesystem | The Sleuth Kit
+  ansible.builtin.import_tasks: sleuthkit.yml
+
+- name: Filesystem | libfsntfs tools and Python bindings
+  ansible.builtin.import_tasks: libfsntfs.yml
+
+- name: Filesystem | ntfs-3g information tools only
+  ansible.builtin.import_tasks: ntfs3g_info_only.yml
