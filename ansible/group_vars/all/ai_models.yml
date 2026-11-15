@@ -1,0 +1,33 @@
+# Model tiers (task 4B.4). Each model references a pins.yml key. Tier chosen at boot by ai-probe
+# from measured device-local memory, never from the GPU vendor.
+ai_tiers:
+  tier0:
+    min_vram_gib: 0
+    max_vram_gib: 4
+    cpu_ok: true
+    description: "Under 4 GB or CPU only"
+    models: []
+  tier1:
+    min_vram_gib: 4
+    max_vram_gib: 6
+    cpu_ok: false
+    description: "4 to 6 GB"
+    models: []
+  tier2:
+    min_vram_gib: 6
+    max_vram_gib: 10
+    cpu_ok: false
+    description: "6 to 10 GB"
+    models: []
+  tier3:
+    min_vram_gib: 10
+    max_vram_gib: 20
+    cpu_ok: false
+    description: "10 to 20 GB"
+    models: []
+  tier4:
+    min_vram_gib: 20
+    max_vram_gib: null
+    cpu_ok: false
+    description: "20 GB and over"
+    models: []

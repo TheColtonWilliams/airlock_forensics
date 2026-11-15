@@ -1,0 +1,59 @@
+# Staging profiles. scripts/gen-manifest.py resolves each to the pins it needs.
+# Feature meanings: docs/dev/contract.md section 6.
+profiles:
+  default:
+    description: "Recommended: AI tiers 0-2, hash sets and signatures, EZ Tools. NSRL stays off-drive."
+    features:
+      ai_tiers: [tier0, tier1, tier2]
+      classifiers: true
+      whisper: true
+      nsrl: false
+      clamav: true
+      yara: true
+      malwarebazaar: true
+      eztools: true
+      autopsy: false
+      sift: false
+      nvidia_proprietary: false
+  minimal:
+    description: "Smallest: EZ Tools, ClamAV, and YARA. No AI models, no NSRL."
+    features:
+      ai_tiers: []
+      classifiers: false
+      whisper: false
+      nsrl: false
+      clamav: true
+      yara: true
+      malwarebazaar: false
+      eztools: true
+      autopsy: false
+      sift: false
+      nvidia_proprietary: false
+  full:
+    description: "Everything: all AI tiers and NSRL on the drive. Needs a 128 GB or larger drive."
+    features:
+      ai_tiers: [tier0, tier1, tier2, tier3, tier4]
+      classifiers: true
+      whisper: true
+      nsrl: true
+      clamav: true
+      yara: true
+      malwarebazaar: true
+      eztools: true
+      autopsy: true
+      sift: false
+      nvidia_proprietary: false
+  ci:
+    description: "CI only: small test assets, no large models."
+    features:
+      ai_tiers: []
+      classifiers: false
+      whisper: false
+      nsrl: false
+      clamav: false
+      yara: true
+      malwarebazaar: false
+      eztools: false
+      autopsy: false
+      sift: false
+      nvidia_proprietary: false

@@ -1,0 +1,19 @@
+# build outputs
+/output/
+/cache/
+/build.log
+packer/output-*/
+packer_cache/
+*.qcow2
+/assets/*
+!/assets/.gitkeep
+# python
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.venv/
+# test scratch
+tests/fixtures/out/
+tests/**/tmp/
+validation/out/

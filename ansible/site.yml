@@ -1,0 +1,42 @@
+# AIRLOCK playbook. Runs inside the image: during the Packer build (airlock_phase=image)
+# and again offline on first boot by forensic-provision (airlock_phase=provision).
+# Hardening runs first and is re-applied as the last play so no tool role can undo it
+# (task 5.8; tests/unit/test_site_order.py asserts this order).
+- name: Base system and hardening
+  hosts: airlock
+  become: true
+  roles:
+    - role: base
+    - role: harden_storage
+    - role: harden_network
+    - role: harden_desktop
+    - role: harden_services
+
+- name: Forensic tool layers
+  hosts: airlock
+  become: true
+  roles:
+    - role: tools_acquire
+    - role: tools_filesystem
+    - role: tools_dissect
+    - role: tools_eztools
+    - role: tools_timeline
+    - role: tools_carve
+    - role: tools_media
+    - role: tools_registry
+    - role: tools_hashsets
+    - role: tools_ai
+    - role: tools_autopsy
+      when: install_autopsy | bool
+    - role: tools_sift
+      when: install_sift | bool
+    - role: session_tools
+
+- name: Re-apply hardening last
+  hosts: airlock
+  become: true
+  roles:
+    - role: harden_storage
+    - role: harden_network
+    - role: harden_desktop
+    - role: harden_services

@@ -1,0 +1,24 @@
+# Local hooks only: they call the same tools CI runs (scripts/lint.sh).
+repos:
+  - repo: local
+    hooks:
+      - id: shellcheck
+        name: shellcheck
+        entry: scripts/lint.sh shellcheck
+        language: system
+        pass_filenames: false
+      - id: yamllint
+        name: yamllint
+        entry: scripts/lint.sh yamllint
+        language: system
+        pass_filenames: false
+      - id: ansible-lint
+        name: ansible-lint
+        entry: scripts/lint.sh ansible-lint
+        language: system
+        pass_filenames: false
+      - id: ruff
+        name: ruff
+        entry: scripts/lint.sh ruff
+        language: system
+        pass_filenames: false

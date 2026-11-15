@@ -1,0 +1,29 @@
+[project]
+name = "airlock"
+version = "0.0.0"
+description = "AIRLOCK: Air-gapped, Isolated, Read-only, Locked-down, Offline Case Kit"
+requires-python = ">=3.12"
+license = { text = "Apache-2.0" }
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["ansible/roles/session_tools/files/pylib", "scripts", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "ANN", "PL", "RUF", "SIM"]
+ignore = [
+  "S603",    # subprocess without shell: argument lists are the rule here
+  "S607",    # partial executable path: tools are resolved on PATH by design
+  "PLR0913", # many arguments
+  "PLR2004", # magic values
+  "ANN401",  # Any
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "ANN", "PLR", "S108"]
+"validation/**" = ["S101"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests/unit"]
+pythonpath = ["ansible/roles/session_tools/files/pylib", "scripts"]

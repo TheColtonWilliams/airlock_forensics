@@ -1,0 +1,61 @@
+# Feature flags and tunables shared by every role. See docs/dev/contract.md.
+airlock_name: AIRLOCK
+airlock_version: "0.1.0-dev"
+
+# image: Packer build on the build host, network available, stage=image pins fetched.
+# provision: first boot on the analyst's PC, offline, stage=assets pins read from ASSETS.
+airlock_phase: image
+
+airlock_user: analyst
+airlock_parse_user: airlock-parse
+
+airlock_opt_dir: /opt/airlock
+airlock_pylib_dir: /opt/airlock/lib/python
+airlock_repo_dir: /opt/airlock/repo
+airlock_etc_dir: /etc/airlock
+airlock_state_dir: /var/lib/airlock
+airlock_session_dir: /var/log/forensic-session
+airlock_assets_mount: /srv/airlock/assets
+airlock_output_mount: /srv/airlock/output
+airlock_assets_files: "{{ airlock_assets_mount }}/files"
+
+# Drive layout (docs/dev/contract.md section 3). Labels are fixed; sizes are the default profile.
+airlock_root_label: AIRLOCK_ROOT
+airlock_assets_label: ASSETS
+airlock_output_label: OUTPUT
+esp_size_mib: 512
+assets_partition_gib: 20
+output_partition_gib: 8
+root_image_gib: 14
+
+# Ubuntu
+ubuntu_release: noble
+desktop_package: ubuntu-desktop-minimal
+# Dated snapshot for apt during the build (task 6.1). Format: YYYYMMDDTHHMMSSZ.
+apt_snapshot: "20261101T000000Z"
+use_apt_snapshot: true
+
+# Optional layers (off by default).
+install_autopsy: false
+install_sift: false
+
+# Decision 2.6.3 (owner, 2026-11-15): tiers 0-2 ship by default, NSRL lives off-drive.
+ai_tiers_on_image: [tier0, tier1, tier2]
+nsrl_on_image: false
+
+# Decision 5.4: snapd is removed (remove | hold).
+snapd_policy: remove
+
+# Session start warns when the image is older than this (task 4F.6).
+image_max_age_days: 90
+
+# Kernel command line hardening (tasks 3.3, 3.4, 3A.1).
+airlock_kernel_cmdline:
+  - noresume
+  - systemd.gpt_auto=0
+  - rd.systemd.gpt_auto=0
+  - rd.lvm=0
+  - rd.md=0
+  - rd.dm=0
+  - rd.luks=0
+  - nodmraid

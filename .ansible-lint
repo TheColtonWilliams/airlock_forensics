@@ -1,0 +1,12 @@
+profile: production
+exclude_paths:
+  - .github/
+  - tests/
+  - packer/
+  - validation/
+  - docs/
+  - profiles/
+mock_roles: []
+skip_list: []
+warn_list:
+  - experimental

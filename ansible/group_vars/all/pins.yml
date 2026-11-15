@@ -1,0 +1,14 @@
+# Every file downloaded at build or staging time. Format: docs/dev/contract.md section 5.
+# sha256: null means "not yet pinned": fetchers and roles refuse it (scripts/check-pins.py lists them).
+pins:
+  ubuntu_server_iso:
+    url: https://releases.ubuntu.com/24.04/ubuntu-24.04.5-live-server-amd64.iso
+    version: "24.04.5"
+    sha256: "97f3d7ffb032c3eb3b23d2c8be9cc76e60c2c1f2c0146ba5ba9fe01cafae0fd8"
+    size: null
+    stage: build
+    target: null
+    profiles: [build]
+    verify: sha256
+    license: "Ubuntu archive (mixed free licences, redistributable)"
+    notes: "Checksum from https://releases.ubuntu.com/24.04/SHA256SUMS fetched 2026-11-15."
