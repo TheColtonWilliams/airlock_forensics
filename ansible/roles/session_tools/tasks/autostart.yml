@@ -1,0 +1,18 @@
+# Task 4.10: at login a terminal opens running forensic-session-start, so every boot starts
+# a new session log with the authority, clock, and write-blocker questions.
+# Test: tests/goss/session_tools.yaml (autostart file); tests/functional/test_session_role.sh.
+- name: Make the analyst autostart folder (4.10)
+  ansible.builtin.file:
+    path: "{{ session_tools_analyst_home }}/.config/autostart"
+    state: directory
+    owner: "{{ airlock_user }}"
+    group: "{{ airlock_user }}"
+    mode: "0755"
+
+- name: Start forensic-session-start at login (4.10)
+  ansible.builtin.copy:
+    src: desktop/airlock-session-start.desktop
+    dest: "{{ session_tools_analyst_home }}/.config/autostart/airlock-session-start.desktop"
+    owner: "{{ airlock_user }}"
+    group: "{{ airlock_user }}"
+    mode: "0644"

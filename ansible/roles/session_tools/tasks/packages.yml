@@ -1,0 +1,9 @@
+# Task 4.10: the Ubuntu packages the session helpers call (hwclock, rfkill, whiptail, ip,
+# sfdisk, ntfs-3g, gnome-terminal). Ubuntu archive only; already present when provisioning
+# runs offline, so nothing is downloaded then.
+# Test: tests/goss/session_tools.yaml (package checks).
+- name: Install the packages the session helpers call (4.10)
+  ansible.builtin.apt:
+    name: "{{ session_tools_packages }}"
+    state: present
+  when: session_tools_install_packages | bool

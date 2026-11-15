@@ -1,0 +1,202 @@
+"""evidence-unlock-output: make one named drive writable for case output (task 4.10).
+
+AIRLOCK's software read-only policy sets every attached drive read-only. This command clears
+the flag on one whole drive and its partitions so it can hold case output. It refuses the
+AIRLOCK drive itself, refuses partitions, and refuses unless the operator types the drive's
+name back (or passes ``--confirm NAME``). ``--yes`` never skips that confirmation.
+
+It writes a marker in ``/run/airlock/rw-allow/`` so a later udev event does not lock the drive
+again (``airlock-setro`` reads it), then runs ``blockdev --setrw`` and logs model, serial, and
+size. Surviving risk 1: the log records the change; it does not prevent a mistake. ``--lock``
+undoes it: the marker goes and ``blockdev --setro`` runs again.
+"""
+
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+from typing import Any
+
+from airlock_common import devices, jsonio, proc, timeutil, ui
+from airlock_session.common import (
+    CommandError,
+    human_size,
+    log,
+    open_session_log,
+    readonly_flag,
+    require_root,
+    run_dir,
+    run_main,
+)
+
+TOOL = "evidence-unlock-output"
+
+WARNING = (
+    "WARNING: this makes {path} ({desc}) WRITABLE.\n"
+    "Anything on this PC can then change it. Use this only for a drive that will hold case "
+    "output, never for an evidence drive.\n"
+    "The change is recorded in the session log. The log records it; it does not prevent "
+    "mistakes. Unplugging the drive, or evidence-unlock-output --lock {path}, makes it "
+    "read-only again."
+)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog=TOOL,
+        description="Make one named drive writable for case output, and log it.",
+    )
+    p.add_argument("device", help="the whole drive, for example /dev/sdb (not a partition)")
+    p.add_argument(
+        "--confirm",
+        metavar="NAME",
+        help="the drive's name typed back (sdb or /dev/sdb); needed when not asked on screen",
+    )
+    p.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        help="do not ask; still needs --confirm NAME",
+    )
+    p.add_argument(
+        "--lock",
+        action="store_true",
+        help="undo: make the drive read-only again and remove the unlock marker",
+    )
+    return p
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    return run_main(TOOL, lambda: run(args))
+
+
+def resolve_disk(arg: str) -> tuple[devices.BlockDevice, list[devices.BlockDevice]]:
+    """The lsblk entry for a whole drive named by path or kernel name, and the full tree."""
+    path = Path(arg)
+    candidates = {arg, path.name}
+    if path.exists():
+        real = path.resolve()
+        candidates |= {str(real), real.name}
+    tree = devices.lsblk()
+    for top in tree:
+        for d in top.walk():
+            if d.path in candidates or d.name in candidates:
+                if d is not top:
+                    raise CommandError(
+                        f"{arg} is a partition. Name the whole drive instead, "
+                        f"for example /dev/{top.name}."
+                    )
+                if top.type not in {"disk", "loop"}:
+                    raise CommandError(f"{arg} is a {top.type} device, not a drive.")
+                return top, tree
+    raise CommandError(f"there is no drive called {arg}. List the drives with lsblk.")
+
+
+def describe(dev: devices.BlockDevice) -> str:
+    parts = [dev.model or "unknown model"]
+    if dev.serial:
+        parts.append(f"serial {dev.serial}")
+    parts.append(human_size(dev.size))
+    return ", ".join(parts)
+
+
+def _names_match(answer: str, dev: devices.BlockDevice) -> bool:
+    a = answer.strip()
+    return bool(a) and a in {dev.name, dev.path}
+
+
+def _blockdev(flag: str, dev_path: str) -> None:
+    proc.run(["blockdev", flag, dev_path], timeout=30)
+
+
+def run(args: argparse.Namespace) -> int:
+    require_root(TOOL)
+    open_session_log(TOOL)
+    disk, tree = resolve_disk(args.device)
+    boot = devices.boot_disk(tree)
+    if boot is not None and boot.name == disk.name:
+        log(TOOL, "unlock_refused", device=disk.path, reason="boot_disk")
+        raise CommandError(
+            f"{disk.path} is the AIRLOCK drive itself. Its OUTPUT partition is already writable; "
+            "nothing to do."
+        )
+    record: dict[str, Any] = {
+        "device": disk.path,
+        "name": disk.name,
+        "model": disk.model,
+        "serial": disk.serial,
+        "size_bytes": disk.size,
+        "transport": disk.tran,
+        "partitions": [c.path for c in disk.walk() if c is not disk],
+    }
+    if args.lock:
+        return _lock(disk, record)
+
+    print(WARNING.format(path=disk.path, desc=describe(disk)))
+    print()
+    if args.confirm is not None:
+        answer, via = args.confirm, "flag"
+    elif ui.interactive() and not args.yes:
+        answer = ui.ask_text(
+            "Unlock an output drive",
+            f"Type {disk.name} to make {disk.path} writable:",
+            flag="--confirm",
+        )
+        via = "prompt"
+    else:
+        log(TOOL, "unlock_refused", reason="no_confirmation", **record)
+        raise CommandError(
+            f"not unlocked: no confirmation. Pass --confirm {disk.name} to make {disk.path} "
+            "writable."
+        )
+    if not _names_match(answer, disk):
+        log(TOOL, "unlock_refused", reason="confirmation_mismatch", typed=answer, **record)
+        raise CommandError(
+            f"not unlocked: you typed {answer!r}, not {disk.name}. Nothing was changed."
+        )
+
+    marker_dir = run_dir() / "rw-allow"
+    marker_dir.mkdir(parents=True, exist_ok=True)
+    jsonio.dump_json(marker_dir / disk.name, {"ts": timeutil.iso(), "tool": TOOL, **record})
+    members = disk.walk()
+    for d in members:
+        _blockdev("--setrw", d.path)
+    still_ro = [d.path for d in members if readonly_flag(d.name)]
+    if still_ro:
+        log(TOOL, "unlock_failed", still_readonly=still_ro, **record)
+        raise CommandError(
+            f"blockdev --setrw ran but {', '.join(still_ro)} is still read-only. Unplug the "
+            "drive, plug it in again, and rerun; or use a different drive for output."
+        )
+    log(
+        TOOL,
+        "output_unlocked",
+        confirmed_via=via,
+        marker=str(marker_dir / disk.name),
+        note="Logging is not enforcement (surviving risk 1).",
+        **record,
+    )
+    print(f"{disk.path} is now writable. This is in the session log.")
+    print("To make it read-only again: evidence-unlock-output --lock " + disk.path)
+    return 0
+
+
+def _lock(disk: devices.BlockDevice, record: dict[str, Any]) -> int:
+    (run_dir() / "rw-allow" / disk.name).unlink(missing_ok=True)
+    members = disk.walk()
+    for d in members:
+        _blockdev("--setro", d.path)
+    still_rw = [d.path for d in members if readonly_flag(d.name) is False]
+    if still_rw:
+        log(TOOL, "lock_failed", still_writable=still_rw, **record)
+        raise CommandError(
+            f"blockdev --setro ran but {', '.join(still_rw)} is still writable. Unplug the drive."
+        )
+    log(TOOL, "output_locked", **record)
+    print(f"{disk.path} is read-only again.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

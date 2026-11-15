@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=AIRLOCK guided analysis
+Comment=Examine a drive or image with forensic-analyze, read-only
+Exec=gnome-terminal --wait -- bash -c "sudo /usr/local/bin/forensic-analyze; read -r -p 'Press Enter to close this window. ' _"
+Icon=utilities-terminal
+Terminal=false
+Categories=System;

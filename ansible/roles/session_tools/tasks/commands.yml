@@ -1,0 +1,12 @@
+# Task 4.10: every file in files/bin (forensic-session-start, evidence-unlock-output,
+# evidence-mount, evidence-hash, evidence-triage, and the commands other packages drop there)
+# installed to /usr/local/bin, root-owned, mode 0755. No network toggle is shipped.
+# Test: tests/goss/session_tools.yaml (commands); tests/functional/test_session_role.sh.
+- name: Install the AIRLOCK commands (4.10)
+  ansible.builtin.copy:
+    src: "{{ role_path }}/files/bin/"
+    remote_src: true
+    dest: "{{ session_tools_bin_dir }}/"
+    owner: root
+    group: root
+    mode: "0755"

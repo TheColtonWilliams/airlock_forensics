@@ -1,0 +1,12 @@
+# Contract section 2: config files other packages drop in files/etc (for example
+# screen-thresholds.json) installed to /etc/airlock, read-only for everyone but root.
+# Test: tests/functional/test_session_role.sh; tests/goss/session_tools.yaml.
+- name: Install the AIRLOCK config files (4.10)
+  ansible.builtin.copy:
+    src: "{{ role_path }}/files/etc/"
+    remote_src: true
+    dest: "{{ airlock_etc_dir }}/"
+    owner: root
+    group: root
+    mode: "0644"
+    directory_mode: "0755"

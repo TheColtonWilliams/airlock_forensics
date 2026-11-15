@@ -1,0 +1,13 @@
+# Task 4.10: the on-image Python packages (files/pylib) at /opt/airlock/lib/python,
+# byte-compiled when they change. Standard library only.
+# Test: tests/goss/session_tools.yaml (import check); tests/functional/test_session_role.sh.
+- name: Install the AIRLOCK Python packages (4.10)
+  ansible.builtin.copy:
+    src: "{{ role_path }}/files/pylib/"
+    remote_src: true
+    dest: "{{ session_tools_lib_dir }}/python/"
+    owner: root
+    group: root
+    mode: "0644"
+    directory_mode: "0755"
+  notify: Session tools | Compile Python packages

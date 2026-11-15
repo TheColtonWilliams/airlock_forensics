@@ -1,0 +1,10 @@
+# Task 4.11: airlock-log.sh, sourced by bash helpers (airlock-setro) to append JSON lines to
+# the session log through the Python logger.
+# Test: tests/functional/test_udev_ro.sh (logs through it); tests/goss/session_tools.yaml.
+- name: Install the session log library (4.11)
+  ansible.builtin.copy:
+    src: lib/airlock-log.sh
+    dest: "{{ session_tools_lib_dir }}/airlock-log.sh"
+    owner: root
+    group: root
+    mode: "0644"

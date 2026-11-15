@@ -1,0 +1,10 @@
+#!/usr/bin/python3
+"""evidence-mount: read-only mount of an image file (airlock_session.mount, docs/commands.md)."""
+
+import os
+import sys
+
+sys.path.insert(0, os.environ.get("AIRLOCK_PYLIB", "/opt/airlock/lib/python"))
+from airlock_session.mount import main
+
+raise SystemExit(main())

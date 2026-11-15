@@ -1,0 +1,10 @@
+#!/usr/bin/python3
+"""evidence-hash: hash a drive or image read-only (airlock_session.hashcmd, docs/commands.md)."""
+
+import os
+import sys
+
+sys.path.insert(0, os.environ.get("AIRLOCK_PYLIB", "/opt/airlock/lib/python"))
+from airlock_session.hashcmd import main
+
+raise SystemExit(main())

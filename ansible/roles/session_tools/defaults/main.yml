@@ -1,0 +1,47 @@
+# session_tools role defaults. Shared paths (airlock_opt_dir, airlock_etc_dir, ...) come from
+# ansible/group_vars/all/main.yml. tests/functional/test_session_role.sh points every path
+# below at a temporary folder and runs the role twice to prove it is idempotent.
+
+# Where files/bin/* is installed (docs/dev/contract.md section 8a).
+session_tools_bin_dir: /usr/local/bin
+# /opt/airlock/lib: holds python/ (the packages) and airlock-log.sh.
+session_tools_lib_dir: "{{ airlock_opt_dir }}/lib"
+session_tools_applications_dir: /usr/share/applications
+session_tools_analyst_home: "/home/{{ airlock_user }}"
+
+# Session logs: root writes them (helpers run with sudo); the analyst reads them through
+# the adm group. setgid keeps new log files in that group.
+session_tools_log_owner: root
+session_tools_log_group: adm
+session_tools_log_mode: "2750"
+
+# Tests switch these off (no users, no apt, no repo copy outside the temporary folder).
+session_tools_manage_users: true
+session_tools_install_packages: true
+session_tools_copy_repo: true
+session_tools_include_provision_unit: true
+# The checkout the playbook runs from. The repo copy is skipped when it already is
+# airlock_repo_dir (packer/scripts/run-ansible.sh installs it there and runs from it).
+session_tools_repo_src: "{{ playbook_dir }}/.."
+
+# Ubuntu packages the helpers call: hwclock (util-linux-extra), rfkill, whiptail dialogs,
+# ip, sfdisk (fdisk, read-only partition listing for evidence-mount), ntfs-3g (read-only NTFS
+# mounts), and the terminal the login launcher opens.
+session_tools_packages:
+  - util-linux-extra
+  - rfkill
+  - whiptail
+  - iproute2
+  - fdisk
+  - ntfs-3g
+  - gnome-terminal
+
+# /etc/airlock/airlock.conf.json, read by airlock_session.common.load_config.
+session_tools_mount_base: /mnt/airlock
+session_tools_config:
+  schema: 1
+  image_max_age_days: "{{ image_max_age_days | int }}"
+  nsrl_path: "{{ airlock_output_mount }}/nsrl"
+  output_dir: "{{ airlock_output_mount }}"
+  cases_dir: "{{ airlock_output_mount }}/cases"
+  mount_base: "{{ session_tools_mount_base }}"

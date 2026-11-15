@@ -1,0 +1,20 @@
+# Task 3A.9 support: the airlock-parse system user that parsers run as (no login shell, no
+# home folder, no password). forensic_analyze.sandbox drops to it.
+# Test: tests/goss/session_tools.yaml (user airlock-parse).
+- name: Create the airlock-parse group (3A.9)
+  ansible.builtin.group:
+    name: "{{ airlock_parse_user }}"
+    system: true
+  when: session_tools_manage_users | bool
+
+- name: Create the airlock-parse parser user (3A.9)
+  ansible.builtin.user:
+    name: "{{ airlock_parse_user }}"
+    comment: AIRLOCK parser sandbox
+    system: true
+    shell: /usr/sbin/nologin
+    home: /nonexistent
+    create_home: false
+    password: "!"
+    group: "{{ airlock_parse_user }}"  # the base role created this group for OUTPUT access
+  when: session_tools_manage_users | bool

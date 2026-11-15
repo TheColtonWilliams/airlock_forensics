@@ -1,0 +1,28 @@
+# Tasks 4.10, 4.11: the folders every helper uses. /etc/airlock is readable by all;
+# /var/lib/airlock holds state (root only, analyst reads nothing there); the session log
+# folder is written by root (helpers run with sudo) and readable by the analyst through adm.
+# Test: tests/goss/session_tools.yaml (folder modes); tests/functional/test_session_role.sh.
+- name: Make the AIRLOCK folders (4.10)
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: "{{ item.group | default('root') }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ airlock_opt_dir }}", mode: "0755" }
+    - { path: "{{ session_tools_lib_dir }}", mode: "0755" }
+    - { path: "{{ session_tools_lib_dir }}/python", mode: "0755" }
+    - { path: "{{ airlock_etc_dir }}", mode: "0755" }
+    - { path: "{{ airlock_state_dir }}", mode: "0750" }
+    - { path: "{{ session_tools_mount_base }}", mode: "0755" }
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: Make the session log folder (4.11)
+  ansible.builtin.file:
+    path: "{{ airlock_session_dir }}"
+    state: directory
+    owner: "{{ session_tools_log_owner }}"
+    group: "{{ session_tools_log_group }}"
+    mode: "{{ session_tools_log_mode }}"

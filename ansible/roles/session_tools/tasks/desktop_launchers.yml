@@ -1,0 +1,13 @@
+# Task 4.10: menu entries that open a terminal running forensic-session-start or
+# forensic-analyze with sudo (the analyst has passwordless sudo).
+# Test: tests/unit/test_session_role.py (desktop-file-validate); tests/goss/session_tools.yaml.
+- name: Install the desktop menu entries (4.10)
+  ansible.builtin.copy:
+    src: "desktop/{{ item }}"
+    dest: "{{ session_tools_applications_dir }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - airlock-session-start.desktop
+    - airlock-forensic-analyze.desktop

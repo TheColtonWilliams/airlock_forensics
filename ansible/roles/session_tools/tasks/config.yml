@@ -1,0 +1,11 @@
+# Tasks 4F.6, 4.10: /etc/airlock/airlock.conf.json with the image age limit (default 90 days),
+# the NSRL path, and the output and mount folders. Sorted keys.
+# Test: tests/functional/test_session_role.sh (content); tests/unit/test_session_helpers.py
+# (load_config); tests/goss/session_tools.yaml.
+- name: Write airlock.conf.json (4F.6)
+  ansible.builtin.copy:
+    content: "{{ session_tools_config | to_nice_json(sort_keys=true) }}\n"
+    dest: "{{ airlock_etc_dir }}/airlock.conf.json"
+    owner: root
+    group: root
+    mode: "0644"

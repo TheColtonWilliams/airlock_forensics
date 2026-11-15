@@ -1,0 +1,10 @@
+#!/usr/bin/python3
+"""evidence-triage: first look at a drive or image (airlock_session.triage, docs/commands.md)."""
+
+import os
+import sys
+
+sys.path.insert(0, os.environ.get("AIRLOCK_PYLIB", "/opt/airlock/lib/python"))
+from airlock_session.triage import main
+
+raise SystemExit(main())

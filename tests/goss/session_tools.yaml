@@ -1,0 +1,146 @@
+# session_tools role checks (tasks 4.10, 4.11, 4.15, 4F.6, 3A.3, 3A.9, 2B.14). Run inside the
+# booted image by tests/run-qemu-tests.sh (goss validate, guest network off). Each check names
+# the task it proves.
+
+file:
+  # 4.10: the session helpers are installed, root-owned, executable.
+  /usr/local/bin/forensic-session-start:
+    exists: true
+    filetype: file
+    owner: root
+    mode: "0755"
+  /usr/local/bin/evidence-unlock-output:
+    exists: true
+    filetype: file
+    owner: root
+    mode: "0755"
+  /usr/local/bin/evidence-mount:
+    exists: true
+    filetype: file
+    owner: root
+    mode: "0755"
+  /usr/local/bin/evidence-hash:
+    exists: true
+    filetype: file
+    owner: root
+    mode: "0755"
+  /usr/local/bin/evidence-triage:
+    exists: true
+    filetype: file
+    owner: root
+    mode: "0755"
+  # 4.10: the Python packages and the bash log library.
+  /opt/airlock/lib/python/airlock_session/start.py:
+    exists: true
+    owner: root
+    mode: "0644"
+  /opt/airlock/lib/python/airlock_common/sessionlog.py:
+    exists: true
+    owner: root
+  /opt/airlock/lib/airlock-log.sh:
+    exists: true
+    owner: root
+    mode: "0644"
+  # 4.10, 4.11: config, state, and session log folders.
+  /etc/airlock:
+    exists: true
+    filetype: directory
+    owner: root
+    mode: "0755"
+  /var/lib/airlock:
+    exists: true
+    filetype: directory
+    owner: root
+    mode: "0750"
+  /var/log/forensic-session:
+    exists: true
+    filetype: directory
+    owner: root
+    group: adm
+    mode: "2750"
+  # 4F.6: the image age limit (and output paths) the helpers read.
+  /etc/airlock/airlock.conf.json:
+    exists: true
+    owner: root
+    mode: "0644"
+    contents:
+      - '/"image_max_age_days": 90/'
+      - '/"mount_base": "\/mnt\/airlock"/'
+  # 2B.5 support: the playbook copy that offline provisioning runs.
+  /opt/airlock/repo/ansible/site.yml:
+    exists: true
+  /opt/airlock/repo/tests/goss/session_tools.yaml:
+    exists: true
+  # 4.10: launchers, and a terminal running forensic-session-start at login.
+  /usr/share/applications/airlock-session-start.desktop:
+    exists: true
+    mode: "0644"
+  /usr/share/applications/airlock-forensic-analyze.desktop:
+    exists: true
+    mode: "0644"
+  /home/analyst/.config/autostart/airlock-session-start.desktop:
+    exists: true
+    owner: analyst
+    contents:
+      - "/sudo \\/usr\\/local\\/bin\\/forensic-session-start --pause-at-end/"
+
+user:
+  # 3A.9: parsers run as this user: system account, no login shell, no home folder.
+  airlock-parse:
+    exists: true
+    home: /nonexistent
+    shell: /usr/sbin/nologin
+
+package:
+  # 4.15: hwclock lives in util-linux-extra on Ubuntu 24.04.
+  util-linux-extra:
+    installed: true
+  rfkill:
+    installed: true
+  whiptail:
+    installed: true
+  # 3A.3: sfdisk lists partitions read-only; ntfs-3g mounts NTFS read-only.
+  fdisk:
+    installed: true
+  ntfs-3g:
+    installed: true
+
+command:
+  # 4.10: every helper starts and shows its help.
+  session-helpers-help:
+    exec: >-
+      sh -c 'for c in forensic-session-start evidence-unlock-output evidence-mount
+      evidence-hash evidence-triage; do "$c" --help >/dev/null || exit 1; done'
+    exit-status: 0
+  # 4.10, 4C.1, 4B, 4E: every installed command (all of files/bin) starts and shows its help.
+  all-commands-help:
+    exec: >-
+      sh -c 'for c in ai-probe evidence-describe evidence-hash evidence-mount evidence-report
+      evidence-screen evidence-triage evidence-triage-hash evidence-unlock-output
+      forensic-analyze forensic-escalate forensic-import forensic-provision
+      forensic-session-start; do test -x "/usr/local/bin/$c" && "$c" --help >/dev/null
+      || exit 1; done'
+    exit-status: 0
+  # 4F.5: the report cites known limitations from the on-drive repo copy.
+  known-limitations-on-drive:
+    exec: test -s /opt/airlock/repo/docs/known-limitations.md
+    exit-status: 0
+  # 4.10: no network toggle exists on the image.
+  no-network-toggle:
+    exec: >-
+      sh -c 'ls /usr/local/bin /usr/local/sbin | grep -Ei "net(work)?[-_]?(on|up|enable)"'
+    exit-status: 1
+  # 4.10: the parser user cannot log in and has no home folder on disk.
+  airlock-parse-no-home:
+    exec: "test ! -e /home/airlock-parse"
+    exit-status: 0
+  # 4.11: evidence-hash appends to the session log (a small file in /etc is hashed).
+  evidence-hash-logs:
+    exec: >-
+      sh -c 'evidence-hash --json /etc/airlock/airlock.conf.json >/dev/null &&
+      tail -n 1 /var/log/forensic-session/current.log | grep -q "\"event\":\"evidence_hash\""'
+    exit-status: 0
+  # 3A.3: evidence-mount refuses a block device (drives are never mounted).
+  evidence-mount-refuses-devices:
+    exec: "sh -c 'evidence-mount \"$(findmnt -no SOURCE /)\"; test $? -eq 1'"
+    exit-status: 0

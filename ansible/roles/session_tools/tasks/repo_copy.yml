@@ -1,0 +1,21 @@
+# Task 2B.5 support: provisioning re-runs this playbook offline from /opt/airlock/repo, so the
+# image carries ansible/ (roles, group_vars with pins and profiles) and tests/goss. docs/ goes
+# too: evidence-report cites docs/known-limitations.md by path and SHA-256. Skipped when
+# the playbook already runs from that copy (the Packer build installs it there first).
+# Test: tests/functional/test_session_role.sh; tests/goss/session_tools.yaml (repo copy).
+- name: Copy the playbook and goss files for offline provisioning (2B.5)
+  ansible.builtin.copy:
+    src: "{{ session_tools_repo_src }}/{{ item }}/"
+    dest: "{{ airlock_repo_dir }}/{{ item }}/"
+    remote_src: true
+    owner: root
+    group: root
+    mode: u=rwX,go=rX
+    directory_mode: "0755"
+  loop:
+    - ansible
+    - tests/goss
+    - docs
+  when:
+    - session_tools_copy_repo | bool
+    - (session_tools_repo_src | realpath) != (airlock_repo_dir | realpath)

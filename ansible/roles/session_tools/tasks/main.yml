@@ -1,0 +1,44 @@
+# session_tools: the on-image commands and their support files, one concern per file.
+# Each file names its test in its first comment. Commands are listed in docs/commands.md.
+# The playbook always runs with a local connection (inside the Packer VM, or on the drive when
+# provisioning), so folders are copied from role_path with remote_src in one module call each.
+- name: Packages | Tools the helpers call
+  ansible.builtin.import_tasks: packages.yml
+
+- name: Parser user | airlock-parse system user
+  ansible.builtin.import_tasks: parse_user.yml
+
+- name: Folders | Config, state, and session log folders
+  ansible.builtin.import_tasks: folders.yml
+
+- name: Commands | files/bin installed to /usr/local/bin
+  ansible.builtin.import_tasks: commands.yml
+
+- name: Python | files/pylib installed and compiled
+  ansible.builtin.import_tasks: pylib.yml
+
+- name: Log library | airlock-log.sh for bash helpers
+  ansible.builtin.import_tasks: log_lib.yml
+
+- name: Config files | files/etc installed to /etc/airlock
+  ansible.builtin.import_tasks: etc_files.yml
+
+- name: Config | airlock.conf.json
+  ansible.builtin.import_tasks: config.yml
+
+- name: Repo copy | Playbook and goss files for offline provisioning
+  ansible.builtin.import_tasks: repo_copy.yml
+
+- name: Launchers | Desktop menu entries
+  ansible.builtin.import_tasks: desktop_launchers.yml
+
+- name: Launchers | Session start at login
+  ansible.builtin.import_tasks: autostart.yml
+
+# provision_unit.yml belongs to the assets package (forensic-provision first-boot unit). It is
+# included only when present so this role works before that file exists.
+- name: Provisioning | First-boot provisioning unit
+  ansible.builtin.include_tasks: provision_unit.yml
+  when:
+    - session_tools_include_provision_unit | bool
+    - (role_path ~ '/tasks/provision_unit.yml') is file

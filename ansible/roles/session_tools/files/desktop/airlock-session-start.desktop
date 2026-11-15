@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=AIRLOCK session start
+Comment=Start a new session log: authority, clock check, write blocker, and the state of this PC
+Exec=gnome-terminal --wait -- sudo /usr/local/bin/forensic-session-start --pause-at-end
+Icon=utilities-terminal
+Terminal=false
+Categories=System;
+X-GNOME-Autostart-enabled=true

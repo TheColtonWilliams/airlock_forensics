@@ -1,0 +1,4 @@
+- name: Session tools | Compile Python packages
+  ansible.builtin.command:
+    argv: [python3, -m, compileall, -q, "{{ session_tools_lib_dir }}/python"]
+  changed_when: true
