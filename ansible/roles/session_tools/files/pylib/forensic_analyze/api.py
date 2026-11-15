@@ -66,6 +66,7 @@ class ModuleContext:
     run_id: str
     module: str
     target: Target
+    run_dir: Path
     workdir: Path
     options: Mapping[str, Any]
     emit: Callable[[dict[str, Any]], None]

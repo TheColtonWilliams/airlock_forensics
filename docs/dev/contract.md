@@ -212,6 +212,70 @@ runner merges the parts in module `order`, assigns `finding_id` `F-000001`
 onwards, and writes `findings.jsonl`. A `<run>/modules/<name>/.done` marker
 makes a module skip on resume.
 
+## 8a. Cross-package interfaces (fixed; implement exactly these names)
+
+* **Command wrappers** (`files/bin/<cmd>` written in Python):
+  ```python
+  #!/usr/bin/python3
+  import os, sys
+  sys.path.insert(0, os.environ.get("AIRLOCK_PYLIB", "/opt/airlock/lib/python"))
+  from forensic_analyze.cli import main
+  raise SystemExit(main())
+  ```
+  Bash commands source `${AIRLOCK_PYLIB%/python}/airlock-log.sh` the same way
+  (default `/opt/airlock/lib/airlock-log.sh`). Tests set `AIRLOCK_PYLIB` to the repo's `pylib`.
+* **Installation**: the `session_tools` role copies *everything* in `files/bin/` to
+  `/usr/local/bin/` (mode 0755) and `files/pylib/` to `/opt/airlock/lib/python/`.
+  Other packages only drop files there; they do not edit the role.
+* **Devices**: `airlock_common.devices` (`lsblk()`, `boot_disk()`,
+  `attached_disks()`, `is_readonly()`; `AIRLOCK_LSBLK_JSON` fixture override).
+* **Assets** (`airlock_common/assets.py`, owned by the assets package):
+  `load_manifest() -> dict` (baked, or a newer signed one from ASSETS),
+  `verify_signature(manifest_path, sig_path, pubkey_path) -> bool`,
+  `verify_staged(*, deep: bool = True) -> AssetReport` where `AssetReport` has
+  `ok: bool`, `checked: list[str]`, `problems: list[tuple[str, str]]` (asset id,
+  reason), `disabled_features: list[str]`, and `to_dict()`.
+  `asset_path(asset_id) -> Path | None` returns the verified on-ASSETS path of a staged file.
+* **Findings** (`forensic_analyze/findings.py`, owned by the findings package):
+  `FindingsWriter(part_path, *, run_id, evidence_id, evidence_sha256, module)` with
+  `.emit(row: dict) -> None` (validates with `validate_row`, raises `SchemaError`),
+  `.count`, `.close()`; `validate_row(row) -> list[str]` (error strings);
+  `merge_parts(run_dir, module_order) -> Path` (writes `findings.jsonl`, assigns
+  `finding_id` F-000001.. in module order, returns its path; byte-deterministic).
+  Schema file: `forensic_analyze/schema.json` (JSON Schema draft 2020-12 subset, checked by
+  the stdlib validator in `findings.py`).
+* **Exports**: `export_sqlite.build(run_dir) -> Path` (`case.sqlite`, table
+  `findings` with one column per schema field, views `v_timeline`, `v_deleted`,
+  `v_recycle_bin`, `v_media`, `v_hash_hits`, `v_flags`, `v_disagreements`);
+  `export_csv.build(run_dir) -> Path`; `export_bodyfile.build(run_dir) -> Path`.
+* **Module registry** (`forensic_analyze/modules/__init__.py`, owned by the core package):
+  `all_modules() -> list[Module]` imports every `modules/*.py` that defines `MODULE`,
+  sorted by `order`. Module names and orders: `inventory` 10, `recycle_bin` 20,
+  `deletion_history` 30, `users` 40, `malware` 50, `images` 60, `video` 70,
+  `audio` 80, `documents` 90, `timeline` 100, `carve` 110.
+* **Presets** (`forensic_analyze/presets.py`): `quick` = inventory, recycle_bin,
+  deletion_history, malware; `standard` = quick + users, images, video, audio,
+  documents, timeline; `full` = standard + carve; `custom` = a checklist.
+* **NTFS extraction helpers** (`forensic_analyze/extract.py`, owned by the NTFS
+  modules package): `extract_system_file(ctx, volume, name) -> Path` for `$MFT`,
+  `$UsnJrnl:$J`, `$LogFile`, `$Secure:$SDS` (cached under `<run>/extract/v<index>/`);
+  `export_file(ctx, volume, inode, dest_dir) -> Path` (icat, read-only).
+* **Inventory index**: the `inventory` module writes
+  `<run>/modules/inventory/files.jsonl`, one sorted line per file:
+  `{"volume_index", "inode", "path", "size_bytes", "allocated", "deleted",
+  "mtime", "atime", "ctime", "crtime"}`. Media, malware, and users modules read
+  it through `forensic_analyze.inventory_index.iter_files(run_dir, *, extensions=None)`.
+* **AI helpers** (`pylib/airlock_ai/`, owned by the AI package): `probe.choose_tier()`,
+  `screen.screen_paths(paths, out_csv, thresholds) -> list[ScreenResult]`,
+  `describe.describe_paths(paths, out_csv, tier) -> list[DescribeResult]`. The
+  CLI commands `ai-probe`, `evidence-screen`, `evidence-describe` wrap them.
+* **Hash triage** (`pylib/airlock_hashsets/`, owned by the hash-set package):
+  `triage.triage_paths(paths, out_csv) -> list[TriageResult]`, wrapped by
+  `evidence-triage-hash`.
+* **Report** (`pylib/evidence_report/`, owned by the report package):
+  `render.build(run_dir, *, use_model: bool) -> tuple[Path, Path]` (html, md),
+  wrapped by `evidence-report RUN_DIR`.
+
 ## 9. Run folder (on OUTPUT or the chosen output drive)
 
 ```
