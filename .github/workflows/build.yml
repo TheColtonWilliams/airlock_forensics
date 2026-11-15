@@ -1,0 +1,314 @@
+# Build the base image and test it in QEMU (tasks 5.7, 1.11, 2A.8, 2B.8, 2B.16).
+#   build            scripts/build.sh, then tests/run-qemu-tests.sh (UEFI, UEFI + Secure Boot,
+#                    BIOS) on the raw image; uploads the compressed image as an artifact
+#   make-usb-loop    2A.8: ./make-usb.sh --yes --profile ci with a loop device as the drive
+#   provision        2B.8 (virtual NIC attached) and 2B.16 (no NIC): stage the ci profile onto
+#                    a copy of the image with scripts/fetch-assets.sh through a loop device,
+#                    boot it so forensic-provision runs offline, check its result, then run the
+#                    full test suite on the provisioned drive
+#
+# KVM: GitHub's Linux runners expose /dev/kvm on most machine types; the job opens it to the
+# runner user. Without it the jobs fall back to QEMU emulation (TCG) with the longest timeout
+# GitHub allows. If an emulated build does not finish in 60 minutes, use a self-hosted runner
+# with KVM: set the repository variable AIRLOCK_BUILD_RUNS_ON to its labels as JSON, for
+# example ["self-hosted","linux","x64","kvm"] (plan Part 3, objection 3; risk 5).
+# Actions are pinned to commit SHAs (the tag is in the comment), resolved 2026-11-15.
+name: build
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    # Monthly rebuild of the base image (task 2B.19): 03:17 UTC on the 1st.
+    - cron: "17 3 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  RESULTS: ${{ github.workspace }}/ci-results
+
+jobs:
+  build:
+    name: build and boot-test the image (5.7)
+    runs-on: ${{ fromJSON(vars.AIRLOCK_BUILD_RUNS_ON || '"ubuntu-24.04"') }}
+    timeout-minutes: 360
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      accel: ${{ steps.kvm.outputs.accel }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Free disk space (hosted runners)
+        if: runner.environment == 'github-hosted'
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+      - name: Check /dev/kvm
+        id: kvm
+        run: |
+          if [[ -e /dev/kvm ]]; then
+            echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |
+              sudo tee /etc/udev/rules.d/99-airlock-ci-kvm.rules >/dev/null
+            sudo udevadm control --reload-rules
+            sudo udevadm trigger --name-match=kvm
+          fi
+          if [[ -r /dev/kvm && -w /dev/kvm ]]; then
+            echo "accel=kvm" >>"$GITHUB_OUTPUT"
+            echo "ACCEL=kvm" >>"$GITHUB_ENV"
+            echo "KVM is available."
+          else
+            echo "accel=tcg" >>"$GITHUB_OUTPUT"
+            echo "ACCEL=tcg" >>"$GITHUB_ENV"
+            echo "::warning::No usable /dev/kvm: emulating with TCG. This takes hours; set AIRLOCK_BUILD_RUNS_ON to a self-hosted KVM runner if it times out."
+          fi
+      - name: Read the image version
+        id: version
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq python3-yaml
+          version="$(python3 -c 'import yaml; print(yaml.safe_load(open("ansible/group_vars/all/main.yml"))["airlock_version"])')"
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+          echo "OUT=$PWD/output/airlock-$version" >>"$GITHUB_ENV"
+          echo "VERSION=$version" >>"$GITHUB_ENV"
+      - name: Install build prerequisites (pinned Packer, QEMU plugin and goss)
+        run: sudo scripts/prereqs.sh --install --yes --for build
+      - name: scripts/build.sh
+        timeout-minutes: ${{ env.ACCEL == 'kvm' && 150 || 300 }}
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" cache 2>/dev/null || true
+          scripts/build.sh --accel "$ACCEL" --output "$OUT"
+      - name: tests/run-qemu-tests.sh (UEFI, UEFI + Secure Boot, BIOS)
+        timeout-minutes: ${{ env.ACCEL == 'kvm' && 120 || 300 }}
+        run: |
+          goss_bin="$(scripts/prereqs.sh --goss-path)"
+          sudo tests/run-qemu-tests.sh --image "$OUT/airlock-$VERSION.raw" \
+            --firmware uefi,uefi-sb,bios --require-sig-disk --accel "$ACCEL" \
+            --goss "$goss_bin" --results "$RESULTS/image"
+      - name: Upload the image
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: airlock-image
+          path: |
+            ${{ env.OUT }}/airlock-${{ env.VERSION }}.raw.zst
+            ${{ env.OUT }}/SHA256SUMS
+            ${{ env.OUT }}/serial.log
+          compression-level: 0
+          retention-days: 7
+          if-no-files-found: error
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: qemu-results-image
+          path: ${{ env.RESULTS }}
+          retention-days: 14
+          if-no-files-found: ignore
+
+  make-usb-loop:
+    name: make-usb.sh --yes --profile ci on a loop device (2A.8)
+    needs: build
+    runs-on: ${{ fromJSON(vars.AIRLOCK_BUILD_RUNS_ON || '"ubuntu-24.04"') }}
+    timeout-minutes: 300
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+      ACCEL: ${{ needs.build.outputs.accel }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Open /dev/kvm to the runner
+        if: env.ACCEL == 'kvm'
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |
+            sudo tee /etc/udev/rules.d/99-airlock-ci-kvm.rules >/dev/null
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Install prerequisites
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq python3-yaml exfatprogs exfat-fuse gdisk
+          sudo scripts/prereqs.sh --install --yes --for all
+      - name: Download the image into the output folder make-usb.sh reuses
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: airlock-image
+          path: output/airlock-${{ needs.build.outputs.version }}
+      - name: Unpack and check the image
+        run: |
+          cd "output/airlock-$VERSION"
+          zstd -d --sparse -f "airlock-$VERSION.raw.zst" -o "airlock-$VERSION.raw"
+          sha256sum -c SHA256SUMS
+      - name: Make a 64 GB loop device that reports as a removable USB drive
+        run: |
+          truncate -s 64G "$RUNNER_TEMP/usb.img"
+          loop="$(sudo losetup -f --show "$RUNNER_TEMP/usb.img")"
+          echo "LOOP=$loop" >>"$GITHUB_ENV"
+          echo "LOOP_NAME=$(basename "$loop")" >>"$GITHUB_ENV"
+          # flash.sh only accepts a removable USB disk. This wrapper makes lsblk report the loop
+          # device that way (test only); every other device is reported as it is.
+          mkdir -p "$RUNNER_TEMP/wrap"
+          cat >"$RUNNER_TEMP/wrap/lsblk" <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          if [[ " $* " == *" -d "* ]]; then
+            /usr/bin/lsblk "$@" | python3 -c '
+          import json, os, sys
+          d = json.load(sys.stdin)
+          for n in d.get("blockdevices") or []:
+              if n.get("name") == os.environ["LOOP_NAME"]:
+                  n.update(rm=True, tran="usb", serial="CILOOP1", model="CI Loop Drive")
+          json.dump(d, sys.stdout)'
+          else
+            exec /usr/bin/lsblk "$@"
+          fi
+          EOF
+          chmod 0755 "$RUNNER_TEMP/wrap/lsblk"
+      - name: ./make-usb.sh --yes --profile ci --target LOOP
+        timeout-minutes: 280
+        run: |
+          sudo env "PATH=$RUNNER_TEMP/wrap:$PATH" AIRLOCK_FLASH_TEST=1 "LOOP_NAME=$LOOP_NAME" \
+            ./make-usb.sh --yes --profile ci --target "$LOOP" --confirm "$LOOP_NAME" \
+            --no-abuse-key --accel "$ACCEL" --output "$PWD/output/airlock-$VERSION" \
+            --log "$RUNNER_TEMP/build.log"
+      - name: Detach the loop device
+        if: always()
+        run: |
+          if [[ -n "${LOOP:-}" ]]; then
+            for m in $(lsblk -rn -o MOUNTPOINT "$LOOP" 2>/dev/null); do sudo umount "$m" || true; done
+            sudo losetup -d "$LOOP" || true
+          fi
+      - name: Upload the make-usb log
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: make-usb-log
+          path: ${{ runner.temp }}/build.log
+          retention-days: 14
+          if-no-files-found: ignore
+
+  provision:
+    name: ${{ matrix.task }} offline provisioning, ${{ matrix.label }}
+    needs: build
+    runs-on: ${{ fromJSON(vars.AIRLOCK_BUILD_RUNS_ON || '"ubuntu-24.04"') }}
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - task: "2B.8"
+            label: virtual NIC attached
+            nic: "1"
+          - task: "2B.16"
+            label: no NIC
+            nic: "0"
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+      ACCEL: ${{ needs.build.outputs.accel }}
+      NIC: ${{ matrix.nic }}
+      TASK: ${{ matrix.task }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Open /dev/kvm to the runner
+        if: env.ACCEL == 'kvm'
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |
+            sudo tee /etc/udev/rules.d/99-airlock-ci-kvm.rules >/dev/null
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Install prerequisites
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq python3-yaml exfatprogs exfat-fuse gdisk
+          sudo scripts/prereqs.sh --install --yes --for build
+      - name: Download the image
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: airlock-image
+          path: ${{ runner.temp }}/image
+      - name: Unpack a working copy of the drive
+        run: |
+          cd "$RUNNER_TEMP/image"
+          sha256sum -c --ignore-missing SHA256SUMS
+          zstd -d --sparse -f "airlock-$VERSION.raw.zst" -o "$RUNNER_TEMP/drive.raw"
+          echo "DRIVE=$RUNNER_TEMP/drive.raw" >>"$GITHUB_ENV"
+      - name: Stage the ci profile onto ASSETS with scripts/fetch-assets.sh (loop device)
+        run: |
+          python3 scripts/gen-manifest.py --out assets/manifest.json
+          loop="$(sudo losetup -P -f --show "$DRIVE")"
+          trap 'sudo losetup -d "$loop" || true' EXIT
+          sudo partx -u "$loop" || true
+          sudo scripts/fetch-assets.sh --yes --profile ci --manifest assets/manifest.json \
+            --target-volume "${loop}p3" --cache "$RUNNER_TEMP/assets-cache"
+      - name: Boot the drive until forensic-provision has finished (offline)
+        timeout-minutes: ${{ env.ACCEL == 'kvm' && 90 || 240 }}
+        run: |
+          set -euo pipefail
+          # shellcheck source=/dev/null
+          . tests/vm/lib/qemu.sh
+          work="$RUNNER_TEMP/provision"
+          mkdir -p "$work" "$RESULTS"
+          qemu-img create -q -f qcow2 -F raw -b "$DRIVE" "$work/overlay.qcow2"
+          cp "$(airlock_ovmf_vars_template uefi)" "$work/vars.fd"
+          # The Q_* variables are read by airlock_qemu_argv (tests/vm/lib/qemu.sh).
+          # shellcheck disable=SC2034
+          {
+            Q_FIRMWARE=uefi Q_ACCEL="$ACCEL" Q_OVERLAY="$work/overlay.qcow2" Q_VARS="$work/vars.fd"
+            Q_BOOT_BUS=virtio Q_MEMORY=4096 Q_CPUS=2 Q_QGA_SOCKET="$work/qga.sock" Q_NIC="$NIC"
+            Q_DISKS=()
+          }
+          found=0
+          # shellcheck disable=SC2034
+          for boot in 1 2 3; do
+            Q_SERIAL_LOG="$RESULTS/provision-serial-$boot.log"
+            airlock_qemu_argv
+            # -no-reboot is in the argv: the reboot at the end of provisioning stops QEMU.
+            sudo timeout 3h "${QEMU_ARGV[@]}" || echo "boot $boot: QEMU exited with $?"
+            sudo qemu-img commit -q "$work/overlay.qcow2"
+            loop="$(sudo losetup -P -r -f --show "$DRIVE")"
+            sudo mkdir -p /mnt/airlock-root
+            sudo mount -o ro,noload "${loop}p5" /mnt/airlock-root
+            if sudo test -f /mnt/airlock-root/var/lib/airlock/provision-manifest.json; then
+              sudo cp /mnt/airlock-root/var/lib/airlock/provision-manifest.json "$RESULTS/"
+              found=1
+            fi
+            sudo umount /mnt/airlock-root
+            sudo losetup -d "$loop"
+            ((found)) && break
+          done
+          if ((!found)); then
+            echo "$TASK: forensic-provision wrote no provision-manifest.json after 3 boots. See provision-serial-*.log." >&2
+            exit 1
+          fi
+          sudo chown "$(id -u)" "$RESULTS/provision-manifest.json"
+          status="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["status"])' "$RESULTS/provision-manifest.json")"
+          if [[ "$status" != "ok" ]]; then
+            echo "$TASK: provisioning finished with status '$status', not ok. See provision-manifest.json." >&2
+            exit 1
+          fi
+          echo "$TASK: provisioning finished offline with status ok."
+      - name: Full test suite on the provisioned drive
+        timeout-minutes: ${{ env.ACCEL == 'kvm' && 120 || 300 }}
+        run: |
+          goss_bin="$(scripts/prereqs.sh --goss-path)"
+          nic_flag=()
+          [[ "$NIC" == "1" ]] && nic_flag=(--nic)
+          sudo tests/run-qemu-tests.sh --image "$DRIVE" "${nic_flag[@]}" --firmware uefi,bios \
+            --require-sig-disk --accel "$ACCEL" --goss "$goss_bin" --results "$RESULTS/suite"
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: provision-results-${{ matrix.task }}
+          path: ${{ env.RESULTS }}
+          retention-days: 14
+          if-no-files-found: ignore

@@ -1,0 +1,56 @@
+# Request a forensic tool on the image (task 0.9).
+name: Tool request
+description: Ask for a forensic tool to be added to the image or to the staged assets.
+title: "tool: "
+labels: [tool]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Tools follow the plan's principle: command line first, one maintained Linux-native tool per
+        artifact class, pinned by version and SHA-256, and a licence that allows how it is shipped.
+  - type: input
+    id: name
+    attributes:
+      label: Tool name and project page
+    validations:
+      required: true
+  - type: textarea
+    id: need
+    attributes:
+      label: Which artifact class does it cover, and why is the current tool set not enough?
+    validations:
+      required: true
+  - type: input
+    id: licence
+    attributes:
+      label: Licence
+      description: SPDX identifier if you know it (for example MIT, GPL-2.0-or-later, Apache-2.0).
+    validations:
+      required: true
+  - type: dropdown
+    id: source
+    attributes:
+      label: Where does it come from?
+      options:
+        - Ubuntu 24.04 archive package
+        - PyPI (pinned wheel)
+        - Release download (pinned by SHA-256)
+        - Built from source in CI
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: test
+    attributes:
+      label: How can CI prove it works?
+      description: For example, a known result on a script-built fixture in tests/fixtures/ (no real evidence).
+  - type: checkboxes
+    id: rules
+    attributes:
+      label: Hard rules
+      options:
+        - label: It runs with no network access and does not phone home or update itself.
+          required: true
+        - label: It works without a particular hardware vendor or model.
+          required: true

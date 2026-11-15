@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# live-build chroot hook (task 7.2): runs inside the live system's chroot while live/build.sh
+# builds the ISO. Applies the same Ansible playbook as the installed image (ansible/site.yml),
+# with airlock_target=live so the roles skip what only fits an installed drive (partition
+# layout, boot loader install, first-boot growth). Hardening is re-applied last by site.yml
+# itself, exactly as on the installed image.
+# The repo copy and the variables file are put in the chroot by live/build.sh through
+# config/includes.chroot. Test: tests/unit/test_repo_meta.py (config stage only).
+set -euo pipefail
+
+repo_dir="/opt/airlock/repo"
+vars_file="/opt/airlock/live-build-vars.json"
+
+die() {
+  printf 'airlock-live-hook: %s\n' "$*" >&2
+  exit 1
+}
+
+[[ -f "$repo_dir/ansible/site.yml" ]] || die "no $repo_dir/ansible/site.yml in the chroot. Rerun live/build.sh."
+[[ -f "$vars_file" ]] || die "no $vars_file in the chroot. Rerun live/build.sh."
+command -v ansible-playbook >/dev/null 2>&1 || die "ansible-playbook is not installed in the chroot (package list airlock.list.chroot)."
+
+export DEBIAN_FRONTEND=noninteractive
+export ANSIBLE_CONFIG="$repo_dir/ansible/ansible.cfg"
+export ANSIBLE_FORCE_COLOR=0
+export PYTHONUNBUFFERED=1
+cd -- "$repo_dir/ansible"
+ansible-playbook -c local -i inventory.ini site.yml -e "@$vars_file" ||
+  die "ansible-playbook failed in the live chroot. The first failed task is named above."
+rm -f -- "$vars_file"
+printf 'airlock-live-hook: site.yml applied (airlock_target=live)\n'

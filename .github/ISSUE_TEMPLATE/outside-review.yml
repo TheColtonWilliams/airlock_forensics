@@ -1,0 +1,64 @@
+# Outside review finding (task 7.4): a practitioner tried to break the read-only guarantees.
+name: Outside review finding
+description: For outside reviewers. Report a way to defeat the software read-only policy, the air gap, or the evidence handling.
+title: "review: "
+labels: [outside-review]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reviewing AIRLOCK. The brief: try to make an AIRLOCK drive write to an
+        attached disk, reach a network, run code from evidence, or report something the evidence
+        does not support. Use scratch drives and synthetic data only.
+
+        If your finding is exploitable by someone other than the operator (for example, hostile
+        evidence that gets code execution), report it privately through the Security tab instead,
+        and file this issue only with "reported privately" in the summary.
+  - type: input
+    id: reviewer
+    attributes:
+      label: Reviewer (name or handle, as you want to be credited)
+  - type: input
+    id: release
+    attributes:
+      label: AIRLOCK release or commit tested
+    validations:
+      required: true
+  - type: dropdown
+    id: guarantee
+    attributes:
+      label: Which guarantee did you test?
+      options:
+        - Software read-only policy (attached disks stay unwritten)
+        - No auto-mount, no auto-processing of files
+        - Air gap (no network, radios off)
+        - Parser sandbox (no network, one writable folder)
+        - Write tracer (counts writes to the target)
+        - Signed manifest and staged assets
+        - Report and AI labelling
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: method
+    attributes:
+      label: What you did
+      description: Steps, commands, and the hardware setup (capacities and interfaces, not brands).
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Result
+      description: Did the guarantee hold? Before and after hashes of the scratch drive, tracer counts, logs.
+    validations:
+      required: true
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Your view of the impact
+      options:
+        - The guarantee failed silently
+        - The guarantee failed and AIRLOCK logged or warned
+        - The guarantee held; documentation is unclear or wrong
+        - The guarantee held; suggestion only

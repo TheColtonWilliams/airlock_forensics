@@ -1,0 +1,83 @@
+# Windows checks for the PowerShell fetcher (task 4G.2).
+#   psscriptanalyzer  every .ps1 in the repository, warnings and errors fail the job
+#   fetch-assets      tests/windows/Test-FetchAssets.ps1: makes a VHDX with an exFAT (and NTFS)
+#                     volume labelled ASSETS, serves a tiny test manifest over HTTPS on
+#                     loopback, runs scripts/fetch-assets.ps1 under Windows PowerShell 5.1 and
+#                     PowerShell 7, and checks the staged files, hashes and profile.json
+# Actions are pinned to commit SHAs (the tag is in the comment), resolved 2026-11-15.
+name: windows
+
+on:
+  # No path filter: branch protection can require these checks on every pull request.
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # PowerShell Gallery version of the analyser: 1.25.0 is the newest release tag on its GitHub
+  # repository (2026-03-20); the Gallery itself could not be reached to confirm it (verify).
+  PSSA_VERSION: "1.25.0"
+
+jobs:
+  psscriptanalyzer:
+    name: PSScriptAnalyzer
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          Install-Module -Name PSScriptAnalyzer -RequiredVersion $env:PSSA_VERSION -Scope CurrentUser -Force
+      - name: Invoke-ScriptAnalyzer
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $files = @(git ls-files '*.ps1' '*.psm1')
+          $found = @()
+          foreach ($f in $files) {
+              $found += @(Invoke-ScriptAnalyzer -Path $f -Severity Warning, Error)
+          }
+          if ($found.Count -gt 0) {
+              $found | Format-Table -AutoSize ScriptName, Line, RuleName, Message | Out-String -Width 200 | Write-Output
+              throw "PSScriptAnalyzer found $($found.Count) problem(s) in $($files.Count) file(s). Fix them and push again."
+          }
+          Write-Output "PSScriptAnalyzer: $($files.Count) file(s) clean."
+
+  fetch-assets:
+    name: fetch-assets.ps1 on ${{ matrix.engine }}, ${{ matrix.fs }} VHDX
+    runs-on: windows-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [powershell, pwsh]
+        fs: [exFAT]
+        include:
+          - engine: powershell
+            fs: NTFS
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: tests/windows/Test-FetchAssets.ps1
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File tests/windows/Test-FetchAssets.ps1 -Engine ${{ matrix.engine }} `
+            -FileSystem ${{ matrix.fs }} -Python python
+          if ($LASTEXITCODE -ne 0) { throw "Test-FetchAssets.ps1 failed (exit $LASTEXITCODE)." }

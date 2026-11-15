@@ -1,0 +1,125 @@
+# Lint and host-side tests on every pull request and every push to main (tasks 5.6, 4G.1).
+#   lint        scripts/lint.sh (shellcheck, yamllint, ansible-lint, ruff, packer fmt and
+#               validate, PowerShell parse check, check-pins) plus actionlint on these workflows
+#   unit        tests/run-unit.sh (pytest, no root, no VM)
+#   functional  tests/run-functional.sh as root (loop devices, FUSE); tests that need a VM or
+#               a missing tool exit 77 and are listed as skipped
+# PSScriptAnalyzer runs in windows.yml, on Windows. Image build and boot tests: build.yml.
+# Actions are pinned to commit SHAs (the tag is in the comment), resolved 2026-11-15.
+name: lint
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lint-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Host-side Python tools, pinned. Same versions the repository was written against.
+  PY_TOOLS: >-
+    ansible-core==2.22.0 ansible-lint==26.11.0 yamllint==1.38.0 ruff==0.16.9
+    pytest==9.2.0 PyYAML==6.0.3
+
+jobs:
+  lint:
+    name: lint (scripts/lint.sh)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Install linters
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq shellcheck
+          read -ra tools <<<"$PY_TOOLS"
+          python -m pip install --disable-pip-version-check "${tools[@]}"
+      - name: Fetch the pinned Packer (pins.yml, SHA-256 checked)
+        run: |
+          scripts/build.sh --prepare-tools
+          packer_bin="$(find "$PWD/cache" -type f -name packer -perm -u+x | head -n1)"
+          if [[ -z "$packer_bin" ]]; then
+            echo "lint: scripts/build.sh --prepare-tools left no packer binary in cache/." >&2
+            exit 1
+          fi
+          dirname "$packer_bin" >>"$GITHUB_PATH"
+      - name: Fetch the pinned actionlint (pins.yml, SHA-256 checked)
+        run: |
+          python - actionlint_linux_amd64 "$RUNNER_TEMP/actionlint.tar.gz" <<'PY'
+          import hashlib, sys, urllib.request, yaml
+          pin, dest = sys.argv[1:3]
+          entry = yaml.safe_load(open("ansible/group_vars/all/pins.yml", encoding="utf-8"))["pins"][pin]
+          if not entry.get("sha256"):
+              sys.exit(f"{pin} is not pinned yet (sha256 null). Fill it in pins.yml first.")
+          digest = hashlib.sha256()
+          with urllib.request.urlopen(entry["url"], timeout=300) as resp, open(dest, "wb") as out:
+              while chunk := resp.read(1 << 20):
+                  digest.update(chunk)
+                  out.write(chunk)
+          if digest.hexdigest() != entry["sha256"]:
+              sys.exit(f"{pin}: SHA-256 {digest.hexdigest()} does not match pins.yml. Do not use it.")
+          PY
+          mkdir -p "$RUNNER_TEMP/bin"
+          tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP/bin" actionlint
+          echo "$RUNNER_TEMP/bin" >>"$GITHUB_PATH"
+      - name: scripts/lint.sh
+        run: scripts/lint.sh all
+      - name: actionlint
+        run: actionlint -color .github/workflows/*.yml
+
+  unit:
+    name: unit tests (pytest)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Install test tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq openssl jq zstd sleuthkit
+          read -ra tools <<<"$PY_TOOLS"
+          python -m pip install --disable-pip-version-check "${tools[@]}"
+      - name: tests/run-unit.sh
+        run: tests/run-unit.sh -ra
+
+  functional:
+    name: functional tests (root, loop devices)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install test tools (Ubuntu archive)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            python3-yaml python3-pytest jq openssl zstd faketime bubblewrap \
+            sleuthkit ntfs-3g exfatprogs exfat-fuse gdisk dosfstools e2fsprogs mtools \
+            qemu-utils qemu-system-x86 ovmf testdisk cloud-guest-utils \
+            grub-pc-bin grub-efi-amd64-bin grub-efi-amd64-signed shim-signed \
+            libimage-exiftool-perl ffmpeg clamav ansible-core
+      - name: Install Dissect (pinned by SHA-256, task 4.3 requirements)
+        run: |
+          sudo python3 -m venv /opt/dissect
+          sudo /opt/dissect/bin/pip install --disable-pip-version-check --require-hashes --no-deps \
+            -r ansible/roles/tools_dissect/files/requirements.txt
+          echo /opt/dissect/bin >>"$GITHUB_PATH"
+      - name: tests/run-functional.sh
+        run: sudo --preserve-env=PATH env "PATH=$PATH" tests/run-functional.sh

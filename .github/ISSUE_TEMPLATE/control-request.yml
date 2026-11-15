@@ -1,0 +1,56 @@
+# Request a new hardening control or a change to one (task 0.9).
+# A control counts only with one Ansible task, one test, and one doc line (CONTRIBUTING.md).
+name: Control request
+description: Propose a new lockdown control, or a change to an existing one.
+title: "control: "
+labels: [control]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A control is one Ansible task file, one automated test that fails without it, and one line in
+        docs/controls.md. Help us write all three.
+  - type: textarea
+    id: risk
+    attributes:
+      label: What could go wrong without it?
+      description: The behaviour of the drive today that could alter evidence, leak data, or reach a network.
+    validations:
+      required: true
+  - type: textarea
+    id: mechanism
+    attributes:
+      label: Proposed mechanism
+      description: How to enforce it (unit to mask, file to write, kernel parameter, udev rule, ...).
+    validations:
+      required: true
+  - type: textarea
+    id: test
+    attributes:
+      label: How to test it
+      description: |
+        A goss check in tests/goss/ (config) or a tests/vm/ script (behaviour) that fails today and would
+        pass with the control.
+    validations:
+      required: true
+  - type: dropdown
+    id: role
+    attributes:
+      label: Which role?
+      options:
+        - harden_storage
+        - harden_network
+        - harden_desktop
+        - harden_services
+        - base
+        - session_tools (run-time)
+        - not sure
+  - type: checkboxes
+    id: rules
+    attributes:
+      label: Hard rules
+      options:
+        - label: It adds no network use, download, update check or listener to the running drive.
+          required: true
+        - label: It depends on no particular hardware vendor or model.
+          required: true

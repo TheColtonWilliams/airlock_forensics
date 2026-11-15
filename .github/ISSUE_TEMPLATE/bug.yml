@@ -1,0 +1,69 @@
+# Bug report (task 0.9).
+name: Bug report
+description: Something on the drive, in the build, or in a fetcher does not work as documented.
+title: "bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you. Please do **not** attach evidence data, case output, real personal data, or any
+        sexual, violent or otherwise sensitive media. If a file is needed, make a synthetic one.
+        A security problem goes to the Security tab instead (see SECURITY.md).
+  - type: input
+    id: release
+    attributes:
+      label: AIRLOCK release or commit
+      placeholder: v0.1.0, or the commit hash
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where did it happen?
+      options:
+        - On the booted AIRLOCK drive
+        - Building the image (scripts/build.sh, make-usb.sh)
+        - Writing the drive (scripts/flash.sh, Rufus, balenaEtcher)
+        - Staging ASSETS (fetch-assets.ps1 or fetch-assets.sh)
+        - First-boot provisioning (forensic-provision)
+        - CI or a release file
+        - Documentation
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The exact commands, flags and answers to prompts.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected, and what happened instead
+      description: Paste the one-line error message if there was one.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Machine and boot mode
+      description: |
+        Firmware (UEFI or BIOS), Secure Boot on or off, CPU, RAM and GPU memory, drive size and
+        type (USB flash stick or USB SSD). Capacities, not brands, are what matter.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        For problems on the drive: the output of `sudo airlock-setro --check` and the matching lines
+        of /var/log/forensic-session/current.log. Remove any evidence file names first.
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you submit
+      options:
+        - label: I attached no evidence data, no case output, and no sensitive media.
+          required: true
