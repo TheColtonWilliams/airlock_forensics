@@ -1,0 +1,10 @@
+#!/usr/bin/python3
+"""evidence-report: write report.html and report.md for a run (docs/workflows/report.md)."""
+
+import os
+import sys
+
+sys.path.insert(0, os.environ.get("AIRLOCK_PYLIB", "/opt/airlock/lib/python"))
+from evidence_report.cli import main
+
+raise SystemExit(main())

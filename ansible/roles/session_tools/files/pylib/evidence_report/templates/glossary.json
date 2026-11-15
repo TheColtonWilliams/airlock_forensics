@@ -1,0 +1,20 @@
+{
+  "entries": [
+    ["Account SID", "A Windows security identifier, such as S-1-5-21-...-1001. It names an account, never a person. Who used an account is not shown by the records."],
+    ["AI-generated draft", "Text written by the local language model from finding rows and checked by code. It is triage to help the examiner write the report. It is never evidence."],
+    ["Allocated / unallocated", "Whether the file system still has a live metadata entry for a file. A deleted file is usually unallocated."],
+    ["Copy first", "The drive was copied to a forensic image, the copy was checked against the drive's hash, and the analysis ran on the copy (SWGDE 18-F-001-2.0)."],
+    ["Cross-check disagreement", "Two independent parsers read the same record and reported different values. Both values are kept; the examiner decides which is right."],
+    ["Finding ID", "The stable identifier of one row in findings.jsonl, such as F-000123. Every drafted sentence cites the IDs it relies on."],
+    ["Hardware write blocker", "A device between the drive and the computer that stops write commands. AIRLOCK records whether one was used; only blockers with a NIST CFTT test report are recommended."],
+    ["Hash (SHA-256, MD5)", "A fixed-length value computed from data. A different value means different data. The drive is hashed before and after the run."],
+    ["MFT", "The Master File Table of an NTFS volume: one record per file or folder, with names, sizes, and times."],
+    ["Read directly", "The drive was read in place, with no copy kept. This counts as documented triage (SWGDE 17-F-002-2.1)."],
+    ["Recycle bin record", "A $I file in $Recycle.Bin that gives the original path, size, and deletion time of a file moved to the recycle bin."],
+    ["Software read-only policy", "AIRLOCK's software settings that keep evidence drives read-only. It is a policy and a second line of defence, not a write blocker."],
+    ["Time zone basis", "utc: recorded in UTC; local_with_offset: local time converted with a known offset; local_unknown_offset: local time, offset unknown, so the time may be off by hours."],
+    ["Triage", "A fast, documented look at a drive to decide what to examine further. Triage results are not a full examination."],
+    ["USN journal", "The NTFS change journal ($UsnJrnl:$J). It records file changes, including deletes, with times. It is often absent on removable media."],
+    ["Write tracer", "AIRLOCK counts write requests that reach the target drive during the run. The expected count is zero."]
+  ]
+}
