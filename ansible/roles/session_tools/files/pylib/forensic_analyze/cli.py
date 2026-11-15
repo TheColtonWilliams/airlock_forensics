@@ -19,7 +19,7 @@ import argparse
 import os
 import sys
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -94,6 +94,11 @@ def build_parser() -> argparse.ArgumentParser:
     t.add_argument("--verify", metavar="RUN_DIR", help="check a run's hashes and signature")
     t.add_argument(
         "--purge-run", metavar="RUN_DIR", help="purge exported copies from a finished run"
+    )
+    t.add_argument(
+        "--force",
+        action="store_true",
+        help="with --purge-run: re-sign even if the run already fails --verify (logged)",
     )
     return p
 
@@ -401,24 +406,80 @@ def do_verify(run_dir: Path) -> int:
         say(f"Run folder {run_dir} does NOT verify. Do not rely on it until this is explained.")
         return 1
     say(f"Run folder {run_dir} verifies: every hash matches and the signature is valid.")
+    pub = run_dir / signing.PUB_NAME
+    fp = signing.public_key_sha256(pub)
+    kid = signing.known_key(pub)
+    if kid:
+        say(f"The public key (SHA-256 {fp}) is signing key {kid} held on this AIRLOCK system.")
+    else:
+        say(
+            f"The public key (SHA-256 {fp}) is not a key this system holds (or it cannot be "
+            "read without sudo). Compare that fingerprint with the session log of the AIRLOCK "
+            "system that made the run, or your case notes: a valid signature only shows the "
+            "files match the key stored with them."
+        )
     return 0
 
 
-def do_purge(run_dir: Path) -> int:
+def _purge_allowed(
+    run_dir: Path, out_root: Path, purged: Callable[[str], bool], force: bool
+) -> bool:
+    """Verify the run before purging: only the folders about to go may differ (unless forced)."""
+    try:
+        signing.check_before_resign(run_dir, out_root, purged, force=force, tool=TOOL_NAME)
+    except signing.ResignRefused as exc:
+        sessionlog.log_event(TOOL_NAME, "purge_refused", run_dir=str(run_dir), reason=str(exc))
+        say(f"Nothing was purged: {exc}.")
+        say(
+            "Explain the change first (forensic-analyze --verify RUN_DIR), or use --force (logged)."
+        )
+        return False
+    except (signing.SigningError, OSError) as exc:
+        sessionlog.log_event(TOOL_NAME, "purge_refused", run_dir=str(run_dir), reason=str(exc))
+        say(f"Nothing was purged: the run could not be re-signed afterwards ({exc}).")
+        return False
+    return True
+
+
+def do_purge(run_dir: Path, *, force: bool = False) -> int:
     doc_path = run_dir / "run.json"
     if not doc_path.exists():
         say(f"{run_dir} has no run.json. Check the folder name.")
+        return 1
+    real = run_dir.resolve()
+    if len(real.parents) < 3 or real.parents[1].name != "cases":
+        say(f"{run_dir} is not a run folder under <output>/cases/. Check the folder name.")
+        return 1
+    out_root = real.parents[2]
+    folders = [d.relative_to(run_dir).as_posix() for d in cleanup.export_dirs(run_dir)]
+
+    def purged(rel: str) -> bool:
+        return any(rel.startswith(f"{f}/") for f in folders)
+
+    if not _purge_allowed(run_dir, out_root, purged, force):
         return 1
     res = cleanup.purge_exports(run_dir)
     doc = jsonio.load_json(doc_path)
     doc["purge"] = res.to_dict()
     jsonio.dump_json(doc_path, doc)
-    out_root = run_dir.parents[2]
-    sign = signing.hash_and_sign(run_dir, out_root)
     sessionlog.log_event(TOOL_NAME, "purged_exports", run_dir=str(run_dir), **res.to_dict())
     say(f"Removed {res.removed_files} exported files ({res.removed_bytes} bytes).")
-    say("Outputs re-hashed and re-signed.")
-    return 0 if not sign.error else 1
+
+    def replaced(rel: str) -> bool:
+        return rel == "run.json" or purged(rel)
+
+    try:
+        sign = signing.resign(
+            run_dir, out_root, replaced, force=force, tool=TOOL_NAME, reason="exports purged"
+        )
+    except (signing.SigningError, OSError) as exc:
+        say(f"Outputs were NOT re-signed: {exc}. The earlier signed list is unchanged.")
+        return 1
+    if sign.error:
+        say(f"Outputs were re-hashed but not signed: {sign.error}")
+        return 1
+    say("Outputs re-hashed and re-signed; the previous list is kept as outputs.sha256.prev-<n>.")
+    return 0
 
 
 def do_list_targets(args: argparse.Namespace) -> int:
@@ -587,7 +648,7 @@ def _other_action(args: argparse.Namespace) -> int | None:
     if args.verify:
         return do_verify(Path(args.verify))
     if args.purge_run:
-        return do_purge(Path(args.purge_run))
+        return do_purge(Path(args.purge_run), force=args.force)
     if args.list_targets:
         return do_list_targets(args)
     if args.list_modules:

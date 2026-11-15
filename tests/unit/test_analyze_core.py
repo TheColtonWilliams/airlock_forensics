@@ -251,9 +251,29 @@ def test_purge_does_not_follow_symlinks_out(tmp_path: Path) -> None:
 needs_openssl = pytest.mark.skipif(shutil.which("openssl") is None, reason="needs openssl")
 
 
+def _session(env: Path) -> list[dict]:
+    log = env / "session" / "current.log"
+    if not log.exists():
+        return []
+    return [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+
+
+def _signed_run(out_root: Path, name: str = "R-1") -> Path:
+    run = out_root / "cases" / "C" / name
+    (run / "modules" / "m" / "export").mkdir(parents=True)
+    (run / "logs").mkdir()
+    (run / "run.json").write_text("{}")
+    (run / "findings.csv").write_text("a,b\n")
+    (run / "report.html").write_text("<p>old</p>")
+    (run / "modules" / "m" / "export" / "copy.bin").write_text("exported")
+    res = signing.hash_and_sign(run, out_root)
+    assert res.error == ""
+    return run
+
+
 @needs_openssl
-def test_hash_and_sign_then_verify(tmp_path: Path) -> None:
-    out_root = tmp_path / "OUTPUT"
+def test_hash_and_sign_then_verify(airlock_env: Path) -> None:
+    out_root = airlock_env / "OUTPUT"
     run = out_root / "cases" / "C" / "R-1"
     (run / "modules" / "m").mkdir(parents=True)
     (run / "run.json").write_text("{}")
@@ -277,18 +297,251 @@ def test_hash_and_sign_then_verify(tmp_path: Path) -> None:
 
 
 @needs_openssl
-def test_verify_catches_changes(tmp_path: Path) -> None:
-    run = tmp_path / "o" / "cases" / "C" / "R"
+@pytest.mark.parametrize(
+    "name", ["a\\nb", "a\\rb", "trail\\", "a\\\\nb", "mixed\\n\nline", "x\\\\\\n"]
+)
+def test_verify_backslash_names_round_trip(airlock_env: Path, name: str) -> None:
+    """Finding 15: a literal backslash before n or r is unescaped in one pass, as GNU does."""
+    out_root = airlock_env / "OUTPUT"
+    run = out_root / "cases" / "C" / "R-1"
+    (run / "modules" / "m").mkdir(parents=True)
+    (run / "modules" / "m" / name).write_text("data")
+    assert signing.hash_and_sign(run, out_root).error == ""
+    assert signing.verify(run) == []
+    assert signing._unescape(signing._escape(name)[1]) == name
+    if shutil.which("sha256sum") and "\n" not in name:
+        import subprocess  # noqa: PLC0415
+
+        cp = subprocess.run(
+            ["sha256sum", "--quiet", "-c", signing.LIST_NAME],
+            cwd=run,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert cp.returncode == 0, cp.stdout + cp.stderr
+
+
+@needs_openssl
+def test_private_key_is_on_the_root_filesystem(airlock_env: Path) -> None:
+    """Finding 13: the private key is under the state dir (root only), never on OUTPUT."""
+    out_root = airlock_env / "OUTPUT"
+    run = _signed_run(out_root)
+    kid = signing.read_key_id(out_root)
+    assert kid is not None and len(kid) == 32
+    folder = signing.key_dir(out_root)
+    assert folder == airlock_env / "state" / "signing" / kid
+    assert (folder / "key.pem").stat().st_mode & 0o777 == 0o600
+    assert folder.stat().st_mode & 0o777 == 0o700
+    assert (folder.parent).stat().st_mode & 0o777 == 0o700
+    assert not list(out_root.rglob("key.pem"))
+    assert (signing.output_meta_dir(out_root) / "pub.pem").read_bytes() == (
+        run / signing.PUB_NAME
+    ).read_bytes()
+    # The fingerprint is in the session log on the root filesystem, and in the sign record.
+    fp = signing.public_key_sha256(run / signing.PUB_NAME)
+    created = [r for r in _session(airlock_env) if r["event"] == "signing_key_created"]
+    assert [(r["key_id"], r["public_key_sha256"]) for r in created] == [(kid, fp)]
+    res = signing.hash_and_sign(run, out_root)
+    assert (res.key_id, res.public_key_sha256) == (kid, fp)
+    assert res.to_dict()["list_sha256"] == signing.hashing.sha256_file(run / signing.LIST_NAME)
+    assert signing.known_key(run / signing.PUB_NAME) == kid
+
+
+@needs_openssl
+def test_unknown_or_bad_key_id_gets_a_new_key(airlock_env: Path) -> None:
+    out_root = airlock_env / "OUTPUT"
+    run = _signed_run(out_root)
+    first = signing.read_key_id(out_root)
+    # The drive moved to another AIRLOCK system: its key id is not held here.
+    shutil.rmtree(airlock_env / "state" / "signing")
+    signing.hash_and_sign(run, out_root)
+    second = signing.read_key_id(out_root)
+    assert second and second != first
+    created = [r for r in _session(airlock_env) if r["event"] == "signing_key_created"]
+    assert created[-1]["previous_key_id"] == first
+    # A key id that is not 32 hex digits is never used as a path.
+    (signing.output_meta_dir(out_root) / signing.ID_NAME).write_text("../../etc\n")
+    assert signing.read_key_id(out_root) is None
+    signing.hash_and_sign(run, out_root)
+    assert signing.read_key_id(out_root) not in (None, first, second)
+    assert signing.verify(run) == []
+
+
+@needs_openssl
+def test_signing_fails_cleanly_without_a_usable_key_store(airlock_env: Path) -> None:
+    out_root = airlock_env / "OUTPUT"
+    run = out_root / "cases" / "C" / "R"
+    run.mkdir(parents=True)
+    (run / "a").write_text("a")
+    (airlock_env / "state").rmdir()
+    (airlock_env / "state").write_text("not a folder")
+    res = signing.hash_and_sign(run, out_root)
+    assert res.sig_path is None and "signing key unavailable" in res.error
+
+
+@needs_openssl
+def test_verify_catches_changes(airlock_env: Path) -> None:
+    out_root = airlock_env / "o"
+    run = out_root / "cases" / "C" / "R"
     run.mkdir(parents=True)
     (run / "a.txt").write_text("a")
-    signing.hash_and_sign(run, tmp_path / "o")
+    signing.hash_and_sign(run, out_root)
     (run / "a.txt").write_text("b")
     (run / "new.txt").write_text("n")
     problems = signing.verify(run)
     assert "changed: a.txt" in problems and "not listed: new.txt" in problems
-    signing.hash_and_sign(run, tmp_path / "o")
+    signing.hash_and_sign(run, out_root)
     (run / signing.LIST_NAME).write_text((run / signing.LIST_NAME).read_text() + "\n")
     assert "signature does not verify" in signing.verify(run)
+
+
+def _run_log(run: Path) -> list[dict]:
+    path = run / signing.RUN_LOG
+    if not path.exists():
+        return []
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+
+
+@needs_openssl
+def test_resign_refuses_a_changed_run(airlock_env: Path) -> None:
+    """Finding 12: re-signing never blesses a file the command did not replace."""
+    out_root = airlock_env / "OUTPUT"
+    run = _signed_run(out_root)
+    old_list = (run / signing.LIST_NAME).read_bytes()
+    old_sig = (run / signing.SIG_NAME).read_bytes()
+    (run / "findings.csv").write_text("a,b\nedited,in a spreadsheet\n")
+    (run / "report.html").write_text("<p>new</p>")
+
+    def report(rel: str) -> bool:
+        return rel == "report.html"
+
+    with pytest.raises(signing.ResignRefused, match=r"changed: findings\.csv"):
+        signing.resign(run, out_root, report, reason="test")
+    assert (run / signing.LIST_NAME).read_bytes() == old_list
+    assert (run / signing.SIG_NAME).read_bytes() == old_sig
+    assert signing.history_numbers(run) == []
+    assert "changed: findings.csv" in signing.verify(run)
+    # A changed list or signature is never something a command replaces.
+    (run / signing.SIG_NAME).write_bytes(b"x" * 64)
+    with pytest.raises(signing.ResignRefused, match="signature does not verify"):
+        signing.resign(run, out_root, lambda _rel: True, reason="test")
+
+
+@needs_openssl
+def test_resign_keeps_history_and_force_is_logged(airlock_env: Path) -> None:
+    out_root = airlock_env / "OUTPUT"
+    run = _signed_run(out_root)
+    first_list = (run / signing.LIST_NAME).read_bytes()
+    first_sig = (run / signing.SIG_NAME).read_bytes()
+    # Only the replaced file changed: re-signed without --force, history kept.
+    (run / "report.html").write_text("<p>new</p>")
+    res = signing.resign(run, out_root, lambda rel: rel == "report.html", reason="report")
+    assert res.error == "" and signing.verify(run) == []
+    assert signing.history_numbers(run) == [1]
+    assert (run / "outputs.sha256.prev-1").read_bytes() == first_list
+    assert (run / "outputs.sha256.prev-1.sig").read_bytes() == first_sig
+    assert (run / "outputs.sha256.prev-1.pub.pem").is_file()
+    listing = (run / signing.LIST_NAME).read_text()
+    for name in ("outputs.sha256.prev-1", "outputs.sha256.prev-1.sig", "logs/run.jsonl"):
+        assert f"  {name}\n" in listing
+    rec = _run_log(run)[-1]
+    assert (rec["event"], rec["forced"], rec["history"]) == (
+        "outputs_resigned",
+        False,
+        "outputs.sha256.prev-1",
+    )
+    # The earlier list still verifies against its own key.
+    import subprocess  # noqa: PLC0415
+
+    cp = subprocess.run(
+        [
+            "openssl", "pkeyutl", "-verify", "-pubin", "-inkey",
+            str(run / "outputs.sha256.prev-1.pub.pem"), "-rawin",
+            "-in", str(run / "outputs.sha256.prev-1"),
+            "-sigfile", str(run / "outputs.sha256.prev-1.sig"),
+        ],
+        capture_output=True,
+        check=False,
+    )  # fmt: skip
+    assert cp.returncode == 0
+    # A change outside the replaced files needs force; force is recorded with the problem.
+    (run / "run.json").write_text('{"edited": true}')
+    res = signing.resign(run, out_root, lambda _rel: False, force=True, reason="forced")
+    assert res.error == "" and signing.verify(run) == []
+    assert signing.history_numbers(run) == [1, 2]
+    rec = _run_log(run)[-1]
+    assert rec["forced"] is True and rec["problems_overridden"] == ["changed: run.json"]
+    logged = [r for r in _session(airlock_env) if r["event"] == "outputs_resigned"]
+    assert logged[-1]["forced"] is True and logged[-1]["public_key_sha256"]
+
+
+@needs_openssl
+def test_purge_run_verifies_first(airlock_env: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Finding 12: --purge-run refuses a changed run and keeps history when it re-signs."""
+    from forensic_analyze import cli  # noqa: PLC0415
+
+    out_root = airlock_env / "OUTPUT"
+    run = _signed_run(out_root)
+    (run / "findings.csv").write_text("tampered")
+    assert cli.main(["--purge-run", str(run)]) == 1
+    assert "Nothing was purged" in capsys.readouterr().out
+    assert (run / "modules" / "m" / "export" / "copy.bin").exists()
+    assert "changed: findings.csv" in signing.verify(run)
+    assert signing.history_numbers(run) == []
+    # With --force it purges, re-signs, keeps the earlier list and records the override.
+    assert cli.main(["--purge-run", str(run), "--force"]) == 0
+    assert not (run / "modules" / "m" / "export").exists()
+    assert signing.verify(run) == [] and signing.history_numbers(run) == [1]
+    rec = _run_log(run)[-1]
+    assert rec["forced"] is True and rec["problems_overridden"] == ["changed: findings.csv"]
+
+
+@needs_openssl
+def test_purge_run_on_an_intact_run(airlock_env: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    from forensic_analyze import cli  # noqa: PLC0415
+
+    out_root = airlock_env / "OUTPUT"
+    run = _signed_run(out_root)
+    # An edited exported copy is deleted by the purge anyway, so it does not block it.
+    (run / "modules" / "m" / "export" / "copy.bin").write_text("changed copy")
+    assert cli.main(["--purge-run", str(run)]) == 0
+    assert signing.verify(run) == []
+    rec = _run_log(run)[-1]
+    assert rec["forced"] is False and rec["problems_overridden"] == []
+    assert cli.main(["--verify", str(run)]) == 0
+    out = capsys.readouterr().out
+    kid = signing.read_key_id(out_root)
+    assert f"signing key {kid} held on this AIRLOCK system" in out
+
+
+@needs_openssl
+def test_evidence_report_refuses_a_changed_run(
+    airlock_env: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Finding 12: re-rendering a report checks the run before writing anything."""
+    from evidence_report import cli as report_cli  # noqa: PLC0415
+
+    out_root = airlock_env / "OUTPUT"
+    run = _signed_run(out_root)
+    old_list = (run / signing.LIST_NAME).read_bytes()
+    (run / "run.json").write_text('{"edited": true}')
+    assert report_cli.main([str(run), "--no-model"]) == 1
+    err = capsys.readouterr().err
+    assert "changed: run.json" in err and "--force" in err
+    assert (run / "report.html").read_text() == "<p>old</p>"
+    assert (run / signing.LIST_NAME).read_bytes() == old_list
+    # An edit to the report itself does not block: the report replaces it.
+    (run / "run.json").write_text("{}")
+    (run / "report.html").write_text("<p>edited</p>")
+    report_cli._precheck(run, force=False)
+    # A run that is not under <output>/cases/ cannot be re-signed, so nothing is written.
+    loose = airlock_env / "loose"
+    loose.mkdir()
+    (loose / "a").write_text("a")
+    signing.hash_and_sign(loose, airlock_env / "OUTPUT")
+    assert report_cli.main([str(loose), "--no-model"]) == 1
+    assert "--no-resign" in capsys.readouterr().err
 
 
 def test_verify_without_listing(tmp_path: Path) -> None:

@@ -35,8 +35,11 @@ grep -q '"event":"session_implicit"' "$LOG" || fail "an implicit session is star
 # ---------------------------------------------------------------- --sha1 --json
 run "$CMD" --sha1 --json "$IMG"
 assert_eq "$RC" 0 "evidence-hash --sha1 --json: $OUT"
-got="$(python3 -c 'import json,sys; d=json.loads(sys.stdin.read()); h=d["hashes"]; print(h["sha256"], h["md5"], h["sha1"], d["bytes_read"], d["algorithms"])' <<<"$OUT")"
-assert_eq "$got" "$want256 $want_md5 $want_sha1 $(stat -c '%s' -- "$IMG") ['sha256', 'sha1', 'md5']" "JSON result"
+got="$(python3 -c 'import json,sys; d=json.loads(sys.stdin.read()); h=d["hashes"]; print(h["sha256"], h["md5"], h["sha1"], d["bytes_read"], d["expected_bytes"], d["complete"], d["algorithms"])' <<<"$OUT")"
+size="$(stat -c '%s' -- "$IMG")"
+assert_eq "$got" "$want256 $want_md5 $want_sha1 $size $size True ['sha256', 'sha1', 'md5']" "JSON result"
+# bytes_read is what the digests cover, counted while hashing (not the size seen beforehand).
+assert_contains "$(tail -n 1 "$LOG")" "\"bytes_read\":$size" "bytes hashed logged"
 
 # The target is unchanged.
 assert_eq "$(sha256_of "$IMG")" "$want256" "image unchanged"

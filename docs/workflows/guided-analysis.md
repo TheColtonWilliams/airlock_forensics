@@ -105,7 +105,8 @@ a Full run reads the drive several times and can finish it off, and asked whethe
 9. Findings are merged into `findings.jsonl`, exported to `findings.csv` and `case.sqlite`, and
    `evidence-report` writes `report.html` and `report.md`.
 10. With `--purge-exports`, every exported file copy is deleted (see below).
-11. `outputs.sha256` lists every file in the run folder and is signed with the output drive's key.
+11. `outputs.sha256` lists every file in the run folder and is signed with the output drive's key,
+    which is kept on the AIRLOCK drive's root filesystem, not on the output drive.
 
 ## Interrupted runs
 
@@ -139,6 +140,7 @@ The authority confirmation and the clock check are per run and are not replayed.
   outputs.sha256      SHA-256 of every file above
   outputs.sha256.sig  Ed25519 signature of outputs.sha256
   outputs.sha256.pub.pem  the public key that checks it
+  outputs.sha256.prev-<n>[.sig|.pub.pem]  earlier signed lists, kept when the run is re-signed
 ```
 
 `run.json` holds: the configuration, the exact command line, the target's identifiers (model,
@@ -158,8 +160,30 @@ openssl pkeyutl -verify -pubin -inkey outputs.sha256.pub.pem -rawin \
     -in outputs.sha256 -sigfile outputs.sha256.sig
 ```
 
-The signing key lives on the output drive at `.airlock/signing/key.pem` and is made on first use.
-`run.json` records the SHA-256 of its public key, so a swapped public key can be noticed.
+The private signing key is not on the output drive. It is made the first time an output drive is
+used on this AIRLOCK drive and kept on the root filesystem at
+`/var/lib/airlock/signing/<key id>/key.pem` (root only, mode 0600). The output drive holds only
+`.airlock/signing/key-id` (which key signs for it) and a copy of the public key. When the key is
+made, its public-key SHA-256 is written to the session log (`signing_key_created`), and every
+signing records it again (`outputs_signed`, `outputs_resigned`). `--verify` prints the run's
+public-key SHA-256 and says whether this AIRLOCK drive holds that key.
+
+What a valid signature shows: the files match the list, and the list was signed by the key whose
+public half is in the run folder. It does not show that nobody changed the output drive: anyone
+holding it can change files and sign a new list with a key of their own, and the commands above
+still pass. `run.json` records the public-key SHA-256, but `run.json` is on the same drive and can
+be changed with the rest. To tie a run to AIRLOCK, compare the fingerprint with a record kept off
+the output drive: the session log on the AIRLOCK drive that made the run, or the fingerprint you
+wrote in your case notes at the time. See `docs/known-limitations.md`.
+
+Re-signing a run (`evidence-report RUN_DIR` by hand, or `--purge-run`) checks the run first and
+refuses if anything other than the files that command replaces has changed, so a file edited on
+another PC (for example `findings.csv` saved from a spreadsheet) is never given a fresh signature.
+`--force` re-signs anyway; the override and the problems it covered are recorded in
+`logs/run.jsonl` and the session log. Each re-sign keeps the previous list, signature and public
+key as `outputs.sha256.prev-<n>`, `.sig` and `.pub.pem`; they are listed in the new
+`outputs.sha256`, so the newer signature covers them. Check an earlier list against its own key
+with the `openssl` command above, using the `prev-<n>` names.
 
 ## Purging exported copies
 
@@ -167,8 +191,10 @@ The signing key lives on the output drive at `.airlock/signing/key.pem` and is m
 every copy of a file taken from the drive and keeps findings, CSVs, transcripts, descriptions, logs,
 and the report. Purged: `modules/<name>/export/`, `modules/<name>/exports/`,
 `modules/<name>/carved/`, `extract/` (system files such as `$MFT`), and `decrypted/`. The copy made
-in copy-first mode (`image/`) is evidence and is kept. `outputs.sha256` is rewritten and signed
-again afterwards.
+in copy-first mode (`image/`) is evidence and is kept. `--purge-run` checks the run first and
+refuses if anything outside the purged folders has changed (`--force` overrides it and is logged);
+`outputs.sha256` is then rewritten and signed again, and the previous one is kept as
+`outputs.sha256.prev-<n>`.
 
 ## The report
 

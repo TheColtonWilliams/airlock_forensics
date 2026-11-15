@@ -52,7 +52,7 @@ hyphenated packages, so these live at
 | Commands | `/usr/local/bin/<name>` | `PATH` |
 | Config | `/etc/airlock/` (`airlock.conf.json`, `screen-thresholds.json`, `hashsets.json`, `manifest-signing.pub.pem`, `build-info.json`) | `AIRLOCK_ETC_DIR` |
 | Hash-set config | `/etc/airlock/hashsets.json` (written by the `tools_hashsets` role; read by `airlock_hashsets.config`: `clamav_dir`, `nsrl_dirs`, `yara_dir`, `ssdeep_dir`, limits) | `AIRLOCK_ETC_DIR` |
-| State | `/var/lib/airlock/` (`provision/`, `applied-assets.json`, `provision-manifest.json`, `manifest.json`) | `AIRLOCK_STATE_DIR` |
+| State | `/var/lib/airlock/` (`provision/`, `applied-assets.json`, `provision-manifest.json`, `manifest.json`, `signing/<key id>/key.pem`: private output-signing keys, root only, folders 0700, key 0600) | `AIRLOCK_STATE_DIR` |
 | Runtime state (tmpfs) | `/run/airlock/` (`rw-allow/<disk kernel name>` markers, section 8a) | `AIRLOCK_RUN_DIR` |
 | Base-image helpers | `/opt/airlock/libexec/` (`airlock-firstboot`, `airlock-partition-layout`, `airlock-install-bootloader`, `airlock-check-boot-chain`; role `base`) | |
 | Session logs | `/var/log/forensic-session/` | `AIRLOCK_SESSION_DIR` |
@@ -273,13 +273,19 @@ makes a module skip on resume.
   `attached_disks()`, `is_readonly()`; `AIRLOCK_LSBLK_JSON` fixture override).
 * **Read-only policy and output unlock**: `airlock-setro` (harden_storage role, run by the
   udev rule with the kernel name, and `--all` / `--check`) sets every `sd*`, `nvme*`,
-  `mmcblk*`, `vd*` device read-only except the disk holding `/`, and leaves alone a device
-  whose own kernel name or whose whole disk's kernel name has a file in
-  `$AIRLOCK_RUN_DIR/rw-allow/` (default `/run/airlock/rw-allow/`). `evidence-unlock-output`
-  creates `rw-allow/<kernel name of the whole disk>` (for example `sdc`) before
-  `blockdev --setrw`, removes it again if the drive stays read-only, and `--lock` removes it
-  before `blockdev --setro`. The markers are in tmpfs, so a reboot re-locks every drive.
-  Python reaches the folder through `airlock_common.paths.rw_allow_dir()`.
+  `mmcblk*`, `vd*` device read-only except the disk holding `/`, and leaves alone a disk and
+  its partitions only while `$AIRLOCK_RUN_DIR/rw-allow/<whole-disk kernel name>` (default
+  `/run/airlock/rw-allow/`) holds an `identity_sha256` matching the drive that has that name
+  now: the SHA-256 of its sysfs `diskseq`, `wwid`, `serial` and `size`
+  (`airlock_session.unlock.drive_identity()`; airlock-setro computes the same hash). A missing,
+  mismatched, symlinked, partition-named or identity-less marker is logged and deleted, and the
+  device is set read-only. `evidence-unlock-output` writes the marker before `blockdev --setrw`,
+  removes it again if the drive stays read-only, and refuses a drive with no identity; `--lock`
+  removes it before `blockdev --setro`; the udev rule's `ACTION=="remove"` line runs
+  `airlock-setro --forget <name>`. `diskseq` changes on every attach, so a re-plugged drive
+  starts read-only, and the markers are in tmpfs, so a reboot re-locks every drive. Python
+  checks a marker with `airlock_session.unlock.marker_valid()` (session start uses it) and
+  reaches the folder through `airlock_common.paths.rw_allow_dir()`.
 * **Evidence mount**: `evidence-mount` attaches one kernel read-only loop device per filesystem
   (`losetup --read-only --find --show`, plus `--offset`/`--sizelimit` for a partition; offsets from `sfdisk -J`,
   filesystem type from `blkid -p`), never `losetup -r -P` (partition scanning depends on udev
@@ -370,7 +376,10 @@ makes a module skip on resume.
   modules/<name>/     intermediates, raw tool output, findings.part.jsonl
   logs/               per-run JSON-lines log
   outputs.sha256      sha256sum-format list of every file above
-  outputs.sha256.sig  signature with the per-OUTPUT signing key
+  outputs.sha256.sig  signature with the per-OUTPUT signing key (private key on the root
+                      filesystem; OUTPUT/.airlock/signing holds only key-id and pub.pem)
+  outputs.sha256.prev-<n>[.sig|.pub.pem]  earlier signed lists, kept when a report re-run or
+                      a purge re-signs (it verifies first and refuses on other changes)
 ```
 
 ## 10. Tests

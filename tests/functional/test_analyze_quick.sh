@@ -63,8 +63,10 @@ openssl pkeyutl -verify -pubin -inkey "$rd/outputs.sha256.pub.pem" -rawin \
   -in "$rd/outputs.sha256" -sigfile "$rd/outputs.sha256.sig" >/dev/null || fail "signature"
 run "$FA" --verify "$rd"
 [[ "$RC" -eq 0 ]] || fail "--verify on a clean run: $OUT"
-key="$out/.airlock/signing/key.pem"
+# The private key lives on the root filesystem, never on the output drive.
+key="$AIRLOCK_STATE_DIR/signing/$(cat "$out/.airlock/signing/key-id")/key.pem"
 assert_file "$key"
+assert_no_file "$out/.airlock/signing/key.pem"
 assert_eq "$(stat -c %a "$key")" "600" "key mode"
 
 # 3. Replay with --config gives the same module plan.

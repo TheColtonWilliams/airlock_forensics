@@ -11,12 +11,14 @@ report is final. Milestone 4E; task 4B.11 points here.
   are written and **before** `outputs.sha256` and its signature. The report is hashed and signed
   with the rest of the run.
 * You can run it again by hand: `evidence-report <output>/cases/<case>/<run_id>`. When the folder
-  already has `outputs.sha256`, the command re-hashes and re-signs the folder afterwards, so the
-  signed list matches the new report (`--no-resign` skips that).
+  already has `outputs.sha256`, the command first verifies the signed list and refuses if any
+  file other than the report files has changed (`--force` overrides that and is logged). It
+  then keeps the previous list and signature as `outputs.sha256.prev-<n>` and re-signs, so the
+  signed list matches the new report (`--no-resign` skips re-signing).
 
 ```
 evidence-report RUN_DIR [--no-model] [--model-url http://127.0.0.1:PORT] [--no-start]
-                        [--seed N] [--data-chars N] [--max-calls N] [--no-resign]
+                        [--seed N] [--data-chars N] [--max-calls N] [--no-resign] [--force]
 ```
 
 * `--no-model`: no AI sections; each says "No AI draft: local model not available".
