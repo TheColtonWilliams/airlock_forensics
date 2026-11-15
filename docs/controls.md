@@ -54,7 +54,7 @@ and `tests/vm/test_storage_untouched.sh` prove it by behaviour after boot and af
 | 5.1 | No thumbnailers | `thumbnailers_removed.yml`: purge thumbnailer and previewer packages; `dpkg-divert` every remaining `*.thumbnailer` out of use | goss packages absent, no `*.thumbnailer` left |
 | 5.1 | No volume monitors | `volume_monitors_off.yml`: gvfs udisks2, MTP, gphoto2, AFC, GOA monitor user units masked for every user; `.monitor` files diverted | goss user mask links, files gone, no process; `tests/vm/test_automount.sh` |
 | 5.2 | No indexer | `indexer_masked.yml`: `tracker-miner-fs-3` and friends (24.04) and `localsearch-3` (later releases) masked for every user, autostart removed, miner keys locked to index nothing | goss user mask links, autostart gone, dconf keys, no process |
-| 5.1 | No screen lock | `screen_lock_off.yml`: `lock-enabled=false`, `disable-lock-screen=true`, `idle-delay=0`, locked (the password is locked, so a lock screen could never be opened) | goss `dconf read`/`list-locks` |
+| 5.1 | No screen lock | `screen_lock_off.yml` (`20-airlock-screenlock`, the only owner of these keys): `lock-enabled=false`, `disable-lock-screen=true`, `idle-delay=0`, `idle-activation-enabled=false`, `ubuntu-lock-on-suspend=false`, no sleep or idle dimming, all locked (the password is locked, so a lock screen could never be opened) | goss `dconf read`/`list-locks` |
 
 ## Services (`harden_services`, tests in `tests/goss/services.yaml`)
 
@@ -109,7 +109,7 @@ Build details: `docs/build.md`. Secure Boot: `docs/hardware-matrix.md`.
 
 | Task | Control | Mechanism | Test |
 |---|---|---|---|
-| 1.2 | No password, autologin, no lock | `analyst_user.yml`, `analyst_sudo.yml`, `gdm_autologin.yml`, `screen_lock.yml`: locked password (`!`), `NOPASSWD` sudoers file, GDM autologin with XDMCP off, screen lock and suspend off (dconf, locked) | goss `analyst-password-locked`, sudoers, gdm, dconf files, `desktop-session` |
+| 1.2 | No password, autologin, no lock | `analyst_user.yml`, `analyst_sudo.yml`, `gdm_autologin.yml`: locked password (`!`), `NOPASSWD` sudoers file, GDM autologin with XDMCP off; screen lock and suspend off come from `harden_desktop` (row 5.1) | goss `analyst-password-locked`, sudoers, gdm, dconf files, `desktop-session` |
 | 1.2, 1.5 | No build access left | `no_ssh_server.yml`, `build_access.yml` (tag `airlock_finalize`): openssh-server purged, build user and its sudo rule deleted, installer cloud-init and netplan files removed, cloud-init disabled; the post-processor refuses an image without `AIRLOCK-FINALIZE-OK` | goss no sshd, no port 22, no `airlock-build`; `tests/functional/test_build_packer_scripts.sh` |
 | 1.3, 1.12 | Generic kernel, portable initramfs | `kernel.yml`, `initramfs.yml`: `linux-generic-hwe-24.04`, virtual kernels purged, `MODULES=most` plus uas, usb-storage, nvme, vmd, ahci, xhci by name | goss `kernel-generic`, `initramfs-modules` |
 | 1.9 | Portable boot | `bootloader.yml`: signed shim and grub at `EFI/BOOT/BOOTX64.EFI` with `--no-nvram`, no `fbx64.efi`, i386-pc grub in BIOSBOOT; `grub_cmdline.yml`: root by UUID, os-prober off | `tests/functional/test_build_bootloader.sh` (boots SeaBIOS, OVMF, OVMF Secure Boot); goss boot files |

@@ -589,6 +589,13 @@ step_build() {
   fi
   local args=(--cache "$cache_dir" --output "$output_dir" --accel "$accel")
   [[ -e "$output_dir" ]] && args+=(--force)
+  # A release checkout carries the signed manifest and its public key; a local build without
+  # them is a dev build (throwaway key, recorded as build_kind=dev in build-info.json).
+  local m="$repo_root/assets"
+  if [[ ! -f "$m/manifest.json" || ! -f "$m/manifest.json.sig" || ! -f "$m/manifest-signing.pub.pem" ]]; then
+    echo "no signed release manifest in assets/: building a dev image (signed with a throwaway key)"
+    args+=(--dev)
+  fi
   "$build_sh" "${args[@]}"
 }
 

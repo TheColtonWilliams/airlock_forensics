@@ -45,8 +45,10 @@ Logs: `lb-config.log` and `lb-build.log` in the output folder.
   drive labelled `ASSETS`, checked against the signed manifest as on the installed drive.
 * The roles must skip what only fits an installed drive when `airlock_target` is `live`: the
   partition layout, the boot loader install, the first-boot growth unit, and fstab entries by UUID.
-  Until the `base` role honours `airlock_target`, the chroot hook stops at the first of those
-  tasks. That change belongs to the `base` role (see the 7.2 note in the build plan).
+  The `base` role honours `airlock_target=live` and skips those tasks. `live/build.sh` does not
+  yet stage the signed manifest or goss into `/var/tmp/airlock-inputs`, so a live ISO has no
+  baked trusted manifest (build-info `build_kind` is `none`) and every ASSETS feature stays off
+  until that is added.
 
 ## Testing (not done yet)
 

@@ -84,7 +84,8 @@ jobs:
         timeout-minutes: ${{ env.ACCEL == 'kvm' && 150 || 300 }}
         run: |
           sudo chown -R "$(id -u):$(id -g)" cache 2>/dev/null || true
-          scripts/build.sh --accel "$ACCEL" --output "$OUT"
+          # CI has no release signing key: a dev build bakes a manifest signed with a throwaway key.
+          scripts/build.sh --dev --accel "$ACCEL" --output "$OUT"
       - name: tests/run-qemu-tests.sh (UEFI, UEFI + Secure Boot, BIOS)
         timeout-minutes: ${{ env.ACCEL == 'kvm' && 120 || 300 }}
         run: |

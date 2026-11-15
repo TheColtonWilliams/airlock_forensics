@@ -351,6 +351,15 @@ assert_contains "$(calls)" "build --prepare-tools --cache $TEST_TMP/cache" "Pack
 assert_eq "$RC" "1" "still missing after a no-op install"
 assert_contains "$OUT" "still missing after the install"
 rm -f "$MINBIN/goss"
+# The real goss pin is filled; null it in the fake checkout to prove unpinned downloads are refused.
+python3 - "$FAKE/ansible/group_vars/all/pins.yml" <<'PY'
+import re, sys
+p = sys.argv[1]
+s = open(p, encoding="utf-8").read()
+s, n = re.subn(r"(goss_linux_amd64:\n(?:    .*\n)*?    sha256: )\S+", r"\1null", s)
+assert n == 1, "goss_linux_amd64 sha256 not found"
+open(p, "w", encoding="utf-8").write(s)
+PY
 run env -i "PATH=$MINBIN" "CALLS=$CALLS" "$FAKE/scripts/prereqs-real.sh" --install --yes --for build --cache "$TEST_TMP/cache"
 assert_contains "$OUT" "has no SHA-256 yet, so goss is not downloaded" "an unpinned download is refused"
 echo "ok: prereqs.sh lists, asks, installs with apt-get, refuses unpinned downloads"
