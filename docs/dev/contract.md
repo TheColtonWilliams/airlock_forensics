@@ -200,9 +200,25 @@ list of `Volume(index, offset_bytes, size_bytes, fs_type, label)`),
 `workdir` (module scratch dir under the run folder), `options` (preset,
 mode, thresholds, flags), `emit(row: dict) -> None` (validated against
 `schema.json`; `run_id`, `evidence_id`, `evidence_sha256` filled in),
-`tool(argv, *, sandbox=True, timeout=..., stdout_path=None) -> CompletedProcess`
-(sandboxed, logged into `run.json` with tool version), `log(event, **fields)`,
-and `tool_version(name) -> str`.
+`tool(argv, *, sandbox=True, timeout=None, stdout_path=None, memory_bytes=None,
+extra_ro=(), redact=(), devices=()) -> CompletedProcess` (text output; logged into
+`run.json` with tool version; does not raise on a non-zero exit, raises
+`airlock_common.proc.ToolError` only when the tool is missing or breaks its time limit),
+`log(event, **fields)`, and `tool_version(name) -> str`.
+
+Sandboxed tools run with no network (not even loopback), the run folder read-only, only
+`modules/<name>/` writable (create any sub-folder a tool writes into with
+`extract.tool_dir(ctx, path)`), and `target.path` a kernel read-only loop device. `devices`
+adds device nodes for one call only (a GPU render node). A module that talks to the local
+`llama-server` passes `sandbox=False` for that call.
+
+Module conventions the runner relies on: exported copies go in `modules/<name>/export/`
+(or `exports/`, `carved/`), NTFS system files in `<run>/extract/` (the purge option removes
+exactly these); a module that used a model calls `ctx.log("model_used", model_id=...,
+model_sha256=..., prompt_sha256=..., threshold=...)`, which the runner copies into
+`run.json` `models`. Rows with `derivation: ai_generated` must carry `model_sha256` and
+`prompt_sha256`. Required strings are never empty (use `"unknown"`); `source_record` is a
+path relative to the run folder with an optional `#locator`.
 
 `ModuleResult(status: "ok"|"skipped"|"failed", reason: str = "", counts: dict)`.
 
@@ -239,9 +255,12 @@ makes a module skip on resume.
 * **Findings** (`forensic_analyze/findings.py`, owned by the findings package):
   `FindingsWriter(part_path, *, run_id, evidence_id, evidence_sha256, module)` with
   `.emit(row: dict) -> None` (validates with `validate_row`, raises `SchemaError`),
-  `.count`, `.close()`; `validate_row(row) -> list[str]` (error strings);
+  `.count`, `.close()`; `validate_row(row, *, part=False) -> list[str]` (error strings;
+  `part=True` checks a part-file row, which has no `finding_id`);
   `merge_parts(run_dir, module_order) -> Path` (writes `findings.jsonl`, assigns
   `finding_id` F-000001.. in module order, returns its path; byte-deterministic).
+  `merge(run_dir, module_order) -> MergeResult(path, sha256, count, per_module)` does the
+  same and returns the file hash for `run.json`. `finding_id` matches `^F-[0-9]{6,}$`.
   Schema file: `forensic_analyze/schema.json` (JSON Schema draft 2020-12 subset, checked by
   the stdlib validator in `findings.py`).
 * **Exports**: `export_sqlite.build(run_dir) -> Path` (`case.sqlite`, table
@@ -274,7 +293,13 @@ makes a module skip on resume.
   `evidence-triage-hash`.
 * **Report** (`pylib/evidence_report/`, owned by the report package):
   `render.build(run_dir, *, use_model: bool) -> tuple[Path, Path]` (html, md),
-  wrapped by `evidence-report RUN_DIR`.
+  wrapped by `evidence-report RUN_DIR`. The runner calls it with no other flags before
+  signing, so both files are in `outputs.sha256`.
+* **Escalation** (`airlock_ai/escalate.py`, `forensic-escalate`): writes
+  `<run>/ESCALATED`, then stops the process named in `<run>/forensic-analyze.pid`. The runner
+  writes that pid file when it starts and removes it when it ends (it is never hashed),
+  checks for `ESCALATED` before every module and before merging, and stops with status
+  `escalated` without merging, exporting or signing. An escalated run cannot be resumed.
 
 ## 9. Run folder (on OUTPUT or the chosen output drive)
 
@@ -283,6 +308,7 @@ makes a module skip on resume.
   run.json            replayable config + results (sorted keys)
   findings.jsonl      system of record
   findings.csv        flat export (4D.6, 4D.7)
+  findings.bodyfile   TSK 3.x bodyfile for mactime (4D.10)
   case.sqlite         views (4D.5)
   report.html report.md
   modules/<name>/     intermediates, raw tool output, findings.part.jsonl

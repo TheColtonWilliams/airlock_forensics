@@ -412,36 +412,51 @@ Not verified by the research and still open: the ISO/IEC 27037 to 27043 text (pa
 | 0.8 | Branch protection on main: PR required, CI green required | github settings | todo |
 | 0.9 | Issue templates: control request, bug, tool request | .github/ISSUE_TEMPLATE/ | todo |
 | 0.10 | .editorconfig, .gitattributes (LF), pre-commit with ansible-lint, shellcheck, yamllint | repo root | todo |
-| 0.11 | Build-tool spike before Milestone 1: build the base image twice with Packer plus Ansible and twice with mkosi, diff the results, and record which is reproducible enough. The research rates mkosi and live-build above Packer for reproducibility; the rest of this plan assumes Packer until this spike says otherwise | docs/decision-log.md | todo |
+| 0.11 | Build-tool spike before Milestone 1: build the base image twice with Packer plus Ansible and twice with mkosi, diff the results, and record which is reproducible enough. The research rates mkosi and live-build above Packer for reproducibility; the rest of this plan assumes Packer until this spike says otherwise | docs/decision-log.md | needs-human |
+
+0.11: needs a KVM host and a person: scripts/build-tool-spike.sh does the two Packer builds and the comparison (compare mode tested by tests/functional/test_build_tool_spike.sh); the mkosi steps are in docs/build.md.
 
 ## Milestone 1: Build pipeline, unhardened (v0.1 part 1)
 
 | # | Task | Touches | Status |
 |---|---|---|---|
-| 1.1 | Packer template, QEMU builder, Ubuntu 24.04 live-server ISO as source, checksum pinned | packer/ubuntu-24.04.pkr.hcl | todo |
-| 1.2 | Autoinstall (cloud-init) config: single ext4 root, no swap partition, no LVM; user `analyst` with a locked password (no password exists), desktop autologin, passwordless sudo, screen lock off, no SSH server installed; build-time access removed at the end; root filesystem grows to fill the drive on first boot | packer/http/user-data | todo |
-| 1.3 | Force `linux-generic`, remove `linux-virtual` if pulled in; set initramfs `MODULES=most` | packer/http/user-data | todo |
-| 1.4 | Packer provisioner runs `ansible-playbook -c local site.yml` inside the guest | packer/ubuntu-24.04.pkr.hcl | todo |
-| 1.5 | Ansible `site.yml` with `base` role only: packages, UTC clock, locale, remove build-time SSH key last | ansible/site.yml, ansible/roles/base/ | todo |
-| 1.6 | Post-processor: raw image, zstd compressed, SHA256SUMS file | packer/ubuntu-24.04.pkr.hcl | todo |
-| 1.7 | scripts/build.sh wraps packer init/validate/build with pinned Packer version | scripts/build.sh | todo |
-| 1.8 | Install `ubuntu-desktop-minimal` (the server ISO has no desktop; `harden_desktop` and the launchers need one) | ansible/roles/base/ | todo |
-| 1.9 | Portable boot: GPT with an EFI system partition and a BIOS boot partition; `grub-install --removable --no-nvram` so the loader sits at `EFI/BOOT/BOOTX64.EFI` and does not depend on the build VM's firmware entries; second `grub-install --target=i386-pc` for legacy BIOS; fstab and grub by UUID only | ansible/roles/base/ | todo |
-| 1.10 | First-boot unit: regenerate machine-id and SSH host keys, grow the root filesystem, then disable itself | ansible/roles/base/ | todo |
-| 1.11 | Verify: build completes; image boots in QEMU under both OVMF (UEFI) and SeaBIOS to a desktop login | tests/run-qemu-tests.sh | todo |
-| 1.12 | Kernel and graphics: HWE kernel and a pinned newer Mesa (the 24.04 GA stack predates the Vulkan gains); initramfs includes `uas`, `usb-storage`, `nvme`, `vmd`, `ahci`, xhci; boot-menu entry with the UAS quirk workaround for flaky USB bridges | ansible/roles/base/ | todo |
-| 1.13 | Secure Boot: current Ubuntu dual-signed shim and grub only, SBAT level checked in CI; boot test on firmware with the 2023 CA only and on firmware without the update; quickstart warns that changing Secure Boot settings on a BitLocker PC triggers recovery | ansible/roles/base/, docs/hardware-matrix.md | todo |
+| 1.1 | Packer template, QEMU builder, Ubuntu 24.04 live-server ISO as source, checksum pinned | packer/ubuntu-24.04.pkr.hcl | done |
+| 1.2 | Autoinstall (cloud-init) config: single ext4 root, no swap partition, no LVM; user `analyst` with a locked password (no password exists), desktop autologin, passwordless sudo, screen lock off, no SSH server installed; build-time access removed at the end; root filesystem grows to fill the drive on first boot | packer/http/user-data | doing |
+| 1.3 | Force `linux-generic`, remove `linux-virtual` if pulled in; set initramfs `MODULES=most` | packer/http/user-data | doing |
+| 1.4 | Packer provisioner runs `ansible-playbook -c local site.yml` inside the guest | packer/ubuntu-24.04.pkr.hcl | done |
+| 1.5 | Ansible `site.yml` with `base` role only: packages, UTC clock, locale, remove build-time SSH key last | ansible/site.yml, ansible/roles/base/ | doing |
+| 1.6 | Post-processor: raw image, zstd compressed, SHA256SUMS file | packer/ubuntu-24.04.pkr.hcl | done |
+| 1.7 | scripts/build.sh wraps packer init/validate/build with pinned Packer version | scripts/build.sh | done |
+| 1.8 | Install `ubuntu-desktop-minimal` (the server ISO has no desktop; `harden_desktop` and the launchers need one) | ansible/roles/base/ | doing |
+| 1.9 | Portable boot: GPT with an EFI system partition and a BIOS boot partition; `grub-install --removable --no-nvram` so the loader sits at `EFI/BOOT/BOOTX64.EFI` and does not depend on the build VM's firmware entries; second `grub-install --target=i386-pc` for legacy BIOS; fstab and grub by UUID only | ansible/roles/base/ | doing |
+| 1.10 | First-boot unit: regenerate machine-id and SSH host keys, grow the root filesystem, then disable itself | ansible/roles/base/ | doing |
+| 1.11 | Verify: build completes; image boots in QEMU under both OVMF (UEFI) and SeaBIOS to a desktop login | tests/run-qemu-tests.sh | doing |
+| 1.12 | Kernel and graphics: HWE kernel and a pinned newer Mesa (the 24.04 GA stack predates the Vulkan gains); initramfs includes `uas`, `usb-storage`, `nvme`, `vmd`, `ahci`, xhci; boot-menu entry with the UAS quirk workaround for flaky USB bridges | ansible/roles/base/ | doing |
+| 1.13 | Secure Boot: current Ubuntu dual-signed shim and grub only, SBAT level checked in CI; boot test on firmware with the 2023 CA only and on firmware without the update; quickstart warns that changing Secure Boot settings on a BitLocker PC triggers recovery | ansible/roles/base/, docs/hardware-matrix.md | needs-human |
+
+1.2: implemented; verified by tests/goss/base.yaml in the QEMU/CI stage (user-data checked here by tests/unit/test_packer_user_data.py).
+1.3: implemented; verified by tests/goss/base.yaml (kernel-generic, initramfs-modules) in the QEMU/CI stage.
+1.5: implemented; verified by tests/goss/base.yaml in the QEMU/CI stage (finalize path checked here by tests/functional/test_build_packer_scripts.sh).
+1.8: implemented; verified by tests/goss/base.yaml (desktop-session) in the QEMU/CI stage.
+1.9: implemented; BIOS install and boot, and the signed UEFI and Secure Boot chain, pass here in tests/functional/test_build_bootloader.sh; the installer's UEFI step needs a kernel with FAT and is verified by the same test and tests/goss/base.yaml in the QEMU/CI stage.
+1.10: implemented; airlock-firstboot passes tests/functional/test_build_firstboot.sh here; the unit and online resize are verified by tests/goss/base.yaml (root-grown) in the QEMU/CI stage.
+1.11: implemented; verified by tests/run-qemu-tests.sh in the QEMU/CI stage (needs a KVM build host; harness tested here by tests/functional/test_build_qemu_harness.sh and tests/unit/test_base_qemu_harness.py).
+1.12: implemented; USB compatibility entry passes tests/functional/test_build_grub_usb_compat.sh here; kernel, Mesa and initramfs verified by tests/goss/base.yaml in the QEMU/CI stage.
+1.13: needs a person with physical PCs (2.7): SBAT check (tests/unit/test_base_boot_chain.py) and the signed chain under OVMF Secure Boot pass here; the 2023-CA-only and non-updated firmware tests are listed in docs/hardware-matrix.md. The quickstart (owned by the 2B.3 / 2A.7 docs) should link the BitLocker warning in docs/hardware-matrix.md.
 
 ## Milestone 2: Flash script (v0.1 part 2)
 
 | # | Task | Touches | Status |
 |---|---|---|---|
-| 2.1 | scripts/flash.sh: lists removable disks only (`lsblk -d -o NAME,MODEL,SIZE,RM,TRAN`), refuses `RM=0`, refuses targets smaller than the image plus 8 GB headroom | scripts/flash.sh | todo |
-| 2.2 | Prints target model, size, serial; requires the user to type the device name back | scripts/flash.sh | todo |
-| 2.3 | Refuses if target is the disk holding `/` or any mounted filesystem | scripts/flash.sh | todo |
-| 2.4 | Verifies image SHA-256 before writing; writes with `dd bs=4M conv=fsync status=progress` | scripts/flash.sh | todo |
-| 2.5 | Reads back and hashes the written range, compares to image hash | scripts/flash.sh | todo |
-| 2.6 | Verify: flash to a scratch USB, boot a real laptop, reach login | manual, two laptops | todo |
+| 2.1 | scripts/flash.sh: lists removable disks only (`lsblk -d -o NAME,MODEL,SIZE,RM,TRAN`), refuses `RM=0`, refuses targets smaller than the image plus 8 GB headroom | scripts/flash.sh | done |
+| 2.2 | Prints target model, size, serial; requires the user to type the device name back | scripts/flash.sh | done |
+| 2.3 | Refuses if target is the disk holding `/` or any mounted filesystem | scripts/flash.sh | done |
+| 2.4 | Verifies image SHA-256 before writing; writes with `dd bs=4M conv=fsync status=progress` | scripts/flash.sh | done |
+| 2.5 | Reads back and hashes the written range, compares to image hash | scripts/flash.sh | done |
+| 2.6 | Verify: flash to a scratch USB, boot a real laptop, reach login | manual, two laptops | needs-human |
+
+2.1 to 2.5: verified by tests/functional/test_flash.sh; a drive counts as removable when `RM=1` or when it is a hot-plugged USB drive (USB SSDs report `RM=0`; decision log 2026-11-15).
+2.6: needs a person with a scratch USB drive and two laptops: `sudo scripts/flash.sh --image output/airlock-<version>/airlock-<version>.raw.zst --target /dev/sdX`, then boot each laptop from it through the one-time boot menu and record the result in docs/hardware-matrix.md.
 
 ## Milestone 2A: One-command builder `make-usb.sh` (v0.1 part 2)
 
@@ -449,14 +464,18 @@ Linux-only alternative to Milestone 2B for people who want a complete image buil
 
 | # | Task | Touches | Status |
 |---|---|---|---|
-| 2A.1 | `make-usb.sh` at the repo root: checks Linux x86_64 host, `/dev/kvm`, free disk space, and internet; lists missing prerequisites (Packer, QEMU, Ansible, zstd) and installs them after a yes/no | make-usb.sh, scripts/prereqs.sh | todo |
-| 2A.2 | Prompts: target drive (the 2.1 picker), profile (model tiers, NSRL on the drive or not, Autopsy or not), optional abuse.ch key (skipped key means no MalwareBazaar set, and the build log says so). No username or password prompt | make-usb.sh | todo |
-| 2A.3 | Before building: print estimated download size, image size, and build time for the chosen profile; refuse if the target drive is too small | make-usb.sh | todo |
-| 2A.4 | Run build, QEMU tests, then flash. Flags: `--image-only`, `--flash-only <image>`, `--yes`, `--profile <file>`. Downloads cached in `./cache` by SHA-256 so a rerun does not fetch them again | make-usb.sh, scripts/build.sh | todo |
-| 2A.5 | Failure handling: full log to `build.log`, first failing task named on screen, rerun resumes from the cache | make-usb.sh | todo |
-| 2A.6 | After flashing: read-back hash (2.5), then boot the physical drive read-only in QEMU and run a goss smoke test, so the drive is proven bootable before it leaves the build machine | make-usb.sh, tests/ | todo |
-| 2A.7 | docs/quickstart.md: `git clone`, `cd`, `sudo ./make-usb.sh`. Section for Windows-only users: build from an Ubuntu live session, or `--image-only` inside WSL2 and flash the image with a Windows imaging tool (WSL2 path untested until someone runs it) | docs/quickstart.md | todo |
-| 2A.8 | CI: `make-usb.sh --yes --profile ci.yml` against a loop device as the target | .github/workflows/build.yml | todo |
+| 2A.1 | `make-usb.sh` at the repo root: checks Linux x86_64 host, `/dev/kvm`, free disk space, and internet; lists missing prerequisites (Packer, QEMU, Ansible, zstd) and installs them after a yes/no | make-usb.sh, scripts/prereqs.sh | done |
+| 2A.2 | Prompts: target drive (the 2.1 picker), profile (model tiers, NSRL on the drive or not, Autopsy or not), optional abuse.ch key (skipped key means no MalwareBazaar set, and the build log says so). No username or password prompt | make-usb.sh | done |
+| 2A.3 | Before building: print estimated download size, image size, and build time for the chosen profile; refuse if the target drive is too small | make-usb.sh | done |
+| 2A.4 | Run build, QEMU tests, then flash. Flags: `--image-only`, `--flash-only <image>`, `--yes`, `--profile <file>`. Downloads cached in `./cache` by SHA-256 so a rerun does not fetch them again | make-usb.sh, scripts/build.sh | done |
+| 2A.5 | Failure handling: full log to `build.log`, first failing task named on screen, rerun resumes from the cache | make-usb.sh | done |
+| 2A.6 | After flashing: read-back hash (2.5), then boot the physical drive read-only in QEMU and run a goss smoke test, so the drive is proven bootable before it leaves the build machine | make-usb.sh, tests/ | doing |
+| 2A.7 | docs/quickstart.md: `git clone`, `cd`, `sudo ./make-usb.sh`. Section for Windows-only users: build from an Ubuntu live session, or `--image-only` inside WSL2 and flash the image with a Windows imaging tool (WSL2 path untested until someone runs it) | docs/quickstart.md | done |
+| 2A.8 | CI: `make-usb.sh --yes --profile ci.yml` against a loop device as the target | .github/workflows/build.yml | doing |
+
+2.5.1 resolved (decision log 2026-11-15): 2A is kept because make-usb.sh reuses the 2B manifest and staging code (scripts/gen-manifest.py, scripts/fetch-assets.sh) and the base image from scripts/build.sh. 2A.1 to 2A.5 and 2A.7: verified by tests/functional/test_make_usb.sh (heavy steps stubbed; flash, ASSETS mount and read-back real on a loop device).
+2A.6: implemented; verified by tests/goss/smoke.yaml (via tests/run-qemu-tests.sh --only '^smoke\.yaml$' on an overlay of the drive) in the QEMU/CI stage; the read-back, staged-file check and overlay plumbing pass tests/functional/test_make_usb.sh.
+2A.8: implemented; `sudo ./make-usb.sh --yes --profile ci --target /dev/loopN --confirm loopN` (with AIRLOCK_FLASH_TEST=1 and an lsblk wrapper that marks the loop device removable) runs against a loop device in tests/functional/test_make_usb.sh part B; the build.yml job itself belongs to the CI package and is verified in the CI stage.
 
 ## Milestone 2B: Two-stage install, the default path for Windows and Linux users (v0.1 part 2)
 
@@ -466,39 +485,53 @@ Stage 1: write a small base image to the USB drive with any imaging tool. Stage 
 |---|---|---|---|
 | 2B.1 | CI builds the base image from Milestone 1: Ubuntu 24.04 minimal desktop, portable boot (1.9), storage and network hardening already applied, Ansible, the repo's roles at a pinned tag, and `forensic-provision`. Everything that may be redistributed is already installed in place: all Ubuntu-archive tools, the CI-built llama.cpp, YARA rule packs, and Python tools whose licences allow it. Left out: EZ Tools, model weights, NSRL, ClamAV databases, MalwareBazaar | .github/workflows/release.yml | todo |
 | 2B.2 | Publish base image, SHA256SUMS, and signature as GitHub Release assets; keep each file under GitHub's per-file size limit or split it (confirm the current limit) | .github/workflows/release.yml | todo |
-| 2B.3 | Quickstart, Windows: download, check with `Get-FileHash`, write with Rufus in DD mode or balenaEtcher. Quickstart, Linux: `scripts/flash.sh` (Milestone 2) | docs/quickstart.md | todo |
-| 2B.4 | `forensic-provision` runs unattended on first boot with zero prompts and no network: reads `profile.json` written by the fetcher, refuses to run while any disk other than the boot drive is attached | ansible/roles/session_tools/files/forensic-provision | todo |
-| 2B.5 | Provisioning runs the same Ansible roles locally, every download checked against `pins.yml`, cached and resumable after a failure or power loss | forensic-provision | todo |
-| 2B.6 | Finish: goss tests on the real hardware, hardening re-applied last, network off, manifest written (tool versions, model hashes, hardware, date), reboot | forensic-provision | todo |
-| 2B.7 | To add or change parts later: rerun the fetcher on the host computer with a new profile; the next boot detects the changed `ASSETS` set, verifies it, and applies it offline | forensic-provision | todo |
+| 2B.3 | Quickstart, Windows: download, check with `Get-FileHash`, write with Rufus in DD mode or balenaEtcher. Quickstart, Linux: `scripts/flash.sh` (Milestone 2) | docs/quickstart.md | done |
+| 2B.4 | `forensic-provision` runs unattended on first boot with zero prompts and no network: reads `profile.json` written by the fetcher, refuses to run while any disk other than the boot drive is attached | ansible/roles/session_tools/files/forensic-provision | done |
+| 2B.5 | Provisioning runs the same Ansible roles locally, every download checked against `pins.yml`, cached and resumable after a failure or power loss | forensic-provision | done |
+| 2B.6 | Finish: goss tests on the real hardware, hardening re-applied last, network off, manifest written (tool versions, model hashes, hardware, date), reboot | forensic-provision | doing |
+| 2B.7 | To add or change parts later: rerun the fetcher on the host computer with a new profile; the next boot detects the changed `ASSETS` set, verifies it, and applies it offline | forensic-provision | done |
 | 2B.8 | CI: boot the base image in QEMU with a virtual NIC, provision with the CI profile, run the full test suite | .github/workflows/build.yml | todo |
-| 2B.9 | Pre-positioning, partition layout: EFI, BIOS boot, a fixed-size exFAT partition labelled `ASSETS` (sized for the default profile), then the ext4 root last so it grows to fill the drive. `ASSETS` is empty in the published image, so it compresses to almost nothing | packer/http/user-data | todo |
-| 2B.10 | `assets/manifest.json` generated from `pins.yml`: every external file with URL, size, SHA-256, target path, and which profile needs it | scripts/gen-manifest.py | todo |
-| 2B.11 | Host-side fetchers `fetch-assets.ps1` (Windows) and `fetch-assets.sh` (Linux): prompt for profile and optional abuse.ch key, download each file in the manifest, verify SHA-256, copy onto the `ASSETS` partition of the flashed drive, write `profile.json`; resumable; reports free space before starting | scripts/fetch-assets.ps1, scripts/fetch-assets.sh | todo |
-| 2B.12 | Offline is the only provisioning mode. Missing or corrupt `ASSETS` files are listed by name, the features that need them are disabled and marked in the report, and the fix is to rerun the fetcher on the host computer. The USB system never downloads anything | forensic-provision | todo |
-| 2B.13 | Placement: small executables (EZ Tools) are copied into `/opt`. Large data (GGUF models, classifier weights, NSRL, ClamAV and MalwareBazaar databases) stays on `ASSETS`, mounted read-only with `noexec`, and the tools point at it there, so nothing is copied twice | ansible/roles/base/, forensic-provision | todo |
-| 2B.14 | Hash check of every `ASSETS` file at each boot's `forensic-session-start`, result in the session log | ansible/roles/session_tools/files/ | todo |
-| 2B.15 | Signed manifest: `assets/manifest.json` is signed in the release workflow and the public key is baked into the base image, so pinned files are checked against something the `ASSETS` partition cannot rewrite. Files that change daily (ClamAV, MalwareBazaar) are checked by vendor signature where one exists and otherwise recorded as trusted-at-staging | .github/workflows/release.yml, forensic-provision | todo |
+| 2B.9 | Pre-positioning, partition layout: EFI, BIOS boot, a fixed-size exFAT partition labelled `ASSETS` (sized for the default profile), then the ext4 root last so it grows to fill the drive. `ASSETS` is empty in the published image, so it compresses to almost nothing | packer/http/user-data | doing |
+| 2B.10 | `assets/manifest.json` generated from `pins.yml`: every external file with URL, size, SHA-256, target path, and which profile needs it | scripts/gen-manifest.py | done |
+| 2B.11 | Host-side fetchers `fetch-assets.ps1` (Windows) and `fetch-assets.sh` (Linux): prompt for profile and optional abuse.ch key, download each file in the manifest, verify SHA-256, copy onto the `ASSETS` partition of the flashed drive, write `profile.json`; resumable; reports free space before starting | scripts/fetch-assets.ps1, scripts/fetch-assets.sh | done |
+| 2B.12 | Offline is the only provisioning mode. Missing or corrupt `ASSETS` files are listed by name, the features that need them are disabled and marked in the report, and the fix is to rerun the fetcher on the host computer. The USB system never downloads anything | forensic-provision | done |
+| 2B.13 | Placement: small executables (EZ Tools) are copied into `/opt`. Large data (GGUF models, classifier weights, NSRL, ClamAV and MalwareBazaar databases) stays on `ASSETS`, mounted read-only with `noexec`, and the tools point at it there, so nothing is copied twice | ansible/roles/base/, forensic-provision | doing |
+| 2B.14 | Hash check of every `ASSETS` file at each boot's `forensic-session-start`, result in the session log | ansible/roles/session_tools/files/ | done |
+| 2B.15 | Signed manifest: `assets/manifest.json` is signed in the release workflow and the public key is baked into the base image, so pinned files are checked against something the `ASSETS` partition cannot rewrite. Files that change daily (ClamAV, MalwareBazaar) are checked by vendor signature where one exists and otherwise recorded as trusted-at-staging | .github/workflows/release.yml, forensic-provision | doing |
 | 2B.16 | CI: build base image, run `fetch-assets.sh` against it as a loop device, boot in QEMU with no NIC, confirm provisioning completes offline and the full test suite passes | .github/workflows/build.yml | todo |
-| 2B.17 | Add a separate exFAT `OUTPUT` partition for case output and reports, readable on Windows. `ASSETS` is mounted read-only during runs. Every output file is hashed into `outputs.sha256` | packer/http/user-data, ansible/roles/base/ | todo |
-| 2B.18 | Asset placement by licence: EZ Tools (MIT per the research, confirm each repo's LICENSE), Dissect and NudeNet (AGPL, ship licence and source offer) may be baked into the base image; ClamAV signatures, MalwareBazaar, NSRL, YARA packs, and model weights stay user-fetched | docs/licenses.md, assets/manifest.json | todo |
+| 2B.17 | Add a separate exFAT `OUTPUT` partition for case output and reports, readable on Windows. `ASSETS` is mounted read-only during runs. Every output file is hashed into `outputs.sha256` | packer/http/user-data, ansible/roles/base/ | doing |
+| 2B.18 | Asset placement by licence: EZ Tools (MIT per the research, confirm each repo's LICENSE), Dissect and NudeNet (AGPL, ship licence and source offer) may be baked into the base image; ClamAV signatures, MalwareBazaar, NSRL, YARA packs, and model weights stay user-fetched | docs/licenses.md, assets/manifest.json | done |
 | 2B.19 | Release cadence: rebuild the base image monthly and out of band for parser CVEs; rerun the validation suite (4F) before each release | docs/release-process.md | todo |
+
+2B.17: per-run `outputs.sha256` and its Ed25519 signature are implemented in `forensic_analyze/signing.py` and verified by tests/unit/test_analyze_core.py and tests/functional/test_analyze_quick.sh; the OUTPUT partition itself is built by the image package and verified in the QEMU/CI stage.
+2B.9: implemented; layout plan checked by tests/unit/test_packer_user_data.py and the naming/exFAT helper by tests/functional/test_build_partition_layout.sh here; the installed drive is verified by tests/goss/base.yaml (drive-layout) in the QEMU/CI stage.
+2B.13: mount side implemented (fstab: ASSETS by UUID, ro,noexec,nosuid,nodev,nofail; tests/unit/test_base_role.py here); verified by tests/goss/base.yaml (mounts) in the QEMU/CI stage. The forensic-provision placement side belongs to the provisioning package.
+2B.17: OUTPUT partition and mount implemented by the base role (exFAT, rw,noexec,nosuid,nodev, analyst uid, by UUID); verified by tests/goss/base.yaml in the QEMU/CI stage.
+2B.4, 2B.5, 2B.7, 2B.12: `forensic-provision` (files/bin, package `airlock_provision`) and `airlock-provision.service` pass tests/unit/test_provision.py, tests/unit/test_provision_unit.py, tests/functional/test_assets.sh and tests/functional/test_refresh.sh here (Ansible, goss, systemctl stubbed). See docs/assets.md.
+2B.6: implemented; verified by tests/unit/test_provision.py here with a stub goss; the real goss run on hardware or the booted image is verified by .github/workflows/build.yml (2B.8, 2B.16) in the QEMU/CI stage, and needs goss and tests/goss on the image (see the provisioning notes in docs/assets.md).
+2B.10, 2B.11, 2B.18: gen-manifest, both fetchers (bash, and PowerShell under pwsh 7 on Linux) and the licence table pass tests/unit/test_manifest.py, tests/unit/test_assets_fetch.py and tests/functional/test_fetch_assets.sh here; Windows PowerShell 5.1 on Windows is covered by 4G.2.
+2B.15: implemented: scripts/gen-signing-key.sh, scripts/sign-manifest.sh and the on-drive check (airlock_common.assets) pass tests/unit/test_manifest_signing.py, tests/unit/test_assets.py and tests/functional/test_assets.sh; the signing step in .github/workflows/release.yml and baking the public key into the image are verified in the CI stage.
 
 ## Milestone 3: Storage and network hardening (v0.1 part 3, gates v0.1 release)
 
 | # | Task | Touches | Status |
 |---|---|---|---|
-| 3.1 | Role `harden_storage`: mask `udisks2.service`, dconf lock `automount=false`, `automount-open=false`, `autorun-never=true` | ansible/roles/harden_storage/ | todo |
-| 3.2 | udev rule: `blockdev --setro` on every `sd*`, `nvme*`, `mmcblk*`, `vd*` disk and partition except the root device and its parent | ansible/roles/harden_storage/files/99-forensic-ro.rules | todo |
-| 3.3 | Mask `swap.target`, `systemd-hibernate.service`, `systemd-hybrid-sleep.service`; kernel cmdline `noresume` | ansible/roles/harden_storage/ | todo |
-| 3.4 | Confirm systemd-gpt-auto-generator does not activate swap or mount partitions on attached disks; add `systemd.gpt_auto=0` to cmdline | ansible/roles/harden_storage/ | todo |
-| 3.5 | Role `harden_network` (air-gap profile, the default): systemd unit `forensic-rfkill.service` running `rfkill block all`; NetworkManager, systemd-networkd, systemd-resolved, and systemd-timesyncd masked; no DHCP client runs | ansible/roles/harden_network/ | todo |
-| 3.6 | `/etc/modprobe.d/forensic-radios.conf`: `install cfg80211 /bin/false`, `install bluetooth /bin/false`, `install btusb /bin/false`. Wired interfaces stay down: a udev rule leaves every network interface unmanaged | ansible/roles/harden_network/ | todo |
-| 3.7 | Second layer: nftables ruleset loaded at boot that drops all traffic in and out on every interface except loopback (the local AI server needs loopback) | ansible/roles/harden_network/ | todo |
-| 3.8 | goss tests: automount, blockdev ro on second disk, no swap, rfkill, no wlan interface, no bluetooth module, network services masked, no interface up except loopback, nftables drop policy loaded, no listening socket off loopback | tests/goss/storage.yaml, tests/goss/network.yaml | todo |
+| 3.1 | Role `harden_storage`: mask `udisks2.service`, dconf lock `automount=false`, `automount-open=false`, `autorun-never=true` | ansible/roles/harden_storage/ | doing |
+| 3.2 | udev rule: `blockdev --setro` on every `sd*`, `nvme*`, `mmcblk*`, `vd*` disk and partition except the root device and its parent | ansible/roles/harden_storage/files/99-forensic-ro.rules | done |
+| 3.3 | Mask `swap.target`, `systemd-hibernate.service`, `systemd-hybrid-sleep.service`; kernel cmdline `noresume` | ansible/roles/harden_storage/ | doing |
+| 3.4 | Confirm systemd-gpt-auto-generator does not activate swap or mount partitions on attached disks; add `systemd.gpt_auto=0` to cmdline | ansible/roles/harden_storage/ | doing |
+| 3.5 | Role `harden_network` (air-gap profile, the default): systemd unit `forensic-rfkill.service` running `rfkill block all`; NetworkManager, systemd-networkd, systemd-resolved, and systemd-timesyncd masked; no DHCP client runs | ansible/roles/harden_network/ | doing |
+| 3.6 | `/etc/modprobe.d/forensic-radios.conf`: `install cfg80211 /bin/false`, `install bluetooth /bin/false`, `install btusb /bin/false`. Wired interfaces stay down: a udev rule leaves every network interface unmanaged | ansible/roles/harden_network/ | doing |
+| 3.7 | Second layer: nftables ruleset loaded at boot that drops all traffic in and out on every interface except loopback (the local AI server needs loopback) | ansible/roles/harden_network/ | doing |
+| 3.8 | goss tests: automount, blockdev ro on second disk, no swap, rfkill, no wlan interface, no bluetooth module, network services masked, no interface up except loopback, nftables drop policy loaded, no listening socket off loopback | tests/goss/storage.yaml, tests/goss/network.yaml | doing |
 | 3.9 | QEMU test harness: boots image with two extra virtual disks (ext4, one with swap-type partition), runs goss over serial console, exits non-zero on failure | tests/run-qemu-tests.sh | todo |
-| 3.10 | Verify on bare metal: attach a scratch USB drive, `findmnt` shows nothing, `blockdev --getro` is 1, `dd` write fails | manual | todo |
+| 3.10 | Verify on bare metal: attach a scratch USB drive, `findmnt` shows nothing, `blockdev --getro` is 1, `dd` write fails | manual | needs-human |
 | 3.11 | Tag v0.1 | git | todo |
+
+3.1, 3.3, 3.4: implemented; verified by tests/goss/storage.yaml and tests/vm/test_automount.sh in the QEMU/CI stage (file-editing parts and dconf keys already pass tests/unit/test_harden_storage.py and tests/unit/test_harden_desktop.py).
+3.5, 3.6, 3.7: implemented; verified by tests/goss/network.yaml and tests/vm/test_airgap.sh in the QEMU/CI stage (ruleset, modprobe block list, and unit files already pass tests/unit/test_harden_network.py).
+3.8: implemented; verified by tests/goss/storage.yaml and tests/goss/network.yaml in the QEMU/CI stage (both render with `goss render`; tests/unit/test_harden_coverage.py checks every masked unit has a check).
+3.10: needs a person and a real PC; the checklist is in docs/validation-guide.md, section "Bare-metal check".
 
 ## Milestone 3A: Write-protection hardening from the research (v0.1 part 3)
 
@@ -506,16 +539,22 @@ The software read-only layer is defence in depth. Documentation and on-screen te
 
 | # | Task | Touches | Status |
 |---|---|---|---|
-| 3A.1 | Kernel command line: `systemd.gpt_auto=0 rd.systemd.gpt_auto=0 rd.lvm=0 rd.md=0 rd.dm=0 rd.luks=0 nodmraid noresume` | ansible/roles/harden_storage/ | todo |
-| 3A.2 | Mask `lvm2-monitor`, `mdmonitor`, `multipathd`, `udisks2`, `smartd`; no automatic fsck; no SMART self-tests or spin-down commands sent to targets | ansible/roles/harden_storage/ | todo |
-| 3A.3 | Never mount the target by default: analysis reads the raw device or image through The Sleuth Kit and Dissect. `evidence-mount` remains for images only, with `ro,noload` (ext), `ro,norecovery` (XFS), and a warning | ansible/roles/session_tools/files/ | todo |
-| 3A.4 | Restrict `/dev/sg*` and `/dev/bsg/*` to root and ship no tool that sends SG_IO commands to a target | ansible/roles/harden_storage/ | todo |
-| 3A.5 | Write tracer: record write and discard requests issued to the target during a run (blktrace or a kprobe) and put the count in `run.json` and the report. Expected value is 0 | forensic-analyze/tracer.py | todo |
-| 3A.6 | HPA and DCO detection (`hdparm -N`, `--dco-identify`) logged, never removed. SSD targets get a warning that the drive's own garbage collection can change before and after hashes | forensic-analyze/target.py | todo |
-| 3A.7 | Write-blocker record: make, model, firmware, and a link to its CFTT or DHS test report; the docs list only blockers that have one | forensic-analyze/target.py, docs/write-blockers.md | todo |
-| 3A.8 | Run the NIST CFTT Federated Testing write-block tests against the built image and publish the result as software read-only policy test results | validation/ | todo |
-| 3A.9 | Sandbox every parser: unprivileged user, bubblewrap or `systemd-run` with `PrivateNetwork=yes`, `ProtectSystem=strict`, read-only view of the evidence, one writable output folder, seccomp filter, memory and time limits. Root opens the device once and hands workers a read-only handle | forensic-analyze/sandbox.py | todo |
+| 3A.1 | Kernel command line: `systemd.gpt_auto=0 rd.systemd.gpt_auto=0 rd.lvm=0 rd.md=0 rd.dm=0 rd.luks=0 nodmraid noresume` | ansible/roles/harden_storage/ | doing |
+| 3A.2 | Mask `lvm2-monitor`, `mdmonitor`, `multipathd`, `udisks2`, `smartd`; no automatic fsck; no SMART self-tests or spin-down commands sent to targets | ansible/roles/harden_storage/ | doing |
+| 3A.3 | Never mount the target by default: analysis reads the raw device or image through The Sleuth Kit and Dissect. `evidence-mount` remains for images only, with `ro,noload` (ext), `ro,norecovery` (XFS), and a warning | ansible/roles/session_tools/files/ | done |
+| 3A.4 | Restrict `/dev/sg*` and `/dev/bsg/*` to root and ship no tool that sends SG_IO commands to a target | ansible/roles/harden_storage/ | doing |
+| 3A.5 | Write tracer: record write and discard requests issued to the target during a run (blktrace or a kprobe) and put the count in `run.json` and the report. Expected value is 0 | forensic-analyze/tracer.py | done |
+| 3A.6 | HPA and DCO detection (`hdparm -N`, `--dco-identify`) logged, never removed. SSD targets get a warning that the drive's own garbage collection can change before and after hashes | forensic-analyze/target.py | done |
+| 3A.7 | Write-blocker record: make, model, firmware, and a link to its CFTT or DHS test report; the docs list only blockers that have one | forensic-analyze/target.py, docs/write-blockers.md | doing |
+| 3A.8 | Run the NIST CFTT Federated Testing write-block tests against the built image and publish the result as software read-only policy test results | validation/ | needs-human |
+| 3A.9 | Sandbox every parser: unprivileged user, bubblewrap or `systemd-run` with `PrivateNetwork=yes`, `ProtectSystem=strict`, read-only view of the evidence, one writable output folder, seccomp filter, memory and time limits. Root opens the device once and hands workers a read-only handle | forensic-analyze/sandbox.py | done |
 | 3A.10 | goss and functional tests for 3A.1 to 3A.9, including a disk with LVM, mdraid, and swap signatures that must stay untouched | tests/ | todo |
+
+3A.1, 3A.2, 3A.4: implemented; verified by tests/goss/storage.yaml and tests/vm/test_storage_untouched.sh in the QEMU/CI stage (the GRUB-file assertion and the lvm.conf, mdadm.conf, and fstab edits already pass tests/unit/test_harden_storage.py).
+3A.10 (storage part): tests/vm/test_storage_untouched.sh is written and checks the LVM/mdraid/swap signature disk (serial airlock-sig, AIRLOCK_TEST_DISK_SIG) stays read-only, unassembled, unmounted, and byte-identical; it runs in the QEMU/CI stage once the harness attaches that disk.
+3A.7: the write-blocker prompt and record (make, model, firmware, report link in `run.json`) are implemented in `forensic_analyze/target.py` and verified by tests/unit/test_analyze_target.py; `docs/write-blockers.md` belongs to the docs package.
+3A.9: the bubblewrap and unshare methods are verified here by tests/functional/test_sandbox.sh; the systemd-run method is verified by the same test in the QEMU/CI stage (systemd is PID 1 only there).
+3A.8: needs a person with the NIST CFTT Federated Testing suite, a test drive, and a PC; the method, the AIRLOCK-side checks, and the results template ("software read-only policy test results", Markdown and JSON) are in validation/cftt/, and the validation report reads `validation/cftt/results-<release>.json` (checked by tests/unit/test_validation_report.py).
 
 ## Milestone 4: Tool layers and session helpers (v0.2)
 
@@ -523,22 +562,28 @@ Tool selection principle: CLI-first, one tool per artifact class, each with a kn
 
 | # | Task | Touches | Status |
 |---|---|---|---|
-| 4.1 | Role `tools_acquire`: ewf-tools (`ewfacquire`), dc3dd, gddrescue, guymager (GUI imager, Linux-native), hashdeep, ssdeep, afflib-tools, libewf, libvshadow-utils | ansible/roles/tools_acquire/ | todo |
-| 4.2 | Role `tools_filesystem`: sleuthkit (`mmls`, `fls`, `istat`, `icat`, `tsk_recover`, `blkls`), libfsntfs-utils, libfsntfs python bindings, ntfs-3g for `ntfsinfo` only | ansible/roles/tools_filesystem/ | todo |
-| 4.3 | Role `tools_dissect`: Dissect from PyPI in its own venv under `/opt/dissect`, version pinned; provides `target-query`, `target-shell`, `target-fs`, NTFS, USN, registry, BitLocker, E01 | ansible/roles/tools_dissect/ | todo |
-| 4.4 | Role `tools_eztools`: .NET 9 runtime from Microsoft apt repo, then MFTECmd, RBCmd, LECmd, JLECmd, PECmd, EvtxECmd, AmcacheParser, AppCompatCacheParser, RECmd, SBECmd, bstrings from `download.ericzimmermanstools.com/net9`, each pinned by SHA-256 into `/opt/eztools/<Tool>/`, wrapper scripts on PATH | ansible/roles/tools_eztools/ | todo |
-| 4.5 | Role `tools_timeline`: Plaso from the GIFT PPA or pinned wheel; Timesketch deferred (needs Docker and a database, wrong fit for a USB stick) | ansible/roles/tools_timeline/ | todo |
-| 4.6 | Role `tools_carve`: testdisk (PhotoRec), scalpel, foremost, bulk-extractor, usncarve (USN records from unallocated space) | ansible/roles/tools_carve/ | todo |
-| 4.7 | Role `tools_media`: libimage-exiftool-perl (pin to a version above 12.24), mediainfo, ffmpeg, exiv2, vinetto, python3-dissect.thumbcache | ansible/roles/tools_media/ | todo |
-| 4.8 | Role `tools_registry`: regripper (Perl), libregf-utils, hivex | ansible/roles/tools_registry/ | todo |
-| 4.9 | Role `tools_autopsy`, optional, `install_autopsy=false` by default: Java version read from the Autopsy release notes, Sleuth Kit Java .deb and Autopsy zip pinned by URL and SHA-256, `unix_setup.sh`, desktop launcher | ansible/roles/tools_autopsy/ | todo |
-| 4.10 | Role `session_tools`: `forensic-session-start`, `evidence-unlock-output`, `evidence-mount`, `evidence-hash`, `evidence-triage` (runs mmls, fsstat, hash, and a Dissect `target-info` and writes them to the session log). No network toggle exists on the image | ansible/roles/session_tools/files/ | todo |
-| 4.11 | All helpers append to `/var/log/forensic-session/<UTC timestamp>.log` | ansible/roles/session_tools/ | todo |
-| 4.12 | docs/workflows/windows-external-drive.md: the NTFS deleted-file and media-metadata runbook using 4.1 to 4.8, in order, with the command for each step | docs/workflows/ | todo |
-| 4.13 | goss tests: each tool binary present and `--version` runs; `dotnet --list-runtimes` shows 9.x; `target-query --version` runs; helpers present and executable | tests/goss/tools.yaml | todo |
-| 4.14 | Functional test: a 64 MB NTFS test image with known created and deleted files, checked into tests/fixtures (built by a script, not hand-made); `fls -rd`, MFTECmd `$MFT` and `$J`, and Dissect `target-query -f mft` must each find the known deleted file names | tests/fixtures/, tests/functional/ | todo |
-| 4.15 | Clock handling: with no network there is no time sync. `forensic-session-start` shows the hardware clock in UTC, asks the operator to confirm or correct it against a trusted clock, and logs the answer and any offset | ansible/roles/session_tools/files/ | todo |
+| 4.1 | Role `tools_acquire`: ewf-tools (`ewfacquire`), dc3dd, gddrescue, guymager (GUI imager, Linux-native), hashdeep, ssdeep, afflib-tools, libewf, libvshadow-utils | ansible/roles/tools_acquire/ | doing |
+| 4.2 | Role `tools_filesystem`: sleuthkit (`mmls`, `fls`, `istat`, `icat`, `tsk_recover`, `blkls`), libfsntfs-utils, libfsntfs python bindings, ntfs-3g for `ntfsinfo` only | ansible/roles/tools_filesystem/ | doing |
+| 4.3 | Role `tools_dissect`: Dissect from PyPI in its own venv under `/opt/dissect`, version pinned; provides `target-query`, `target-shell`, `target-fs`, NTFS, USN, registry, BitLocker, E01 | ansible/roles/tools_dissect/ | doing |
+| 4.4 | Role `tools_eztools`: .NET 9 runtime from Microsoft apt repo, then MFTECmd, RBCmd, LECmd, JLECmd, PECmd, EvtxECmd, AmcacheParser, AppCompatCacheParser, RECmd, SBECmd, bstrings from `download.ericzimmermanstools.com/net9`, each pinned by SHA-256 into `/opt/eztools/<Tool>/`, wrapper scripts on PATH | ansible/roles/tools_eztools/ | doing |
+| 4.5 | Role `tools_timeline`: Plaso from the GIFT PPA or pinned wheel; Timesketch deferred (needs Docker and a database, wrong fit for a USB stick) | ansible/roles/tools_timeline/ | doing |
+| 4.6 | Role `tools_carve`: testdisk (PhotoRec), scalpel, foremost, bulk-extractor, usncarve (USN records from unallocated space) | ansible/roles/tools_carve/ | doing |
+| 4.7 | Role `tools_media`: libimage-exiftool-perl (pin to a version above 12.24), mediainfo, ffmpeg, exiv2, vinetto, python3-dissect.thumbcache | ansible/roles/tools_media/ | doing |
+| 4.8 | Role `tools_registry`: regripper (Perl), libregf-utils, hivex | ansible/roles/tools_registry/ | doing |
+| 4.9 | Role `tools_autopsy`, optional, `install_autopsy=false` by default: Java version read from the Autopsy release notes, Sleuth Kit Java .deb and Autopsy zip pinned by URL and SHA-256, `unix_setup.sh`, desktop launcher | ansible/roles/tools_autopsy/ | doing |
+| 4.10 | Role `session_tools`: `forensic-session-start`, `evidence-unlock-output`, `evidence-mount`, `evidence-hash`, `evidence-triage` (runs mmls, fsstat, hash, and a Dissect `target-info` and writes them to the session log). No network toggle exists on the image | ansible/roles/session_tools/files/ | done |
+| 4.11 | All helpers append to `/var/log/forensic-session/<UTC timestamp>.log` | ansible/roles/session_tools/ | done |
+| 4.12 | docs/workflows/windows-external-drive.md: the NTFS deleted-file and media-metadata runbook using 4.1 to 4.8, in order, with the command for each step | docs/workflows/ | done |
+| 4.13 | goss tests: each tool binary present and `--version` runs; `dotnet --list-runtimes` shows 9.x; `target-query --version` runs; helpers present and executable | tests/goss/tools.yaml | doing |
+| 4.14 | Functional test: a 64 MB NTFS test image with known created and deleted files, checked into tests/fixtures (built by a script, not hand-made); `fls -rd`, MFTECmd `$MFT` and `$J`, and Dissect `target-query -f mft` must each find the known deleted file names | tests/fixtures/, tests/functional/ | doing |
+| 4.15 | Clock handling: with no network there is no time sync. `forensic-session-start` shows the hardware clock in UTC, asks the operator to confirm or correct it against a trusted clock, and logs the answer and any offset | ansible/roles/session_tools/files/ | done |
 | 4.16 | Tag v0.2 | git | todo |
+
+4.1, 4.2, 4.3, 4.5, 4.6, 4.7, 4.8: implemented; verified by tests/goss/tools.yaml in the QEMU/CI stage (role shape, noble package names, pins and hashed requirements already pass tests/unit/test_tools_roles.py and tests/unit/test_tools_pins.py; the goss commands were run here against the same packages and against the Dissect, Plaso, usncarve and bulk_extractor builds made from the pinned files).
+4.4: implemented; verified by tests/goss/tools.yaml in the QEMU/CI stage (tests/unit/test_tools_eztools.py runs the role's provisioning steps here); the eleven EZ Tools zips are `sha256: null` (download.ericzimmermanstools.com unreachable from the authoring host) and must be pinned before EZ Tools can be provisioned.
+4.9: implemented; verified by tests/goss/tools.yaml in the QEMU/CI stage; `pins.sleuthkit_java_deb` (The Sleuth Kit Java 4.15.0 .deb) needs a person to find its asset name and pin it before Autopsy can be provisioned.
+4.13: implemented; verified by tests/goss/tools.yaml in the QEMU/CI stage (the file renders with `goss render`; its tool checks pass here with the venv paths pointed at local builds).
+4.14: implemented; tests/functional/test_parsers_ntfs.sh passes here for fls -rd, icat and Dissect; its MFTECmd step is verified in the QEMU/CI stage (run with AIRLOCK_REQUIRE_ALL_PARSERS=1 where EZ Tools are staged). The fixture has no `$UsnJrnl` (ntfs-3g never writes one), so the `$J` step runs only on an image with a journal (decision log 2026-11-15).
 
 ## Milestone 4A: Hash sets and signatures (v0.2)
 
@@ -546,14 +591,21 @@ Two kinds: known-good to discard, known-bad to flag. Pulled during a build-time 
 
 | # | Task | Touches | Status |
 |---|---|---|---|
-| 4A.1 | Role `tools_hashsets`: clamav, clamav-freshclam (disabled as a service), ssdeep, python3-tlsh, yara, hashdeep | ansible/roles/tools_hashsets/ | todo |
-| 4A.2 | NSRL RDSv3 Modern minimal SQLite, release pinned (2026.06.1 at time of writing), SHA-256 from NIST's DBHashes file, stored under `/opt/hashsets/nsrl/`; variable `nsrl_on_image=false` puts it on the output drive instead | ansible/roles/tools_hashsets/ | todo |
-| 4A.3 | ClamAV `main.cvd` and `daily.cvd` staged on `ASSETS` by the fetcher and checked with `sigtool` (they carry ClamAV's own signature); `clamav-daemon` and `clamav-freshclam` masked; test asserts both masked | ansible/roles/tools_hashsets/ | todo |
-| 4A.4 | MalwareBazaar full SHA-256 export downloaded by the fetcher on the host computer (abuse.ch key used there only, never stored on the drive), converted to a ClamAV `.hsb` on first boot; snapshot date and hash logged | ansible/roles/tools_hashsets/, scripts/fetch-assets.* | todo |
-| 4A.5 | YARA rule packs (Neo23x0 signature-base, YARA Forge core) pinned by commit under `/opt/yara/` | ansible/roles/tools_hashsets/ | todo |
-| 4A.6 | Helper `evidence-triage-hash`: hashdeep MD5+SHA-1+SHA-256 in one pass, drop NSRL matches via sqlite3, flag ClamAV and `.hsb` hits, YARA and ssdeep on the remainder, CSV out, counts to the session log | ansible/roles/session_tools/files/ | todo |
-| 4A.7 | Updates without network: rerun the fetcher on the host computer with `--refresh` to restage ClamAV, MalwareBazaar, YARA, and models. Helper `forensic-import` on the USB system verifies and applies the new set at next boot, logs each artifact's SHA-256, and refuses to run while an evidence disk is attached. OS and tool updates come by reflashing a newer base image; the fetcher keeps a download cache on the host so restaging is quick | ansible/roles/session_tools/files/, scripts/fetch-assets.* | todo |
-| 4A.8 | goss tests: hash sets present, clamscan loads the `.hsb`, daemon masked, `forensic-import` refuses with a disk attached | tests/goss/hashsets.yaml | todo |
+| 4A.1 | Role `tools_hashsets`: clamav, clamav-freshclam (disabled as a service), ssdeep, python3-tlsh, yara, hashdeep | ansible/roles/tools_hashsets/ | doing |
+| 4A.2 | NSRL RDSv3 Modern minimal SQLite, release pinned (2026.06.1 at time of writing), SHA-256 from NIST's DBHashes file, stored under `/opt/hashsets/nsrl/`; variable `nsrl_on_image=false` puts it on the output drive instead | ansible/roles/tools_hashsets/ | doing |
+| 4A.3 | ClamAV `main.cvd` and `daily.cvd` staged on `ASSETS` by the fetcher and checked with `sigtool` (they carry ClamAV's own signature); `clamav-daemon` and `clamav-freshclam` masked; test asserts both masked | ansible/roles/tools_hashsets/ | doing |
+| 4A.4 | MalwareBazaar full SHA-256 export downloaded by the fetcher on the host computer (abuse.ch key used there only, never stored on the drive), converted to a ClamAV `.hsb` on first boot; snapshot date and hash logged | ansible/roles/tools_hashsets/, scripts/fetch-assets.* | done |
+| 4A.5 | YARA rule packs (Neo23x0 signature-base, YARA Forge core) pinned by commit under `/opt/yara/` | ansible/roles/tools_hashsets/ | doing |
+| 4A.6 | Helper `evidence-triage-hash`: hashdeep MD5+SHA-1+SHA-256 in one pass, drop NSRL matches via sqlite3, flag ClamAV and `.hsb` hits, YARA and ssdeep on the remainder, CSV out, counts to the session log | ansible/roles/session_tools/files/ | done |
+| 4A.7 | Updates without network: rerun the fetcher on the host computer with `--refresh` to restage ClamAV, MalwareBazaar, YARA, and models. Helper `forensic-import` on the USB system verifies and applies the new set at next boot, logs each artifact's SHA-256, and refuses to run while an evidence disk is attached. OS and tool updates come by reflashing a newer base image; the fetcher keeps a download cache on the host so restaging is quick | ansible/roles/session_tools/files/, scripts/fetch-assets.* | done |
+| 4A.8 | goss tests: hash sets present, clamscan loads the `.hsb`, daemon masked, `forensic-import` refuses with a disk attached | tests/goss/hashsets.yaml | doing |
+
+4A.7: `forensic-import` and `fetch-assets.* --refresh` pass tests/functional/test_refresh.sh and tests/unit/test_provision.py here. 4A.4 host side (key asked for, used only as the Auth-Key header of the MalwareBazaar download, never stored; pin `malwarebazaar_sha256_full`) passes tests/functional/test_fetch_assets.sh; the `.hsb` conversion on the drive belongs to the tools_hashsets role.
+4A.1: implemented; verified by tests/goss/hashsets.yaml (packages, units masked, not running) in the QEMU/CI stage. The masks run before the packages, every mask has a goss check (tests/unit/test_hashsets_role.py), and the tools themselves pass tests/functional/test_triage_hash.sh here.
+4A.2: implemented; verified by tests/goss/hashsets.yaml in the QEMU/CI stage. Extraction to `/opt/hashsets/nsrl` or `OUTPUT/nsrl`, the `nsrl_path` lookup order, and read-only SHA-256-first matching pass here (tests/unit/test_hashsets.py, tests/unit/test_hashsets_role.py) on a synthetic RDSv3-schema database; pin `nsrl_rds_modern_minimal` needs its URL checked and its SHA-256 from NIST's DBHashes file (the S3 bucket answered NoSuchBucket and www.nist.gov was unreachable here).
+4A.3: implemented; verified by tests/goss/hashsets.yaml in the QEMU/CI stage with real `main.cvd`/`daily.cvd` staged (database.clamav.net was unreachable here). The sigtool refusal, copy, stale-file removal, and idempotence pass here with a stand-in sigtool (tests/unit/test_hashsets.py).
+4A.5: implemented; verified by tests/goss/hashsets.yaml in the QEMU/CI stage once pins `yara_signature_base` and `yara_forge_core` name a real commit or release tag and carry SHA-256 (github.com was unreachable here). Unpacking, compiling with empty externals, skipping broken files, and idempotence pass here (tests/unit/test_hashsets.py, tests/unit/test_hashsets_role.py).
+4A.8: implemented; verified by tests/goss/hashsets.yaml in the QEMU/CI stage. Its `airlock_hashsets.build check` step passes here (tests/unit/test_hashsets.py); `goss -g tests/goss/hashsets.yaml render` passes.
 
 ## Milestone 4B: Local AI triage (v0.2)
 
@@ -563,24 +615,36 @@ Purpose: flag sexual and violent content and describe everything else so the exa
 
 | # | Task | Touches | Status |
 |---|---|---|---|
-| 4B.1 | Role `tools_ai`: llama.cpp built from a pinned release at or after b9562 (native video input via mtmd), `-DGGML_VULKAN=ON`, no CUDA or ROCm; `llama-server` and `llama-mtmd-cli` installed to `/opt/llama/` | ansible/roles/tools_ai/ | todo |
-| 4B.2 | Mesa Vulkan drivers (`mesa-vulkan-drivers`, RADV for AMD, NVK or the open NVIDIA kernel module for NVIDIA, ANV for Intel), `vulkan-tools` | ansible/roles/tools_ai/ | todo |
-| 4B.3 | Helper `ai-probe`: parses `vulkaninfo --json` for the largest device-local heap. On integrated GPUs that heap is carved from system RAM, so the tier is capped by RAM minus a safety margin. Falls back to the CPU tier if no Vulkan device is found or a model fails to load | ansible/roles/session_tools/files/ | todo |
-| 4B.4 | Model tiers in `ansible/group_vars/ai_models.yml`, each GGUF pinned by URL and SHA-256: tier0 (<4 GB or CPU) Qwen3-VL-2B Q4; tier1 (4 to 6 GB) Qwen3-VL-4B Q4; tier2 (6 to 10 GB) Qwen3-VL-8B Q4; tier3 (10 to 20 GB) Qwen3-VL-8B Q8; tier4 (20 GB+) Qwen3-VL-32B Q4. Variable `ai_tiers_on_image` selects which tiers ship (default: tier0 to tier2) | ansible/group_vars/ai_models.yml | todo |
-| 4B.5 | Classifier layer in its own venv under `/opt/triage/`: NudeNet (nudity detector with body-part classes) and SigLIP zero-shot via ONNX Runtime on CPU, labels: nudity, sexual activity, violence, weapon, gore, blood, injury, neutral. Models pinned by SHA-256. Licenses recorded in docs/licenses.md | ansible/roles/tools_ai/ | todo |
-| 4B.6 | Helper `evidence-screen`: for each image, run NudeNet and SigLIP, write `screen.csv` (path, sha256, nudity score, per-label scores, verdict). Verdict thresholds in a config file, defaults conservative. Flagged files are never sent to the VLM | ansible/roles/session_tools/files/ | todo |
-| 4B.7 | Video path: `ffmpeg` samples 1 frame every 2 s plus scene-change frames, each frame through 4B.6; any flagged frame flags the video with timestamps. Audio track through `faster-whisper` small to a transcript. Cleared videos go to `llama-mtmd-cli` native video input for a description | ansible/roles/session_tools/files/ | todo |
-| 4B.8 | Helper `evidence-describe`: cleared files only, through `llama-server` on `127.0.0.1`, fixed prompt, temperature 0, fixed seed; output CSV with path, sha256, description, model file hash, prompt hash, tier. A refusal or empty response is logged as `model_declined`, never dropped | ansible/roles/session_tools/files/ | todo |
-| 4B.9 | Documents: `pdftotext` and `libreoffice --convert-to txt` first, scanned pages through the VLM OCR path, summary through the same server with the same provenance columns | ansible/roles/session_tools/files/ | todo |
-| 4B.10 | `llama-server` systemd unit bound to `127.0.0.1` only, socket-activated, off until `evidence-describe` starts it; goss asserts no listener on any other interface | ansible/roles/tools_ai/ | todo |
-| 4B.11 | `evidence-report` renders the final report from the findings store; see Milestone 4E | ansible/roles/session_tools/files/ | todo |
-| 4B.12 | Functional tests: a fixture set of neutral synthetic images (generated shapes, text renders, a stock-free landscape) plus EICAR; screen must pass all as neutral, describe must return non-empty text, probe must pick tier0 in QEMU with no GPU. No sexual or violent fixtures are committed to the repo | tests/fixtures/ai/, tests/functional/ | todo |
-| 4B.13 | Hardware matrix: tier selection and tokens/s on at least one AMD and one NVIDIA laptop, recorded in docs/hardware-matrix.md | docs/hardware-matrix.md | todo |
-| 4B.14 | docs/workflows/media-screening.md: the screen-then-describe runbook, threshold meaning, what a flag does and does not prove, and the stop-and-report rule for suspected child sexual abuse material | docs/workflows/ | todo |
-| 4B.15 | Optional NVIDIA proprietary driver through Ubuntu's signed `linux-modules-nvidia` packages, staged by the fetcher and installed offline (no DKMS, no MOK enrolment). Default stays the open driver | ansible/roles/tools_ai/, scripts/fetch-assets.* | todo |
-| 4B.16 | Measure the classifiers' false-positive and false-negative rates on a lawful labelled adult and violence benchmark; publish thresholds and results per release. No independent figures exist | validation/classifiers/ | todo |
-| 4B.17 | Media stays hidden by default everywhere in the tools: no thumbnails, scores and counts only. Flagged sexual content is never exported or copied | forensic-analyze/, evidence-report | todo |
-| 4B.18 | `forensic-escalate`: operator-run stop control. Halts the run, freezes exports, records only path, finding ID, and hash, and shows the stop-and-contact-law-enforcement guidance | ansible/roles/session_tools/files/ | todo |
+| 4B.1 | Role `tools_ai`: llama.cpp built from a pinned release at or after b9562 (native video input via mtmd), `-DGGML_VULKAN=ON`, no CUDA or ROCm; `llama-server` and `llama-mtmd-cli` installed to `/opt/llama/` | ansible/roles/tools_ai/ | doing |
+| 4B.2 | Mesa Vulkan drivers (`mesa-vulkan-drivers`, RADV for AMD, NVK or the open NVIDIA kernel module for NVIDIA, ANV for Intel), `vulkan-tools` | ansible/roles/tools_ai/ | doing |
+| 4B.3 | Helper `ai-probe`: parses `vulkaninfo --json` for the largest device-local heap. On integrated GPUs that heap is carved from system RAM, so the tier is capped by RAM minus a safety margin. Falls back to the CPU tier if no Vulkan device is found or a model fails to load | ansible/roles/session_tools/files/ | done |
+| 4B.4 | Model tiers in `ansible/group_vars/ai_models.yml`, each GGUF pinned by URL and SHA-256: tier0 (<4 GB or CPU) Qwen3-VL-2B Q4; tier1 (4 to 6 GB) Qwen3-VL-4B Q4; tier2 (6 to 10 GB) Qwen3-VL-8B Q4; tier3 (10 to 20 GB) Qwen3-VL-8B Q8; tier4 (20 GB+) Qwen3-VL-32B Q4. Variable `ai_tiers_on_image` selects which tiers ship (default: tier0 to tier2) | ansible/group_vars/ai_models.yml | doing |
+| 4B.5 | Classifier layer in its own venv under `/opt/triage/`: NudeNet (nudity detector with body-part classes) and SigLIP zero-shot via ONNX Runtime on CPU, labels: nudity, sexual activity, violence, weapon, gore, blood, injury, neutral. Models pinned by SHA-256. Licenses recorded in docs/licenses.md | ansible/roles/tools_ai/ | doing |
+| 4B.6 | Helper `evidence-screen`: for each image, run NudeNet and SigLIP, write `screen.csv` (path, sha256, nudity score, per-label scores, verdict). Verdict thresholds in a config file, defaults conservative. Flagged files are never sent to the VLM | ansible/roles/session_tools/files/ | done |
+| 4B.7 | Video path: `ffmpeg` samples 1 frame every 2 s plus scene-change frames, each frame through 4B.6; any flagged frame flags the video with timestamps. Audio track through `faster-whisper` small to a transcript. Cleared videos go to `llama-mtmd-cli` native video input for a description | ansible/roles/session_tools/files/ | doing |
+| 4B.8 | Helper `evidence-describe`: cleared files only, through `llama-server` on `127.0.0.1`, fixed prompt, temperature 0, fixed seed; output CSV with path, sha256, description, model file hash, prompt hash, tier. A refusal or empty response is logged as `model_declined`, never dropped | ansible/roles/session_tools/files/ | done |
+| 4B.9 | Documents: `pdftotext` and `libreoffice --convert-to txt` first, scanned pages through the VLM OCR path, summary through the same server with the same provenance columns | ansible/roles/session_tools/files/ | done |
+| 4B.10 | `llama-server` systemd unit bound to `127.0.0.1` only, socket-activated, off until `evidence-describe` starts it; goss asserts no listener on any other interface | ansible/roles/tools_ai/ | doing |
+| 4B.11 | `evidence-report` renders the final report from the findings store; see Milestone 4E | ansible/roles/session_tools/files/ | done |
+| 4B.12 | Functional tests: a fixture set of neutral synthetic images (generated shapes, text renders, a stock-free landscape) plus EICAR; screen must pass all as neutral, describe must return non-empty text, probe must pick tier0 in QEMU with no GPU. No sexual or violent fixtures are committed to the repo | tests/fixtures/ai/, tests/functional/ | doing |
+| 4B.13 | Hardware matrix: tier selection and tokens/s on at least one AMD and one NVIDIA laptop, recorded in docs/hardware-matrix.md | docs/hardware-matrix.md | needs-human |
+| 4B.14 | docs/workflows/media-screening.md: the screen-then-describe runbook, threshold meaning, what a flag does and does not prove, and the stop-and-report rule for suspected child sexual abuse material | docs/workflows/ | done |
+| 4B.15 | Optional NVIDIA proprietary driver through Ubuntu's signed `linux-modules-nvidia` packages, staged by the fetcher and installed offline (no DKMS, no MOK enrolment). Default stays the open driver | ansible/roles/tools_ai/, scripts/fetch-assets.* | doing |
+| 4B.16 | Measure the classifiers' false-positive and false-negative rates on a lawful labelled adult and violence benchmark; publish thresholds and results per release. No independent figures exist | validation/classifiers/ | needs-human |
+| 4B.17 | Media stays hidden by default everywhere in the tools: no thumbnails, scores and counts only. Flagged sexual content is never exported or copied | forensic-analyze/, evidence-report | done |
+| 4B.18 | `forensic-escalate`: operator-run stop control. Halts the run, freezes exports, records only path, finding ID, and hash, and shows the stop-and-contact-law-enforcement guidance | ansible/roles/session_tools/files/ | done |
+
+4B.1: implemented; verified by tests/goss/ai.yaml in the QEMU/CI stage (the llama.cpp tarball pin needs its SHA-256; github.com was unreachable here).
+4B.2: implemented; verified by tests/goss/ai.yaml in the QEMU/CI stage.
+4B.4: implemented; verified by tests/unit/test_probe.py (tiers rendered from ai_models.yml) and tests/goss/ai.yaml in the QEMU/CI stage once the GGUF pins have SHA-256 (huggingface.co was unreachable here).
+4B.5: implemented; verified by tests/functional/test_ai_neutral.sh in the QEMU/CI stage with the SigLIP export staged (NudeNet ran for real here under the bubblewrap sandbox with a stand-in SigLIP).
+4B.7: implemented; verified by tests/functional/test_ai_neutral.sh and tests/goss/ai.yaml in the QEMU/CI stage with the Whisper and Qwen3-VL models staged (frame sampling, flagging, transcript and description plumbing pass here with stubs: tests/unit/test_module_video.py).
+4B.10: implemented; verified by tests/goss/ai.yaml in the QEMU/CI stage (launcher, loopback-only client, and CPU fallback pass here: tests/unit/test_describe_serve.py, tests/unit/test_describe.py).
+4B.12: implemented; verified by tests/functional/test_ai_neutral.sh in the QEMU/CI stage (needs /opt/triage with the SigLIP export and a staged model tier).
+4B.13: needs a person with an AMD and an NVIDIA laptop; the procedure and table are in docs/hardware-matrix.md.
+4B.15: implemented (role side, off by default); verified with staged packages in the QEMU/CI stage. The fetcher side (scripts/fetch-assets.*) and the pins for the kernel's linux-modules-nvidia packages belong to the assets package.
+4B.15 fetcher side: done; the 18 `nvidia_deb_*` pins (kernel ABI 7.0.0-42, snapshot 20261101T000000Z) are staged only for a profile with `nvidia_proprietary: true` (tests/unit/test_manifest.py, tests/functional/test_fetch_assets.sh); `tools_ai_nvidia_deb_pins` must list them for the role to install them.
+4B.16: needs a person with lawful access to a labelled benchmark; method and scoring script in validation/classifiers/ (score.py tested by tests/unit/test_screen_validation.py).
 
 ## Milestone 4C: Guided analysis wizard `forensic-analyze` (v0.2)
 
@@ -588,35 +652,48 @@ Purpose: one command that asks which drive and what to look at in broad terms, t
 
 | # | Task | Touches | Status |
 |---|---|---|---|
-| 4C.1 | `forensic-analyze` in Python (stdlib only), whiptail menus with a plain-prompt fallback; installed on PATH with a desktop launcher | ansible/roles/session_tools/files/forensic-analyze/ | todo |
-| 4C.2 | Step 1, target picker: lists attached disks and image files (E01, raw) with model, serial, size, filesystem; never lists the boot stick; refuses a target whose read-only flag is not set; user types the device name back to confirm | forensic-analyze/target.py | todo |
-| 4C.3 | Step 2, output picker: the drive's `OUTPUT` partition by default, or an output drive unlocked through `evidence-unlock-output`; free-space check against an estimate for the chosen modules and mode | forensic-analyze/output.py | todo |
-| 4C.4 | Step 3, preset: Quick (inventory, recycle bin, hash triage), Standard (Quick plus images, video, audio, documents, timeline), Full (Standard plus carving unallocated space), or Custom checklist | forensic-analyze/presets.py | todo |
-| 4C.5 | Module `inventory`: every file, live and deleted, with path, size, MACB times, deleted flag (fls, MFTECmd on `$MFT`) | forensic-analyze/modules/inventory.py | todo |
-| 4C.6 | Module `recycle_bin`: `$I` and `$R` pairs with original path, deletion time, owner SID (RBCmd) | forensic-analyze/modules/recycle_bin.py | todo |
-| 4C.7 | Module `deletion_history`: USN journal and `$LogFile` delete records, plus usncarve when the Full preset is chosen | forensic-analyze/modules/deletion_history.py | todo |
-| 4C.8 | Module `images`: export, exiftool metadata, thumbcache and Thumbs.db, then `evidence-screen` and `evidence-describe` | forensic-analyze/modules/images.py | todo |
-| 4C.9 | Module `video`: export, mediainfo and ffprobe metadata, frame screening, description of cleared videos | forensic-analyze/modules/video.py | todo |
-| 4C.10 | Module `audio`: export, metadata, faster-whisper transcript, text summary | forensic-analyze/modules/audio.py | todo |
-| 4C.11 | Module `documents`: export, metadata, text extraction, summary | forensic-analyze/modules/documents.py | todo |
-| 4C.12 | Module `malware`: `evidence-triage-hash` (NSRL drop, ClamAV, MalwareBazaar, YARA, ssdeep) | forensic-analyze/modules/malware.py | todo |
-| 4C.13 | Module `users`: owner SIDs, LNK files, Jump Lists, anything that ties files to an account (LECmd, JLECmd, MFTECmd on `$SDS`) | forensic-analyze/modules/users.py | todo |
-| 4C.14 | Module `timeline`: Plaso over the target, CSV out | forensic-analyze/modules/timeline.py | todo |
-| 4C.15 | Module `carve`: PhotoRec and bulk_extractor over unallocated space; carved media feeds back into the images, video, and audio modules | forensic-analyze/modules/carve.py | todo |
-| 4C.16 | Filesystem awareness: `fsstat` decides which modules can run. On exFAT or FAT the NTFS-only modules are skipped and the report says why. BitLocker asks for the recovery key and uses Dissect to unlock, or stops | forensic-analyze/fsdetect.py | todo |
-| 4C.17 | Run control: SHA-256 and MD5 of the target before and after (and of the image when one is made), write-request count from the tracer, `run.json` with target identifiers, hashes, modules, exact command lines, tool versions and hashes, model hashes, thresholds, errors and deviations; one done-marker per module so an interrupted run resumes; first module failure is shown immediately and the run continues | forensic-analyze/runner.py | todo |
-| 4C.18 | Every prompt has a flag: `forensic-analyze --target /dev/sdb --preset standard --output /cases/x --yes` and `--config run.json` to replay a run exactly | forensic-analyze/cli.py | todo |
-| 4C.19 | End-of-run option: purge exported file copies and keep only CSVs, transcripts, descriptions, and the report, so nothing from the drive is retained beyond findings | forensic-analyze/cleanup.py | todo |
-| 4C.20 | Final step calls `evidence-report`; the report opens with counts per module, failures and skipped modules first | forensic-analyze/runner.py | todo |
-| 4C.21 | Tests: non-interactive Standard run against the NTFS fixture in QEMU must find the known deleted files and the known recycle-bin entry, produce `run.json`, and leave the fixture hash unchanged; a run against an exFAT fixture must skip the NTFS modules with a reason | tests/functional/test_analyze.sh | todo |
-| 4C.22 | Write-blocker advisory: before the target picker, `forensic-analyze` and `forensic-session-start` tell the operator to connect the drive through a hardware write blocker, ask whether one is in use, and log the answer in `run.json`. The software read-only flag is described on screen as a second layer, not a substitute | forensic-analyze/target.py | todo |
-| 4C.23 | docs/workflows/guided-analysis.md: what each preset runs, rough time per preset, what each report section means | docs/workflows/ | todo |
-| 4C.24 | Mode choice at the start, two options: Read directly (default; reads the device through the blocker, no copy kept, a one-line warning each run that nothing can be re-examined later, and the report states the limits) or Copy first (makes a verified image with `ewfacquire`, or `ddrescue` with a map file for weak drives, then analyses the image; needs an output drive as large as the target). `--mode direct` and `--mode image` on the command line | forensic-analyze/mode.py | todo |
-| 4C.25 | Examiner and case fields at the start: examiner name, case ID, exhibit ID, authority reference, free-text notes. Defaults can be preset in `profile.json` so nothing has to be typed. Every run's outputs are signed with a key held on `OUTPUT` | forensic-analyze/case.py | todo |
-| 4C.26 | Clock record: reference time and its source entered by the examiner, `clock_offset_seconds` stored, system time never silently corrected, monotonic durations logged beside wall-clock times | forensic-analyze/case.py | todo |
-| 4C.27 | NTFS interpretation rows marked as inferred, never observed: `$SI` created before `$FN` created, zero sub-second fractions, `$SI` changes with no USN record. Reports say "account SID", never a person's name | forensic-analyze/modules/ | todo |
-| 4C.28 | Cross-validation: core artifacts parsed twice (The Sleuth Kit or Dissect against MFTECmd; RBCmd against Dissect), joined on MFT entry and sequence, with agree, disagree, or single-source recorded per row. Disagreements are listed, never resolved silently | forensic-analyze/xval.py | todo |
-| 4C.29 | Volume Shadow Copy check on every NTFS target, with "none found" reported explicitly | forensic-analyze/modules/inventory.py | todo |
+| 4C.1 | `forensic-analyze` in Python (stdlib only), whiptail menus with a plain-prompt fallback; installed on PATH with a desktop launcher | ansible/roles/session_tools/files/forensic-analyze/ | doing |
+| 4C.2 | Step 1, target picker: lists attached disks and image files (E01, raw) with model, serial, size, filesystem; never lists the boot stick; refuses a target whose read-only flag is not set; user types the device name back to confirm | forensic-analyze/target.py | done |
+| 4C.3 | Step 2, output picker: the drive's `OUTPUT` partition by default, or an output drive unlocked through `evidence-unlock-output`; free-space check against an estimate for the chosen modules and mode | forensic-analyze/output.py | done |
+| 4C.4 | Step 3, preset: Quick (inventory, recycle bin, hash triage), Standard (Quick plus images, video, audio, documents, timeline), Full (Standard plus carving unallocated space), or Custom checklist | forensic-analyze/presets.py | done |
+| 4C.5 | Module `inventory`: every file, live and deleted, with path, size, MACB times, deleted flag (fls, MFTECmd on `$MFT`) | forensic-analyze/modules/inventory.py | doing |
+| 4C.6 | Module `recycle_bin`: `$I` and `$R` pairs with original path, deletion time, owner SID (RBCmd) | forensic-analyze/modules/recycle_bin.py | doing |
+| 4C.7 | Module `deletion_history`: USN journal and `$LogFile` delete records, plus usncarve when the Full preset is chosen | forensic-analyze/modules/deletion_history.py | doing |
+| 4C.8 | Module `images`: export, exiftool metadata, thumbcache and Thumbs.db, then `evidence-screen` and `evidence-describe` | forensic-analyze/modules/images.py | done |
+| 4C.9 | Module `video`: export, mediainfo and ffprobe metadata, frame screening, description of cleared videos | forensic-analyze/modules/video.py | done |
+| 4C.10 | Module `audio`: export, metadata, faster-whisper transcript, text summary | forensic-analyze/modules/audio.py | done |
+| 4C.11 | Module `documents`: export, metadata, text extraction, summary | forensic-analyze/modules/documents.py | done |
+| 4C.12 | Module `malware`: `evidence-triage-hash` (NSRL drop, ClamAV, MalwareBazaar, YARA, ssdeep) | forensic-analyze/modules/malware.py | done |
+| 4C.13 | Module `users`: owner SIDs, LNK files, Jump Lists, anything that ties files to an account (LECmd, JLECmd, MFTECmd on `$SDS`) | forensic-analyze/modules/users.py | doing |
+| 4C.14 | Module `timeline`: Plaso over the target, CSV out | forensic-analyze/modules/timeline.py | doing |
+| 4C.15 | Module `carve`: PhotoRec and bulk_extractor over unallocated space; carved media feeds back into the images, video, and audio modules | forensic-analyze/modules/carve.py | doing |
+| 4C.16 | Filesystem awareness: `fsstat` decides which modules can run. On exFAT or FAT the NTFS-only modules are skipped and the report says why. BitLocker asks for the recovery key and uses Dissect to unlock, or stops | forensic-analyze/fsdetect.py | doing |
+| 4C.17 | Run control: SHA-256 and MD5 of the target before and after (and of the image when one is made), write-request count from the tracer, `run.json` with target identifiers, hashes, modules, exact command lines, tool versions and hashes, model hashes, thresholds, errors and deviations; one done-marker per module so an interrupted run resumes; first module failure is shown immediately and the run continues | forensic-analyze/runner.py | done |
+| 4C.18 | Every prompt has a flag: `forensic-analyze --target /dev/sdb --preset standard --output /cases/x --yes` and `--config run.json` to replay a run exactly | forensic-analyze/cli.py | done |
+| 4C.19 | End-of-run option: purge exported file copies and keep only CSVs, transcripts, descriptions, and the report, so nothing from the drive is retained beyond findings | forensic-analyze/cleanup.py | done |
+| 4C.20 | Final step calls `evidence-report`; the report opens with counts per module, failures and skipped modules first | forensic-analyze/runner.py | done |
+| 4C.21 | Tests: non-interactive Standard run against the NTFS fixture in QEMU must find the known deleted files and the known recycle-bin entry, produce `run.json`, and leave the fixture hash unchanged; a run against an exFAT fixture must skip the NTFS modules with a reason | tests/functional/test_analyze.sh | done |
+| 4C.22 | Write-blocker advisory: before the target picker, `forensic-analyze` and `forensic-session-start` tell the operator to connect the drive through a hardware write blocker, ask whether one is in use, and log the answer in `run.json`. The software read-only flag is described on screen as a second layer, not a substitute | forensic-analyze/target.py | doing |
+| 4C.23 | docs/workflows/guided-analysis.md: what each preset runs, rough time per preset, what each report section means | docs/workflows/ | done |
+| 4C.24 | Mode choice at the start, two options: Read directly (default; reads the device through the blocker, no copy kept, a one-line warning each run that nothing can be re-examined later, and the report states the limits) or Copy first (makes a verified image with `ewfacquire`, or `ddrescue` with a map file for weak drives, then analyses the image; needs an output drive as large as the target). `--mode direct` and `--mode image` on the command line | forensic-analyze/mode.py | done |
+| 4C.25 | Examiner and case fields at the start: examiner name, case ID, exhibit ID, authority reference, free-text notes. Defaults can be preset in `profile.json` so nothing has to be typed. Every run's outputs are signed with a key held on `OUTPUT` | forensic-analyze/case.py | done |
+| 4C.26 | Clock record: reference time and its source entered by the examiner, `clock_offset_seconds` stored, system time never silently corrected, monotonic durations logged beside wall-clock times | forensic-analyze/case.py | done |
+| 4C.27 | NTFS interpretation rows marked as inferred, never observed: `$SI` created before `$FN` created, zero sub-second fractions, `$SI` changes with no USN record. Reports say "account SID", never a person's name | forensic-analyze/modules/ | done |
+| 4C.28 | Cross-validation: core artifacts parsed twice (The Sleuth Kit or Dissect against MFTECmd; RBCmd against Dissect), joined on MFT entry and sequence, with agree, disagree, or single-source recorded per row. Disagreements are listed, never resolved silently | forensic-analyze/xval.py | done |
+| 4C.29 | Volume Shadow Copy check on every NTFS target, with "none found" reported explicitly | forensic-analyze/modules/inventory.py | done |
+
+4C.1: the command (`files/bin/forensic-analyze`, whiptail with plain fallback) is implemented and verified by tests/functional/test_analyze_quick.sh; the desktop launcher (a `.desktop` file installed by the session_tools role) is not written yet.
+4C.16: implemented; BitLocker with the right key verified by tests/functional/test_faults.sh in the QEMU/CI stage, once a BitLocker fixture made on Windows (`manage-bde`) is available; detection, the no-key stop, and the wrong-key stop pass here.
+4C.22: the wizard half (advisory before the target picker, answer in `run.json`) is implemented and verified by tests/unit/test_analyze_runner.py and tests/functional/test_analyze_quick.sh; the `forensic-session-start` half belongs to the session helpers package.
+4C.22: the `forensic-session-start` half (advisory, answer and model in the session log, the software flag called a second layer, not a substitute) is implemented and verified by tests/functional/test_session_start.sh and tests/unit/test_session_helpers.py.
+4C.5: implemented; verified by tests/functional/test_modules_ntfs.sh with the real MFTECmd in the QEMU/CI stage. The Sleuth Kit and Dissect paths, `files.jsonl`, and the cross-check pass here (tests/unit/test_module_inventory.py, tests/functional/test_analyze.sh); MFTECmd is checked against a stand-in that writes its documented CSV columns.
+4C.6: implemented; verified by tests/functional/test_modules_ntfs.sh with the real RBCmd in the QEMU/CI stage. The built-in `$I` parser (versions 1 and 2, live and deleted `$I` records, `$R` pairing) passes here (tests/unit/test_module_recycle_bin.py, tests/functional/test_analyze.sh).
+4C.7: implemented; verified by tests/unit/test_module_deletion_history.py on a Windows-made NTFS fixture with a real USN journal in the QEMU/CI stage. ntfs-3g writes no journal, so here the journal is built byte by byte (layout checked against Dissect's parser); USN carving from unallocated passes here. `$LogFile` is copied out but not parsed (decision log 2026-11-15).
+4C.13: implemented; verified by tests/functional/test_modules_ntfs.sh with the real LECmd, JLECmd, and MFTECmd in the QEMU/CI stage. Owner SIDs from `$SDS` (checked against Dissect) and the built-in LNK parser pass here (tests/unit/test_module_users.py).
+4C.14: implemented; verified by tests/unit/test_module_timeline.py with the real Plaso in the QEMU/CI stage. The file-system-only fallback (`mactime`) passes here; Plaso is checked against a stand-in.
+4C.15: implemented; verified by tests/functional/test_modules_ntfs.sh with bulk_extractor installed in the QEMU/CI stage. PhotoRec carving of a deleted picture, the free-space check, and `carved.jsonl` pass here.
+4C.21: tests/functional/test_analyze.sh passes on a host with loop devices; it also runs in the QEMU stage with the other functional tests.
+4C.29: "none found" is checked with `vshadowinfo` and the built-in header check on the fixture; the shadow-copy-present path is tested on sample `vshadowinfo` output and header bytes, as no Windows-made snapshot fixture exists yet.
 
 ## Milestone 4D: Findings data model (v0.2)
 
@@ -624,16 +701,20 @@ One canonical store, three generated views. Every module writes findings; nothin
 
 | # | Task | Touches | Status |
 |---|---|---|---|
-| 4D.1 | `findings.jsonl`: append-only, one typed object per finding, deterministic order, sorted keys; its SHA-256 goes in `run.json` | forensic-analyze/findings.py | todo |
-| 4D.2 | Schema, required fields: `finding_id` (stable, e.g. F-000123), `run_id`, `evidence_id`, `evidence_sha256`, `category`, `artifact_type`, `message`, `derivation` (observed, inferred, ai_generated), `source_tool`, `tool_version`, `parser` | docs/schema.md, forensic-analyze/schema.json | todo |
-| 4D.3 | Schema, optional fields: `datetime` (ISO 8601 UTC), `timestamp_desc`, `tz_basis` (utc, local_unknown_offset, local_with_offset), `path`, `filename`, `path_b64`, `inode_ref`, `size_bytes`, `allocated`, `sha256`, `md5`, `owner_sid`, `hashset_name`, `hashset_version`, `match_algorithm`, `score`, `label`, `threshold`, `text`, `confidence`, `xval_status`, `source_record`, `model_id`, `model_sha256`, `prompt_sha256`, `sensitive_flag` | docs/schema.md, forensic-analyze/schema.json | todo |
-| 4D.4 | Every module in 4C writes through one `emit()` function that validates against the schema; raw tool outputs (EZ Tools CSVs, Dissect records) are kept as intermediates and pointed to by `source_record` | forensic-analyze/modules/ | todo |
-| 4D.5 | `case.sqlite` built from the JSONL, with views: timeline, deleted, recycle bin, media, hash hits, classifier flags, disagreements | forensic-analyze/export_sqlite.py | todo |
-| 4D.6 | `findings.csv`: the single flat file, one row per finding with the fixed column set, importable into Timesketch (`datetime`, `timestamp_desc`, `message`) | forensic-analyze/export_csv.py | todo |
-| 4D.7 | CSV safety: UTF-8 with BOM, RFC 4180 quoting, embedded newlines escaped, a leading quote added to any cell starting with `=`, `+`, `-`, `@`, tab, or CR; hostile filenames (control characters, bidi overrides) kept raw in `path_b64` and shown escaped | forensic-analyze/export_csv.py | todo |
-| 4D.8 | NSRL matching on SHA-256 first, with the algorithm that produced each hit recorded; fuzzy-hash matches marked inferred | forensic-analyze/modules/malware.py | todo |
-| 4D.9 | Determinism test: replaying `run.json` against the same image gives byte-identical `findings.jsonl` apart from AI fields; AI fields are compared separately and any drift is reported | tests/functional/ | todo |
-| 4D.10 | Optional exports: bodyfile, and CASE/UCO 1.4 JSON-LD later | forensic-analyze/export_*.py | todo |
+| 4D.1 | `findings.jsonl`: append-only, one typed object per finding, deterministic order, sorted keys; its SHA-256 goes in `run.json` | forensic-analyze/findings.py | done |
+| 4D.2 | Schema, required fields: `finding_id` (stable, e.g. F-000123), `run_id`, `evidence_id`, `evidence_sha256`, `category`, `artifact_type`, `message`, `derivation` (observed, inferred, ai_generated), `source_tool`, `tool_version`, `parser` | docs/schema.md, forensic-analyze/schema.json | done |
+| 4D.3 | Schema, optional fields: `datetime` (ISO 8601 UTC), `timestamp_desc`, `tz_basis` (utc, local_unknown_offset, local_with_offset), `path`, `filename`, `path_b64`, `inode_ref`, `size_bytes`, `allocated`, `sha256`, `md5`, `owner_sid`, `hashset_name`, `hashset_version`, `match_algorithm`, `score`, `label`, `threshold`, `text`, `confidence`, `xval_status`, `source_record`, `model_id`, `model_sha256`, `prompt_sha256`, `sensitive_flag` | docs/schema.md, forensic-analyze/schema.json | done |
+| 4D.4 | Every module in 4C writes through one `emit()` function that validates against the schema; raw tool outputs (EZ Tools CSVs, Dissect records) are kept as intermediates and pointed to by `source_record` | forensic-analyze/modules/ | doing |
+| 4D.5 | `case.sqlite` built from the JSONL, with views: timeline, deleted, recycle bin, media, hash hits, classifier flags, disagreements | forensic-analyze/export_sqlite.py | done |
+| 4D.6 | `findings.csv`: the single flat file, one row per finding with the fixed column set, importable into Timesketch (`datetime`, `timestamp_desc`, `message`) | forensic-analyze/export_csv.py | done |
+| 4D.7 | CSV safety: UTF-8 with BOM, RFC 4180 quoting, embedded newlines escaped, a leading quote added to any cell starting with `=`, `+`, `-`, `@`, tab, or CR; hostile filenames (control characters, bidi overrides) kept raw in `path_b64` and shown escaped | forensic-analyze/export_csv.py | done |
+| 4D.8 | NSRL matching on SHA-256 first, with the algorithm that produced each hit recorded; fuzzy-hash matches marked inferred | forensic-analyze/modules/malware.py | done |
+| 4D.9 | Determinism test: replaying `run.json` against the same image gives byte-identical `findings.jsonl` apart from AI fields; AI fields are compared separately and any drift is reported | tests/functional/ | doing |
+| 4D.10 | Optional exports: bodyfile, and CASE/UCO 1.4 JSON-LD later | forensic-analyze/export_*.py | doing |
+
+4D.4: implemented (`FindingsWriter.emit()` with schema validation, tests/unit/test_findings.py); verified by tests/functional/test_analyze.sh in the QEMU/CI stage once every 4C module writes through it.
+4D.9: implemented; verified by tests/functional/test_determinism.sh (full `run.json` replay path) in the QEMU/CI stage. The merge and export determinism parts pass here (tests/unit/test_determinism.py and the stand-in path of the same script).
+4D.10: bodyfile export done (tests/unit/test_export_bodyfile.py, checked with `mactime`); CASE/UCO 1.4 JSON-LD is left for later as the row says.
 
 ## Milestone 4E: LLM-drafted report with fixed prompts (v0.2)
 
@@ -641,17 +722,17 @@ The local model drafts the narrative sections from the findings store. Code fill
 
 | # | Task | Touches | Status |
 |---|---|---|---|
-| 4E.1 | Report skeleton filled by code, no model: title and report type, case and exhibit IDs, examiner, request and authority, items received with identifiers and hashes, methodology (image hash, blocker model, observed write count, mode and reason, tools and versions, validation reference), appendices (run summary, hash verification, disagreement table, glossary) | evidence-report/templates/ | todo |
-| 4E.2 | Model-drafted sections: results by category, interpretation and limitations, conclusions. The three NIST IR 8354 limitations are inserted verbatim by code | evidence-report/ | todo |
-| 4E.3 | Prompts are fixed files in the repo, versioned, with each prompt's SHA-256 recorded per run; greedy decoding, fixed seed; llama.cpp commit, backend, model hash, and quantization recorded | evidence-report/prompts/ | todo |
-| 4E.4 | Inputs are structured rows from SQLite views only. Every evidence-derived string is wrapped in a delimited data block with an instruction that it is data, control and bidi characters are stripped, long strings truncated | evidence-report/inputs.py | todo |
-| 4E.5 | Map-reduce for small context windows: summarise per category and time window, each partial citing finding IDs; the merge step may only combine cited statements | evidence-report/mapreduce.py | todo |
-| 4E.6 | Every sentence must end with finding IDs. A code verifier (not a model) checks that each ID exists and that every number, date, and path in the sentence appears in the cited rows. Failing sentences are removed and listed. Date arithmetic is done in code and passed in | evidence-report/verify.py | todo |
-| 4E.7 | Prompt rules: no attribution to a person, no intent, no claims beyond the rows; phrasing such as "account SID" and "the USN journal records a delete at" | evidence-report/prompts/ | todo |
-| 4E.8 | Sensitive categories are summarised from counts, scores, and IDs only, never from image content | evidence-report/ | todo |
-| 4E.9 | Each AI paragraph is labelled "AI-generated draft", with a line for the examiner's name and date of review; the report is not final until that is filled | evidence-report/templates/ | todo |
-| 4E.10 | Injection test set: fixtures whose filenames and document text carry planted instructions; the report must not follow them, and the verifier must catch any unsupported sentence | tests/functional/test_injection.sh | todo |
-| 4E.11 | Output: `report.html` and `report.md` on `OUTPUT`, hashed and signed with the rest | evidence-report/ | todo |
+| 4E.1 | Report skeleton filled by code, no model: title and report type, case and exhibit IDs, examiner, request and authority, items received with identifiers and hashes, methodology (image hash, blocker model, observed write count, mode and reason, tools and versions, validation reference), appendices (run summary, hash verification, disagreement table, glossary) | evidence-report/templates/ | done |
+| 4E.2 | Model-drafted sections: results by category, interpretation and limitations, conclusions. The three NIST IR 8354 limitations are inserted verbatim by code | evidence-report/ | done |
+| 4E.3 | Prompts are fixed files in the repo, versioned, with each prompt's SHA-256 recorded per run; greedy decoding, fixed seed; llama.cpp commit, backend, model hash, and quantization recorded | evidence-report/prompts/ | done |
+| 4E.4 | Inputs are structured rows from SQLite views only. Every evidence-derived string is wrapped in a delimited data block with an instruction that it is data, control and bidi characters are stripped, long strings truncated | evidence-report/inputs.py | done |
+| 4E.5 | Map-reduce for small context windows: summarise per category and time window, each partial citing finding IDs; the merge step may only combine cited statements | evidence-report/mapreduce.py | done |
+| 4E.6 | Every sentence must end with finding IDs. A code verifier (not a model) checks that each ID exists and that every number, date, and path in the sentence appears in the cited rows. Failing sentences are removed and listed. Date arithmetic is done in code and passed in | evidence-report/verify.py | done |
+| 4E.7 | Prompt rules: no attribution to a person, no intent, no claims beyond the rows; phrasing such as "account SID" and "the USN journal records a delete at" | evidence-report/prompts/ | done |
+| 4E.8 | Sensitive categories are summarised from counts, scores, and IDs only, never from image content | evidence-report/ | done |
+| 4E.9 | Each AI paragraph is labelled "AI-generated draft", with a line for the examiner's name and date of review; the report is not final until that is filled | evidence-report/templates/ | done |
+| 4E.10 | Injection test set: fixtures whose filenames and document text carry planted instructions; the report must not follow them, and the verifier must catch any unsupported sentence | tests/functional/test_injection.sh | done |
+| 4E.11 | Output: `report.html` and `report.md` on `OUTPUT`, hashed and signed with the rest | evidence-report/ | done |
 
 ## Milestone 4F: Validation suite and published results (v0.2, gates every release)
 
@@ -659,12 +740,16 @@ SWGDE and the UK Forensic Science Regulator both expect methods to be validated 
 
 | # | Task | Touches | Status |
 |---|---|---|---|
-| 4F.1 | Script-built NTFS and exFAT images with a ground-truth manifest: files created, modified, deleted, recycled, and timestomped at known times | validation/synthetic/ | todo |
-| 4F.2 | Public reference sets with published ground truth: NIST CFReDS deleted-file and carving images, selected Digital Corpora sets, fetched by hash | validation/reference/ | todo |
-| 4F.3 | `validation/run.sh` runs the full wizard non-interactively over every set and scores each artifact class against ground truth | validation/ | todo |
-| 4F.4 | Per-release validation report: pass or fail per artifact class, parser versions, cross-parser disagreements, classifier error rates (4B.16), write-policy test results (3A.8); signed and attached to the release | validation/report/ | todo |
-| 4F.5 | `docs/known-limitations.md`, linked from every generated report | docs/ | todo |
-| 4F.6 | Session start shows the image build date and warns past 90 days; the report records image age | ansible/roles/session_tools/files/ | todo |
+| 4F.1 | Script-built NTFS and exFAT images with a ground-truth manifest: files created, modified, deleted, recycled, and timestomped at known times | validation/synthetic/ | done |
+| 4F.2 | Public reference sets with published ground truth: NIST CFReDS deleted-file and carving images, selected Digital Corpora sets, fetched by hash | validation/reference/ | doing |
+| 4F.3 | `validation/run.sh` runs the full wizard non-interactively over every set and scores each artifact class against ground truth | validation/ | done |
+| 4F.4 | Per-release validation report: pass or fail per artifact class, parser versions, cross-parser disagreements, classifier error rates (4B.16), write-policy test results (3A.8); signed and attached to the release | validation/report/ | doing |
+| 4F.5 | `docs/known-limitations.md`, linked from every generated report | docs/ | done |
+| 4F.6 | Session start shows the image build date and warns past 90 days; the report records image age | ansible/roles/session_tools/files/ | doing |
+
+4F.2: implemented; verified by tests/unit/test_validation_reference.py (fetch, hash check, refusal); the five sets carry `sha256: null` because cfreds-archive.nist.gov and downloads.digitalcorpora.org were not reachable here, so their hashes are recorded by `validation/reference/fetch.sh --record` in the QEMU/CI stage and checked against the publishers by a person.
+4F.4: implemented; verified by tests/functional/test_validation.sh and tests/unit/test_validation_report.py (report built, signed, verified, tampering caught); attaching it to a release is verified by the release workflow in the QEMU/CI stage.
+4F.6: the session-start half (build date shown, warning past `image_max_age_days`, `image_age` event in the session log) is done and verified by tests/functional/test_session_start.sh and tests/unit/test_session_helpers.py; the report half belongs to the report package, which can call `airlock_session.system.image_age()`.
 
 ## Milestone 4G: Test gaps found in review (v0.2)
 
@@ -674,48 +759,58 @@ Added 2026-11-14 after a review of test coverage. The earlier milestones test th
 |---|---|---|---|
 | 4G.1 | Unit tests (pytest) for all Python: schema validation in `emit()`, each export, the report verifier, the sandbox wrapper, target and mode pickers. Add ruff to the lint job | tests/unit/, .github/workflows/lint.yml | todo |
 | 4G.2 | PowerShell: PSScriptAnalyzer in lint, and a Windows CI runner that runs `fetch-assets.ps1` against a virtual disk and checks the staged files and hashes | tests/windows/, .github/workflows/ | todo |
-| 4G.3 | Flash script refusal tests: non-removable disk, the disk holding `/`, a mounted disk, a too-small disk, a wrong typed confirmation. Each must refuse and write nothing | tests/functional/test_flash.sh | todo |
-| 4G.4 | Asset tamper tests: a swapped file, a truncated file, an edited manifest, and a bad signature must each be detected at provisioning and at session start, with the feature disabled and named | tests/functional/test_assets.sh | todo |
-| 4G.5 | Air-gap behaviour test: boot with a virtual network card attached to a live network and attempt DNS, HTTP, and ping from root. All must fail. Config checks alone (3.8) do not prove this | tests/functional/test_airgap.sh | todo |
-| 4G.6 | Write tracer true-positive test: issue a deliberate write and a discard to a scratch disk and confirm the tracer counts them. Without this, a count of zero proves nothing | tests/functional/test_tracer.sh | todo |
-| 4G.7 | Sandbox tests: a parser stand-in that tries to write outside its output folder, open a socket, and exceed its memory and time limits must be stopped each time | tests/functional/test_sandbox.sh | todo |
-| 4G.8 | Fault tests for the wizard: a virtual disk with injected read errors, a run killed and resumed, an output drive that fills up, and a BitLocker-encrypted fixture with and without the key | tests/functional/test_faults.sh | todo |
-| 4G.9 | Tier selection tests: recorded `vulkaninfo` outputs for discrete, integrated, multi-GPU, and no-GPU machines fed to `ai-probe`; the chosen tier must match a table | tests/unit/test_probe.py | todo |
-| 4G.10 | Screening true-positive path: no sexual or violent fixtures are committed, so CI cannot prove a real flag. Test the plumbing with a stub classifier that returns fixed scores (flagged files never reach the model, never get exported, show in counts), and rely on 4B.16 for real detection rates | tests/functional/test_screen_stub.sh | todo |
-| 4G.11 | Model refusal and empty-output test: a stub model that declines must produce a `model_declined` row, never a dropped file | tests/functional/test_declined.sh | todo |
-| 4G.12 | Stop control test: `forensic-escalate` halts a running job, freezes exports, and records only path, ID, and hash | tests/functional/test_escalate.sh | todo |
-| 4G.13 | CSV safety tests: fixture filenames starting with `=`, `+`, `-`, `@`, containing newlines, bidi overrides, and invalid UTF-16; the CSV must parse cleanly and carry no live formula | tests/unit/test_csv.py | todo |
-| 4G.14 | Report verifier tests: hand-written sentences with a wrong date, a wrong path, a missing citation, and a non-existent finding ID must each be rejected | tests/unit/test_verify.py | todo |
-| 4G.15 | Scale test: a fixture with several hundred thousand files; record run time and peak memory per module and fail on regression | validation/scale/ | todo |
-| 4G.16 | Refresh test: restage a newer signature set and a changed profile, boot, and confirm `forensic-import` applies it offline and logs the hashes | tests/functional/test_refresh.sh | todo |
+| 4G.3 | Flash script refusal tests: non-removable disk, the disk holding `/`, a mounted disk, a too-small disk, a wrong typed confirmation. Each must refuse and write nothing | tests/functional/test_flash.sh | done |
+| 4G.4 | Asset tamper tests: a swapped file, a truncated file, an edited manifest, and a bad signature must each be detected at provisioning and at session start, with the feature disabled and named | tests/functional/test_assets.sh | done |
+| 4G.5 | Air-gap behaviour test: boot with a virtual network card attached to a live network and attempt DNS, HTTP, and ping from root. All must fail. Config checks alone (3.8) do not prove this | tests/functional/test_airgap.sh | doing |
+| 4G.6 | Write tracer true-positive test: issue a deliberate write and a discard to a scratch disk and confirm the tracer counts them. Without this, a count of zero proves nothing | tests/functional/test_tracer.sh | done |
+| 4G.7 | Sandbox tests: a parser stand-in that tries to write outside its output folder, open a socket, and exceed its memory and time limits must be stopped each time | tests/functional/test_sandbox.sh | done |
+| 4G.8 | Fault tests for the wizard: a virtual disk with injected read errors, a run killed and resumed, an output drive that fills up, and a BitLocker-encrypted fixture with and without the key | tests/functional/test_faults.sh | doing |
+| 4G.9 | Tier selection tests: recorded `vulkaninfo` outputs for discrete, integrated, multi-GPU, and no-GPU machines fed to `ai-probe`; the chosen tier must match a table | tests/unit/test_probe.py | done |
+| 4G.10 | Screening true-positive path: no sexual or violent fixtures are committed, so CI cannot prove a real flag. Test the plumbing with a stub classifier that returns fixed scores (flagged files never reach the model, never get exported, show in counts), and rely on 4B.16 for real detection rates | tests/functional/test_screen_stub.sh | done |
+| 4G.11 | Model refusal and empty-output test: a stub model that declines must produce a `model_declined` row, never a dropped file | tests/functional/test_declined.sh | done |
+| 4G.12 | Stop control test: `forensic-escalate` halts a running job, freezes exports, and records only path, ID, and hash | tests/functional/test_escalate.sh | done |
+| 4G.13 | CSV safety tests: fixture filenames starting with `=`, `+`, `-`, `@`, containing newlines, bidi overrides, and invalid UTF-16; the CSV must parse cleanly and carry no live formula | tests/unit/test_csv.py | done |
+| 4G.14 | Report verifier tests: hand-written sentences with a wrong date, a wrong path, a missing citation, and a non-existent finding ID must each be rejected | tests/unit/test_verify.py | done |
+| 4G.15 | Scale test: a fixture with several hundred thousand files; record run time and peak memory per module and fail on regression | validation/scale/ | doing |
+| 4G.16 | Refresh test: restage a newer signature set and a changed profile, boot, and confirm `forensic-import` applies it offline and logs the hashes | tests/functional/test_refresh.sh | done |
 | 4G.17 | Manual hardware checklist, one page, run on every machine in the matrix: boots UEFI and BIOS, Secure Boot on, internal disk read-only, scratch drive not mounted and not writable, tier chosen, Quick run completes, report opens on Windows from `OUTPUT` | docs/hardware-checklist.md | todo |
 | 4G.18 | First-use test: someone who has not seen the project follows the quickstart on Windows with no help; every point where they stall becomes an issue | docs/quickstart.md | todo |
+
+4G.5: implemented at tests/vm/test_airgap.sh (it must run inside the guest, so it lives in tests/vm/, not tests/functional/); verified by tests/vm/test_airgap.sh --positive-control in the QEMU/CI stage.
+4G.8: kill and resume, output drive full, read errors (an ext4 filesystem shut down under the evidence file; device-mapper is not available here), and BitLocker without a key or with a wrong key pass in tests/functional/test_faults.sh; BitLocker with the right key: implemented; verified by tests/functional/test_faults.sh in the QEMU/CI stage once a BitLocker fixture made on Windows exists.
+4G.15: implemented; verified here at small scale by tests/functional/test_validation.sh and tests/unit/test_validation_scale.py (baseline `quick-300` in validation/scale/baseline.json); the full-size run (`scale.py generate --files 300000`, then `run --update-baseline` once) is verified by validation/scale/scale.py in the QEMU/CI stage. Measured here: the inventory module's Dissect MFT listing costs about 57 ms per file, so that run needs several hours.
 
 ## Milestone 5: Desktop and service hardening, CI (v0.3)
 
 | # | Task | Touches | Status |
 |---|---|---|---|
-| 5.1 | Role `harden_desktop`: Nautilus `show-image-thumbnails=never`, remove thumbnailer packages, disable gvfs volume monitor | ansible/roles/harden_desktop/ | todo |
-| 5.2 | Mask indexer (`localsearch` on 24.04; confirm name) | ansible/roles/harden_desktop/ | todo |
-| 5.3 | Role `harden_services`: mask apport, whoopsie, ubuntu-report, motd-news, unattended-upgrades, avahi-daemon, cups-browsed, ModemManager, geoclue | ansible/roles/harden_services/ | todo |
-| 5.4 | Decide snapd: remove it (default) or hold refreshes. Record in decision log | ansible/group_vars/all.yml | todo |
-| 5.5 | goss tests for every unit in 5.1 to 5.4 | tests/goss/desktop.yaml, services.yaml | todo |
+| 5.1 | Role `harden_desktop`: Nautilus `show-image-thumbnails=never`, remove thumbnailer packages, disable gvfs volume monitor | ansible/roles/harden_desktop/ | doing |
+| 5.2 | Mask indexer (`localsearch` on 24.04; confirm name) | ansible/roles/harden_desktop/ | doing |
+| 5.3 | Role `harden_services`: mask apport, whoopsie, ubuntu-report, motd-news, unattended-upgrades, avahi-daemon, cups-browsed, ModemManager, geoclue | ansible/roles/harden_services/ | doing |
+| 5.4 | Decide snapd: remove it (default) or hold refreshes. Record in decision log | ansible/group_vars/all.yml | done |
+| 5.5 | goss tests for every unit in 5.1 to 5.4 | tests/goss/desktop.yaml, services.yaml | doing |
 | 5.6 | GitHub Actions: lint job (ansible-lint, shellcheck, yamllint, packer validate) on every PR | .github/workflows/lint.yml | todo |
 | 5.7 | GitHub Actions: build-and-test job, checks `/dev/kvm`, runs tests/run-qemu-tests.sh, uploads image as artifact | .github/workflows/build.yml | todo |
-| 5.8 | Re-apply hardening as the last play in site.yml so no tool role can undo it; test asserts order | ansible/site.yml | todo |
+| 5.8 | Re-apply hardening as the last play in site.yml so no tool role can undo it; test asserts order | ansible/site.yml | done |
 | 5.9 | Tag v0.3 | git | todo |
+
+5.1, 5.2, 5.3: implemented; verified by tests/goss/desktop.yaml and tests/goss/services.yaml in the QEMU/CI stage (dconf keys and locks, apt periodic settings, and the snapd pin already pass tests/unit/test_harden_desktop.py and tests/unit/test_harden_services.py). 5.2: the 24.04 indexer is tracker-miner-fs-3; both it and localsearch-3 are masked (decision log 2026-11-15).
+5.5: implemented; verified by tests/goss/desktop.yaml and tests/goss/services.yaml in the QEMU/CI stage (both render with `goss render`; tests/unit/test_harden_coverage.py checks every masked unit, removed package, and removed file has a check).
 
 ## Milestone 6: Supply chain and signed releases (v0.4)
 
 | # | Task | Touches | Status |
 |---|---|---|---|
-| 6.1 | Pin apt to a dated snapshot.ubuntu.com mirror during build | packer/http/user-data | todo |
-| 6.2 | Every downloaded artifact listed in `ansible/group_vars/pins.yml` with URL, version, SHA-256 | ansible/group_vars/pins.yml | todo |
+| 6.1 | Pin apt to a dated snapshot.ubuntu.com mirror during build | packer/http/user-data | done |
+| 6.2 | Every downloaded artifact listed in `ansible/group_vars/pins.yml` with URL, version, SHA-256 | ansible/group_vars/pins.yml | doing |
 | 6.3 | Release workflow on tag: build, test, syft SBOM, cosign keyless signature, GitHub Release with image, SHA256SUMS, .sig, SBOM | .github/workflows/release.yml | todo |
 | 6.4 | docs/validation-guide.md: how a user proves the stick is read-only on their own hardware with a scratch drive | docs/validation-guide.md | todo |
-| 6.5 | Optional role `tools_sift` behind `install_sift=false`, runs Cast, then hardening re-applies; test proves rfkill and automount still hold afterward | ansible/roles/tools_sift/ | todo |
+| 6.5 | Optional role `tools_sift` behind `install_sift=false`, runs Cast, then hardening re-applies; test proves rfkill and automount still hold afterward | ansible/roles/tools_sift/ | doing |
 | 6.6 | License review of every bundled package before any prebuilt image is published; EZ Tools redistribution terms, Dissect AGPL, model licences (Qwen3-VL Apache 2.0, NudeNet, SigLIP), and YARA rule pack licences recorded in docs/licenses.md | docs/licenses.md | todo |
 | 6.7 | Tag v0.4 | git | todo |
+
+6.2: scripts/check-pins.py checks every entry has all ten fields with valid values (tests/unit/test_manifest.py) and runs in scripts/lint.sh; entries whose host was unreachable from the authoring environment still carry sha256: null, and `check-pins.py --strict` (release workflow) blocks the release until someone with access fills them.
+6.5: implemented; verified by tests/goss/sift.yaml in the QEMU/CI stage on an image built with `-e install_sift=true` (tests/unit/test_tools_sift.py passes here: SIFT is off by default, Cast is pinned, and every hardening role runs after tools_sift).
 
 ## Milestone 7: Live ISO variant and 1.0 (v0.5, v1.0)
 
