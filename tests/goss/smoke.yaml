@@ -1,0 +1,67 @@
+# Smoke test (task 2A.6): the short proof that a written drive boots and is the AIRLOCK
+# system. make-usb.sh boots the physical drive in QEMU through a throw-away qcow2 overlay (the
+# drive is opened read-only) and runs only this file:
+#   tests/run-qemu-tests.sh --image OVERLAY --only '^smoke\.yaml$' --no-extra-disks
+# tests/run-qemu-tests.sh also runs it with every other goss file on a freshly built image, so
+# every check here must hold on any AIRLOCK drive, staged or not.
+# Check syntax with: goss -g tests/goss/smoke.yaml render
+
+user:
+  analyst:
+    title: '2A.6: the analyst account exists'
+    exists: true
+
+file:
+  /etc/airlock/build-info.json:
+    title: '2A.6: this is an AIRLOCK build (build information present)'
+    exists: true
+    contents:
+      - '/"version": /'
+  /etc/udev/rules.d/99-forensic-ro.rules:
+    title: '2A.6: the software read-only policy rule is installed'
+    exists: true
+  /var/lib/airlock/firstboot.done:
+    title: '2A.6: the first-boot unit ran on this boot'
+    exists: true
+
+service:
+  gdm:
+    title: '2A.6: the desktop started'
+    running: true
+
+mount:
+  /:
+    title: '2A.6: the root filesystem is ext4'
+    exists: true
+    filesystem: ext4
+  /srv/airlock/assets:
+    title: '2A.6: ASSETS is mounted read-only, noexec'
+    exists: true
+    filesystem: exfat
+    opts:
+      - ro
+      - noexec
+      - nosuid
+      - nodev
+  /srv/airlock/output:
+    title: '2A.6: OUTPUT is mounted, noexec'
+    exists: true
+    filesystem: exfat
+    opts:
+      - noexec
+      - nosuid
+      - nodev
+
+command:
+  smoke-root-label:
+    title: '2A.6: / is the AIRLOCK_ROOT partition of the boot drive'
+    exec: findmnt -n -o LABEL --target /
+    exit-status: 0
+    stdout:
+      - /^AIRLOCK_ROOT$/
+  smoke-no-default-route:
+    title: '2A.6: no default route (air gap)'
+    exec: ip route show default
+    exit-status: 0
+    stdout:
+      - '!/default/'
