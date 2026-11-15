@@ -10,7 +10,7 @@
 * ``write_samples(folder)``: the sample files the tests triage.
 * ``write_mbz_export(path, hashes)``: a MalwareBazaar-style full SHA-256 export (zip).
 
-Run as a script to write everything into a folder: ``fixtures.py OUTDIR``.
+Run as a script to write everything into a folder: ``hashset_fixtures.py OUTDIR``.
 """
 
 from __future__ import annotations
@@ -146,7 +146,7 @@ def write_mbz_export(path: Path, hashes: list[str], *, snapshot: str = "2026-11-
 
 def main(argv: list[str]) -> int:
     if len(argv) != 1:
-        print("usage: fixtures.py OUTDIR", file=sys.stderr)
+        print("usage: hashset_fixtures.py OUTDIR", file=sys.stderr)
         return 2
     out = Path(argv[0])
     build_nsrl(out / "nsrl" / "RDS_test_modern_minimal.db")

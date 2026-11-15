@@ -31,7 +31,7 @@ ROLE = REPO / "ansible" / "roles" / "tools_hashsets"
 GOSS = REPO / "tests" / "goss" / "hashsets.yaml"
 PYLIB = REPO / "ansible" / "roles" / "session_tools" / "files" / "pylib"
 sys.path.insert(0, str(REPO / "tests" / "fixtures" / "hashsets"))
-import fixtures as fx  # noqa: E402
+import hashset_fixtures as fx  # noqa: E402
 
 
 def load(path: Path) -> object:

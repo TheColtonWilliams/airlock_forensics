@@ -16,7 +16,7 @@ LOG="$AIRLOCK_SESSION_DIR/current.log"
 HS="$TEST_TMP/hashsets"
 mkdir -p "$HS/clamav" "$HS/yara" "$HS/ssdeep"
 
-python3 "$FIX/fixtures.py" "$TEST_TMP/fx" >/dev/null
+python3 "$FIX/hashset_fixtures.py" "$TEST_TMP/fx" >/dev/null
 SAMPLES="$TEST_TMP/fx/samples"
 eicar_sha="$(sha256_of "$SAMPLES/eicar-test.com")"
 known_sha="$(sha256_of "$SAMPLES/known-good.txt")"

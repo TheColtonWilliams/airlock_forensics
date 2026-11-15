@@ -1,6 +1,6 @@
 """Hash sets and hash triage (tasks 4A.2-4A.6, 4D.8): ``airlock_hashsets``.
 
-Fixtures are built at test time by ``tests/fixtures/hashsets/fixtures.py``: a synthetic
+Fixtures are built at test time by ``tests/fixtures/hashsets/hashset_fixtures.py``: a synthetic
 NSRL-schema SQLite, sample files, a MalwareBazaar-style export, and the EICAR test string
 joined from parts. Tests that need ClamAV, YARA, or ssdeep skip when the tool is missing.
 ``hashset_env`` is imported by ``test_module_malware.py``.
@@ -27,7 +27,7 @@ from airlock_hashsets.nsrl import NsrlDb, NsrlError
 REPO = Path(__file__).resolve().parents[2]
 FIX_DIR = REPO / "tests" / "fixtures" / "hashsets"
 sys.path.insert(0, str(FIX_DIR))
-import fixtures as fx  # noqa: E402
+import hashset_fixtures as fx  # noqa: E402
 
 HAVE_CLAM = shutil.which("clamscan") is not None
 HAVE_YARA = shutil.which("yara") is not None and shutil.which("yarac") is not None
