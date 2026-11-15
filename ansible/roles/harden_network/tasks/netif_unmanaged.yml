@@ -1,0 +1,11 @@
+# Control 3.6: a udev rule marks every network interface except lo unmanaged (NetworkManager and networkd)
+# and sets it down as it appears.
+# Test: tests/goss/network.yaml (no interface up except lo, rule present); tests/vm/test_airgap.sh
+- name: Interfaces | Install unmanaged-and-down udev rule
+  ansible.builtin.copy:
+    src: 99-forensic-netif.rules
+    dest: /etc/udev/rules.d/99-forensic-netif.rules
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Harden network | Reload udev rules

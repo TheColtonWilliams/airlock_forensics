@@ -1,0 +1,3 @@
+# AIRLOCK task 5.1: users cannot change these keys.
+/org/gnome/nautilus/preferences/show-image-thumbnails
+/org/gnome/desktop/thumbnailers/disable-all

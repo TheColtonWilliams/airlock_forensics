@@ -1,0 +1,12 @@
+# Control 3.6: /etc/modprobe.d/forensic-radios.conf stops cfg80211, mac80211, bluetooth, and btusb from
+# loading ("install MODULE /bin/false"), and new rfkill devices start blocked (rfkill default_state=0).
+# Copied into the initramfs so early boot obeys it too.
+# Test: tests/goss/network.yaml (file contents, lsmod shows no bluetooth or cfg80211, no wl* interface)
+- name: Radios | Install modprobe block list
+  ansible.builtin.template:
+    src: forensic-radios.conf.j2
+    dest: /etc/modprobe.d/forensic-radios.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Harden network | Rebuild initramfs

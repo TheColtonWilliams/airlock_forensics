@@ -1,0 +1,25 @@
+# Control 5.1: gvfs volume monitors disabled. The user units are masked for every user (systemctl --global)
+# and their .monitor registrations are diverted, so gio never starts them and nothing is mounted or
+# probed when a disk, phone, or camera is attached.
+# Test: tests/goss/desktop.yaml (user units linked to /dev/null, .monitor files gone); tests/vm/test_automount.sh
+- name: Volume monitors | Mask gvfs volume monitor user units for every user
+  ansible.builtin.file:
+    src: /dev/null
+    dest: "/etc/systemd/user/{{ item }}"
+    state: link
+    force: true
+  loop: "{{ harden_desktop_volume_monitor_masked_user_units }}"
+
+- name: Volume monitors | Divert monitor registrations (also stops a later install from adding them)
+  ansible.builtin.command:
+    argv:
+      - dpkg-divert
+      - --local
+      - --rename
+      - --divert
+      - "{{ item }}.airlock-disabled"
+      - --add
+      - "{{ item }}"
+  loop: "{{ harden_desktop_volume_monitor_files }}"
+  register: harden_desktop_monitor_divert
+  changed_when: "'Adding' in harden_desktop_monitor_divert.stdout"

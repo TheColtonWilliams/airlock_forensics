@@ -1,0 +1,16 @@
+# harden_services: one control per file. Each file names its test in its first comment.
+# Controls and tests are listed in docs/controls.md.
+- name: Telemetry | Masked
+  ansible.builtin.import_tasks: telemetry_masked.yml
+
+- name: Updates | No update checks or automatic updates
+  ansible.builtin.import_tasks: updates_off.yml
+
+- name: Discovery | Discovery and location daemons masked
+  ansible.builtin.import_tasks: discovery_masked.yml
+
+- name: Cloud-init | Disabled
+  ansible.builtin.import_tasks: cloud_init_off.yml
+
+- name: Snapd | Removed or held
+  ansible.builtin.import_tasks: snapd.yml

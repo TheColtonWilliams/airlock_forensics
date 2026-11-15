@@ -1,0 +1,12 @@
+# Control 3.5: NetworkManager, systemd-networkd, systemd-resolved, systemd-timesyncd, and wpa_supplicant are
+# masked, so nothing configures an interface, runs DHCP, resolves names, or syncs time over the network.
+# Masking does not stop a running unit, so the image build keeps its network until it reboots.
+# Test: tests/goss/network.yaml (each unit linked to /dev/null, not running; no default route)
+- name: Network services | Mask network services
+  ansible.builtin.file:
+    src: /dev/null
+    dest: "/etc/systemd/system/{{ item }}"
+    state: link
+    force: true
+  notify: Harden network | Reload systemd
+  loop: "{{ harden_network_service_masked_units }}"

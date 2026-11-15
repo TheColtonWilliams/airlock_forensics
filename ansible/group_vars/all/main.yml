@@ -59,3 +59,5 @@ airlock_kernel_cmdline:
   - rd.dm=0
   - rd.luks=0
   - nodmraid
+  # Task 3.5: new radios start soft-blocked even when rfkill is built into the kernel.
+  - rfkill.default_state=0

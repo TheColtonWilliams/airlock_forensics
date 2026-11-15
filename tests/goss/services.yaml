@@ -1,0 +1,433 @@
+# goss checks for harden_services (tasks 5.3 to 5.5): no telemetry, no update checks, no discovery
+# daemons, no cloud-init, no snapd. Run inside the booted image by tests/run-qemu-tests.sh.
+# Check syntax with: goss -g tests/goss/services.yaml render
+# Every unit masked by the role has a check here; tests/unit/test_harden_coverage.py enforces it.
+file:
+  /etc/systemd/system/apport.service:
+    title: '5.3: apport.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/apport-forward.socket:
+    title: '5.3: apport-forward.socket masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/whoopsie.service:
+    title: '5.3: whoopsie.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/whoopsie.path:
+    title: '5.3: whoopsie.path masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/kerneloops.service:
+    title: '5.3: kerneloops.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/ubuntu-advantage.service:
+    title: '5.3: ubuntu-advantage.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/ubuntu-advantage-desktop-daemon.service:
+    title: '5.3: ubuntu-advantage-desktop-daemon.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/ua-timer.timer:
+    title: '5.3: ua-timer.timer masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/ua-timer.service:
+    title: '5.3: ua-timer.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/ua-reboot-cmds.service:
+    title: '5.3: ua-reboot-cmds.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/esm-cache.service:
+    title: '5.3: esm-cache.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/apt-news.service:
+    title: '5.3: apt-news.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/unattended-upgrades.service:
+    title: '5.3: unattended-upgrades.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/apt-daily.timer:
+    title: '5.3: apt-daily.timer masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/apt-daily.service:
+    title: '5.3: apt-daily.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/apt-daily-upgrade.timer:
+    title: '5.3: apt-daily-upgrade.timer masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/apt-daily-upgrade.service:
+    title: '5.3: apt-daily-upgrade.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/motd-news.timer:
+    title: '5.3: motd-news.timer masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/motd-news.service:
+    title: '5.3: motd-news.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/fwupd.service:
+    title: '5.3: fwupd.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/fwupd-refresh.timer:
+    title: '5.3: fwupd-refresh.timer masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/fwupd-refresh.service:
+    title: '5.3: fwupd-refresh.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/fwupd-offline-update.service:
+    title: '5.3: fwupd-offline-update.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/packagekit.service:
+    title: '5.3: packagekit.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/packagekit-offline-update.service:
+    title: '5.3: packagekit-offline-update.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/avahi-daemon.service:
+    title: '5.3: avahi-daemon.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/avahi-daemon.socket:
+    title: '5.3: avahi-daemon.socket masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/cups-browsed.service:
+    title: '5.3: cups-browsed.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/ModemManager.service:
+    title: '5.3: ModemManager.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/geoclue.service:
+    title: '5.3: geoclue.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/bluetooth.service:
+    title: '5.3: bluetooth.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/cloud-init-local.service:
+    title: '5.3: cloud-init-local.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/cloud-init.service:
+    title: '5.3: cloud-init.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/cloud-config.service:
+    title: '5.3: cloud-config.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/cloud-final.service:
+    title: '5.3: cloud-final.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/cloud-init-hotplugd.socket:
+    title: '5.3: cloud-init-hotplugd.socket masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/cloud-init-hotplugd.service:
+    title: '5.3: cloud-init-hotplugd.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/user/ubuntu-report.service:
+    title: '5.3: user unit ubuntu-report.service masked for every user'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/user/ubuntu-report.path:
+    title: '5.3: user unit ubuntu-report.path masked for every user'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/user/update-notifier-crash.path:
+    title: '5.3: user unit update-notifier-crash.path masked for every user'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/user/update-notifier-crash.service:
+    title: '5.3: user unit update-notifier-crash.service masked for every user'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/user/update-notifier-release.path:
+    title: '5.3: user unit update-notifier-release.path masked for every user'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/user/update-notifier-release.service:
+    title: '5.3: user unit update-notifier-release.service masked for every user'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/user/update-notifier-livepatch.path:
+    title: '5.3: user unit update-notifier-livepatch.path masked for every user'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/user/update-notifier-livepatch.service:
+    title: '5.3: user unit update-notifier-livepatch.service masked for every user'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/xdg/autostart/ubuntu-report-on-upgrade.desktop:
+    title: '5.3: autostart entry /etc/xdg/autostart/ubuntu-report-on-upgrade.desktop removed'
+    exists: false
+  /etc/xdg/autostart/ubuntu-advantage-notification.desktop:
+    title: '5.3: autostart entry /etc/xdg/autostart/ubuntu-advantage-notification.desktop removed'
+    exists: false
+  /etc/xdg/autostart/update-notifier.desktop:
+    title: '5.3: autostart entry /etc/xdg/autostart/update-notifier.desktop removed'
+    exists: false
+  /etc/xdg/autostart/geoclue-demo-agent.desktop:
+    title: '5.3: autostart entry /etc/xdg/autostart/geoclue-demo-agent.desktop removed'
+    exists: false
+  /etc/update-motd.d/50-motd-news:
+    title: '5.3: login-message script /etc/update-motd.d/50-motd-news removed'
+    exists: false
+  /etc/update-motd.d/85-fwupd:
+    title: '5.3: login-message script /etc/update-motd.d/85-fwupd removed'
+    exists: false
+  /etc/update-motd.d/90-updates-available:
+    title: '5.3: login-message script /etc/update-motd.d/90-updates-available removed'
+    exists: false
+  /etc/update-motd.d/91-contract-ua-esm-status:
+    title: '5.3: login-message script /etc/update-motd.d/91-contract-ua-esm-status removed'
+    exists: false
+  /etc/update-motd.d/91-release-upgrade:
+    title: '5.3: login-message script /etc/update-motd.d/91-release-upgrade removed'
+    exists: false
+  /etc/update-motd.d/92-unattended-upgrades:
+    title: '5.3: login-message script /etc/update-motd.d/92-unattended-upgrades removed'
+    exists: false
+  /etc/update-motd.d/95-hwe-eol:
+    title: '5.3: login-message script /etc/update-motd.d/95-hwe-eol removed'
+    exists: false
+  /etc/xdg/autostart/snap-userd-autostart.desktop:
+    title: '5.4: autostart entry /etc/xdg/autostart/snap-userd-autostart.desktop removed'
+    exists: false
+  /etc/apt/apt.conf.d/99airlock-no-periodic:
+    title: '5.3: apt periodic jobs are off'
+    exists: true
+    contents:
+      - APT::Periodic::Enable "0";
+      - APT::Periodic::Update-Package-Lists "0";
+      - APT::Periodic::Unattended-Upgrade "0";
+  /etc/default/motd-news:
+    title: '5.3: motd news is off'
+    exists: true
+    contents:
+      - '/^ENABLED=0$/'
+  /etc/default/apport:
+    title: '5.3: apport crash collection is off'
+    exists: true
+    contents:
+      - '/^enabled=0$/'
+  /etc/cloud/cloud-init.disabled:
+    title: '5.3: cloud-init is disabled'
+    exists: true
+  /etc/apt/preferences.d/airlock-no-snapd.pref:
+    title: '5.4: snapd is pinned at priority -1 so apt never reinstalls it'
+    exists: true
+    contents:
+      - 'Package: snapd'
+      - 'Pin-Priority: -1'
+
+service:
+  apport.service:
+    title: '5.3: apport.service not running'
+    running: false
+  apport-forward.socket:
+    title: '5.3: apport-forward.socket not running'
+    running: false
+  whoopsie.service:
+    title: '5.3: whoopsie.service not running'
+    running: false
+  whoopsie.path:
+    title: '5.3: whoopsie.path not running'
+    running: false
+  kerneloops.service:
+    title: '5.3: kerneloops.service not running'
+    running: false
+  ubuntu-advantage.service:
+    title: '5.3: ubuntu-advantage.service not running'
+    running: false
+  ubuntu-advantage-desktop-daemon.service:
+    title: '5.3: ubuntu-advantage-desktop-daemon.service not running'
+    running: false
+  ua-timer.timer:
+    title: '5.3: ua-timer.timer not running'
+    running: false
+  ua-timer.service:
+    title: '5.3: ua-timer.service not running'
+    running: false
+  ua-reboot-cmds.service:
+    title: '5.3: ua-reboot-cmds.service not running'
+    running: false
+  esm-cache.service:
+    title: '5.3: esm-cache.service not running'
+    running: false
+  apt-news.service:
+    title: '5.3: apt-news.service not running'
+    running: false
+  unattended-upgrades.service:
+    title: '5.3: unattended-upgrades.service not running'
+    running: false
+  apt-daily.timer:
+    title: '5.3: apt-daily.timer not running'
+    running: false
+  apt-daily.service:
+    title: '5.3: apt-daily.service not running'
+    running: false
+  apt-daily-upgrade.timer:
+    title: '5.3: apt-daily-upgrade.timer not running'
+    running: false
+  apt-daily-upgrade.service:
+    title: '5.3: apt-daily-upgrade.service not running'
+    running: false
+  motd-news.timer:
+    title: '5.3: motd-news.timer not running'
+    running: false
+  motd-news.service:
+    title: '5.3: motd-news.service not running'
+    running: false
+  fwupd.service:
+    title: '5.3: fwupd.service not running'
+    running: false
+  fwupd-refresh.timer:
+    title: '5.3: fwupd-refresh.timer not running'
+    running: false
+  fwupd-refresh.service:
+    title: '5.3: fwupd-refresh.service not running'
+    running: false
+  fwupd-offline-update.service:
+    title: '5.3: fwupd-offline-update.service not running'
+    running: false
+  packagekit.service:
+    title: '5.3: packagekit.service not running'
+    running: false
+  packagekit-offline-update.service:
+    title: '5.3: packagekit-offline-update.service not running'
+    running: false
+  avahi-daemon.service:
+    title: '5.3: avahi-daemon.service not running'
+    running: false
+  avahi-daemon.socket:
+    title: '5.3: avahi-daemon.socket not running'
+    running: false
+  cups-browsed.service:
+    title: '5.3: cups-browsed.service not running'
+    running: false
+  ModemManager.service:
+    title: '5.3: ModemManager.service not running'
+    running: false
+  geoclue.service:
+    title: '5.3: geoclue.service not running'
+    running: false
+  bluetooth.service:
+    title: '5.3: bluetooth.service not running'
+    running: false
+  cloud-init-local.service:
+    title: '5.3: cloud-init-local.service not running'
+    running: false
+  cloud-init.service:
+    title: '5.3: cloud-init.service not running'
+    running: false
+  cloud-config.service:
+    title: '5.3: cloud-config.service not running'
+    running: false
+  cloud-final.service:
+    title: '5.3: cloud-final.service not running'
+    running: false
+  cloud-init-hotplugd.socket:
+    title: '5.3: cloud-init-hotplugd.socket not running'
+    running: false
+  cloud-init-hotplugd.service:
+    title: '5.3: cloud-init-hotplugd.service not running'
+    running: false
+package:
+  snapd:
+    title: '5.4: snapd is not installed (snapd_policy=remove)'
+    installed: false
+
+command:
+  'snapd cannot be installed':
+    title: '5.4: apt has no install candidate for snapd'
+    exec: apt-cache policy snapd
+    exit-status: 0
+    stdout:
+      - '!/Candidate: [0-9]/'
+  'no snap mounts':
+    title: '5.4: no snap is mounted'
+    exec: "findmnt -rn -o TARGET || true"
+    exit-status: 0
+    stdout:
+      - '!/^\/snap\//'
+  'release upgrade prompt off':
+    title: '5.3: release upgrade checks are off'
+    exec: "test ! -e /etc/update-manager/release-upgrades || grep -Eq '^Prompt=never$' /etc/update-manager/release-upgrades"
+    exit-status: 0
+  'no update timers':
+    title: '5.3: no apt, motd-news, fwupd, Ubuntu Pro, mdcheck, or e2scrub timer is active'
+    exec: "systemctl list-timers --no-legend --no-pager || true"
+    exit-status: 0
+    stdout:
+      - '!/apt-daily|motd-news|fwupd-refresh|ua-timer|mdcheck|e2scrub/'

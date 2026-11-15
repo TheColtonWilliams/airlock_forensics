@@ -1,0 +1,30 @@
+# Control 5.1: thumbnailer and previewer packages removed; every *.thumbnailer file left by another package
+# (or added later by a tool role) is diverted out of the thumbnailer directories with dpkg-divert.
+# Test: tests/goss/desktop.yaml (packages not installed, no *.thumbnailer file left)
+- name: Thumbnails | Remove thumbnailer and previewer packages
+  ansible.builtin.apt:
+    name: "{{ harden_desktop_thumbnailer_packages_absent }}"
+    state: absent
+    purge: true
+
+- name: Thumbnails | Find remaining thumbnailer registrations
+  ansible.builtin.find:
+    paths: "{{ harden_desktop_thumbnailer_dirs }}"
+    patterns: "*.thumbnailer"
+    file_type: any
+  register: harden_desktop_thumbnailers
+
+- name: Thumbnails | Divert each remaining thumbnailer out of use
+  ansible.builtin.command:
+    argv:
+      - dpkg-divert
+      - --local
+      - --rename
+      - --divert
+      - "{{ item.path }}.airlock-disabled"
+      - --add
+      - "{{ item.path }}"
+  loop: "{{ harden_desktop_thumbnailers.files }}"
+  loop_control:
+    label: "{{ item.path }}"
+  changed_when: true

@@ -1,0 +1,33 @@
+# harden_network: the air gap. Radios blocked at the kernel module level and by rfkill, every
+# network service masked, every interface left down, and a drop-all firewall behind that.
+# Every unit listed under *_masked_units must have a goss check in tests/goss/network.yaml;
+# tests/unit/test_harden_coverage.py fails if one is missing.
+
+# Task 3.5: systemd-rfkill restores saved radio state at boot, which could unblock a radio.
+harden_network_rfkill_masked_units:
+  - systemd-rfkill.service
+  - systemd-rfkill.socket
+
+# Task 3.5: network managers, DNS, time sync, Wi-Fi supplicant. No DHCP client can run without them.
+harden_network_service_masked_units:
+  - NetworkManager.service
+  - NetworkManager-wait-online.service
+  - NetworkManager-dispatcher.service
+  - systemd-networkd.service
+  - systemd-networkd.socket
+  - systemd-networkd-wait-online.service
+  - systemd-resolved.service
+  - systemd-timesyncd.service
+  - wpa_supplicant.service
+
+# Task 3.6: kernel modules that radio drivers depend on. "install MODULE /bin/false" stops modprobe
+# from loading them, so most Wi-Fi and Bluetooth drivers cannot load either.
+harden_network_blocked_modules:
+  - cfg80211
+  - mac80211
+  - bluetooth
+  - btusb
+
+# Task 3.7: the image build runs over SSH, so the firewall is only started on the offline
+# first-boot run. It is enabled in both phases and loads on every boot.
+harden_network_start_firewall: "{{ airlock_phase == 'provision' }}"

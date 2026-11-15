@@ -1,0 +1,32 @@
+# Control 3.3: no hibernate. Hibernate and hybrid-sleep targets and services masked; systemd sleep
+# configuration forbids hibernation; noresume is checked by kernel_cmdline.yml.
+# Test: tests/goss/storage.yaml (hibernate units linked to /dev/null, sleep.conf.d file)
+- name: Hibernate | Mask hibernate units
+  ansible.builtin.file:
+    src: /dev/null
+    dest: "/etc/systemd/system/{{ item }}"
+    state: link
+    force: true
+  notify: Harden storage | Reload systemd
+  loop: "{{ harden_storage_hibernate_masked_units }}"
+
+- name: Hibernate | Create sleep.conf.d
+  ansible.builtin.file:
+    path: /etc/systemd/sleep.conf.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Hibernate | Forbid hibernation in systemd sleep configuration
+  ansible.builtin.copy:
+    dest: /etc/systemd/sleep.conf.d/90-airlock-no-hibernate.conf
+    content: |
+      # AIRLOCK task 3.3: hibernation writes memory to a swap device. Never allowed.
+      [Sleep]
+      AllowHibernation=no
+      AllowHybridSleep=no
+      AllowSuspendThenHibernate=no
+    owner: root
+    group: root
+    mode: "0644"

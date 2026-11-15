@@ -1,0 +1,18 @@
+# AIRLOCK task 3.5: block every radio before any network service could start.
+# Test: tests/goss/network.yaml
+[Unit]
+Description=AIRLOCK: block every radio (Wi-Fi, Bluetooth, WWAN) with rfkill
+DefaultDependencies=no
+After=systemd-udevd.service
+Before=network-pre.target NetworkManager.service systemd-networkd.service wpa_supplicant.service bluetooth.service ModemManager.service shutdown.target
+Wants=network-pre.target
+Conflicts=shutdown.target
+ConditionPathExists=/dev/rfkill
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/rfkill block all
+
+[Install]
+WantedBy=sysinit.target

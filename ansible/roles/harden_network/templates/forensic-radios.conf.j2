@@ -1,0 +1,9 @@
+# AIRLOCK task 3.6, written by the Ansible role harden_network. Radios cannot load.
+# "install MODULE /bin/false" makes modprobe fail for the module and for every driver that needs it.
+# Test: tests/goss/network.yaml
+{% for module in harden_network_blocked_modules %}
+blacklist {{ module }}
+install {{ module }} /bin/false
+{% endfor %}
+# New rfkill devices start soft-blocked (also set on the kernel command line for a built-in rfkill).
+options rfkill default_state=0

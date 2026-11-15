@@ -1,0 +1,51 @@
+# Control 5.4: snapd_policy=remove (decision 2026-11-15): snapd is purged and pinned at priority -1 so apt
+# never installs it again; snapd_policy=hold keeps it but holds the package and every snap refresh.
+# Test: tests/goss/services.yaml (snapd not installed, pin file present)
+- name: Snapd | Policy is remove or hold
+  ansible.builtin.assert:
+    that:
+      - snapd_policy in ['remove', 'hold']
+    fail_msg: "snapd_policy is '{{ snapd_policy }}'. Set it to remove or hold in group_vars/all/main.yml."
+    quiet: true
+
+- name: Snapd | Purge snapd
+  ansible.builtin.apt:
+    name: snapd
+    state: absent
+    purge: true
+  when: snapd_policy == 'remove'
+
+- name: Snapd | Pin snapd so apt never installs it again
+  ansible.builtin.copy:
+    dest: /etc/apt/preferences.d/airlock-no-snapd.pref
+    content: |
+      # AIRLOCK task 5.4: snapd is removed and must never be reinstalled.
+      # Test: tests/goss/services.yaml
+      Package: snapd
+      Pin: release a=*
+      Pin-Priority: -1
+    owner: root
+    group: root
+    mode: "0644"
+  when: snapd_policy == 'remove'
+
+- name: Snapd | Remove snap user agent autostart
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ harden_services_snap_autostart_absent }}"
+  when: snapd_policy == 'remove'
+
+- name: Snapd | Hold the snapd package
+  ansible.builtin.dpkg_selections:
+    name: snapd
+    selection: hold
+  when: snapd_policy == 'hold'
+
+- name: Snapd | Hold every snap refresh
+  ansible.builtin.command: snap refresh --hold
+  register: harden_services_snap_hold
+  changed_when: "'held' in harden_services_snap_hold.stdout"
+  when:
+    - snapd_policy == 'hold'
+    - not (ansible_facts['is_chroot'] | default(false))

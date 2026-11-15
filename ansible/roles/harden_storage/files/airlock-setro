@@ -1,0 +1,281 @@
+#!/usr/bin/env bash
+# airlock-setro: apply the AIRLOCK software read-only policy to block devices (task 3.2).
+#
+# This is a software read-only policy, not a write blocker. It sets the kernel read-only
+# flag (blockdev --setro). Filesystem drivers honour the flag, but root can clear it and
+# raw SCSI commands can bypass it. Use a hardware write blocker as well.
+#
+# Usage:
+#   airlock-setro NAME     apply the policy to /dev/NAME (the udev rule passes %k, e.g. sdb1)
+#   airlock-setro --all    apply the policy to every sd*, nvme*, mmcblk*, and vd* device
+#   airlock-setro --check  list every such device with its state; exit 1 if one that should
+#                          be read-only is writable
+#
+# Every device on the disk that holds / is left writable: ASSETS and OUTPUT live there.
+# A device or disk named by a file in /run/airlock/rw-allow/ (written by
+# evidence-unlock-output) is left alone. If the disk holding / cannot be worked out, every
+# device is set read-only (fail closed).
+#
+# Each decision is logged to the session log (airlock_log); if that is not available yet
+# (early boot), it goes to the system journal instead.
+#
+# Overrides for tests: AIRLOCK_SYSFS (default /sys), AIRLOCK_DEV_DIR (default /dev),
+# AIRLOCK_BLOCKDEV (default blockdev), AIRLOCK_RUN_DIR (default /run/airlock),
+# AIRLOCK_SETRO_ROOT_DEV (kernel name of the device holding /, or "none"),
+# AIRLOCK_LOG_LIB (path of airlock-log.sh).
+set -euo pipefail
+
+readonly TOOL="airlock-setro"
+SYSFS="${AIRLOCK_SYSFS:-/sys}"
+DEV_DIR="${AIRLOCK_DEV_DIR:-/dev}"
+BLOCKDEV="${AIRLOCK_BLOCKDEV:-blockdev}"
+RUN_DIR="${AIRLOCK_RUN_DIR:-/run/airlock}"
+# udev starts RUN programs with a short PATH; make sure the system tools are reachable.
+PATH="${PATH:+$PATH:}/usr/sbin:/usr/bin:/sbin:/bin"
+export PATH
+
+usage() {
+  sed -n '2,/^set -euo/{/^set -euo/d;s/^# \{0,1\}//;p}' "$0"
+}
+
+# ---------------------------------------------------------------- logging
+log_lib=""
+for candidate in "${AIRLOCK_LOG_LIB:-}" \
+  "${AIRLOCK_PYLIB:+${AIRLOCK_PYLIB%/python}/airlock-log.sh}" \
+  "${AIRLOCK_OPT_DIR:-/opt/airlock}/lib/airlock-log.sh"; do
+  if [[ -n "$candidate" && -r "$candidate" ]]; then
+    log_lib="$candidate"
+    break
+  fi
+done
+if [[ -n "$log_lib" ]]; then
+  # shellcheck source=/dev/null
+  source "$log_lib"
+fi
+
+log() { # log EVENT key=value ...
+  if declare -F airlock_log >/dev/null && airlock_log "$TOOL" "$@" >/dev/null 2>&1; then
+    return 0
+  fi
+  # Session log not writable yet (early boot, root still read-only): use the journal.
+  logger -t "$TOOL" -- "$*" 2>/dev/null || printf '%s: %s\n' "$TOOL" "$*" >&2
+}
+
+# ---------------------------------------------------------------- sysfs helpers
+valid_name() { [[ "$1" =~ ^[A-Za-z0-9._:-]+$ && "$1" != "." && "$1" != ".." ]]; }
+
+# parent_disk NAME: the whole disk a partition belongs to, or NAME itself.
+parent_disk() {
+  local name="$1" real
+  if [[ -e "$SYSFS/class/block/$name/partition" ]]; then
+    real="$(readlink -f -- "$SYSFS/class/block/$name")"
+    real="${real%/*}"
+    printf '%s\n' "${real##*/}"
+  else
+    printf '%s\n' "$name"
+  fi
+}
+
+# disks_of NAME: the whole disks under NAME, following device-mapper and md members.
+disks_of() {
+  local name="$1" depth="${2:-0}" member found=0
+  if ((depth > 16)); then return 0; fi
+  for member in "$SYSFS/class/block/$name"/slaves/*; do
+    [[ -e "$member" ]] || continue
+    found=1
+    disks_of "${member##*/}" $((depth + 1))
+  done
+  if ((found == 0)); then parent_disk "$name"; fi
+}
+
+# root_device: kernel name of the block device that holds /. Prints nothing when / is not
+# on a block device (overlay, tmpfs, network). Returns 1 when it cannot be worked out.
+root_device() {
+  local majmin src real
+  if [[ -n "${AIRLOCK_SETRO_ROOT_DEV:-}" ]]; then
+    if [[ "$AIRLOCK_SETRO_ROOT_DEV" != none ]]; then
+      printf '%s\n' "${AIRLOCK_SETRO_ROOT_DEV#/dev/}"
+    fi
+    return 0
+  fi
+  majmin="$(findmnt -n -o MAJ:MIN --mountpoint /)" || return 1
+  majmin="${majmin//[[:space:]]/}"
+  if [[ -n "$majmin" && "${majmin%%:*}" != 0 && -e "$SYSFS/dev/block/$majmin" ]]; then
+    real="$(readlink -f -- "$SYSFS/dev/block/$majmin")"
+    printf '%s\n' "${real##*/}"
+    return 0
+  fi
+  # btrfs and similar report an anonymous device number: use the mount source instead.
+  src="$(findmnt -n -o SOURCE --mountpoint /)" || return 1
+  src="${src%%\[*}"
+  if [[ -b "$src" ]]; then
+    real="$(readlink -f -- "$src")"
+    printf '%s\n' "${real##*/}"
+  fi
+  return 0
+}
+
+BOOT_DISKS=()
+BOOT_STATE="" # known | none | unknown
+find_boot_disks() {
+  local rootdev disk
+  if ! rootdev="$(root_device)"; then
+    BOOT_STATE=unknown
+    return 0
+  fi
+  if [[ -z "$rootdev" ]]; then
+    BOOT_STATE=none
+    return 0
+  fi
+  if ! valid_name "$rootdev" || [[ ! -e "$SYSFS/class/block/$rootdev" ]]; then
+    BOOT_STATE=unknown
+    return 0
+  fi
+  while IFS= read -r disk; do
+    [[ -n "$disk" ]] && BOOT_DISKS+=("$disk")
+  done < <(disks_of "$rootdev" | sort -u)
+  if ((${#BOOT_DISKS[@]} == 0)); then BOOT_STATE=unknown; else BOOT_STATE=known; fi
+}
+
+boot_list() {
+  case "$BOOT_STATE" in
+    known) (IFS=,; printf '%s' "${BOOT_DISKS[*]}") ;;
+    *) printf '%s' "$BOOT_STATE" ;;
+  esac
+}
+
+is_boot_disk() {
+  local d
+  for d in "${BOOT_DISKS[@]+"${BOOT_DISKS[@]}"}"; do
+    [[ "$d" == "$1" ]] && return 0
+  done
+  return 1
+}
+
+read_ro() {
+  local f="$SYSFS/class/block/$1/ro"
+  if [[ -r "$f" ]]; then tr -d '[:space:]' <"$f"; else printf 'unknown'; fi
+}
+
+# decision NAME DISK: exempt_boot_disk | unlocked | readonly
+decision() {
+  local name="$1" disk="$2"
+  if [[ "$BOOT_STATE" == known ]] && is_boot_disk "$disk"; then
+    printf 'exempt_boot_disk\n'
+  elif [[ -e "$RUN_DIR/rw-allow/$name" || -e "$RUN_DIR/rw-allow/$disk" ]]; then
+    printf 'unlocked\n'
+  else
+    printf 'readonly\n'
+  fi
+}
+
+# Device names the udev rule matches (sd*, nvme*, mmcblk*, vd*). Hidden NVMe multipath
+# paths (nvmeXcYnZ) have no device node and are skipped.
+policy_devices() {
+  local path name
+  for path in "$SYSFS"/class/block/*; do
+    [[ -e "$path" ]] || continue
+    name="${path##*/}"
+    case "$name" in
+      sd* | nvme* | mmcblk* | vd*) ;;
+      *) continue ;;
+    esac
+    [[ "$name" =~ ^nvme[0-9]+c[0-9]+n ]] && continue
+    printf '%s\n' "$name"
+  done
+}
+
+# ---------------------------------------------------------------- actions
+apply_one() {
+  local name="$1" disk choice ro
+  if ! valid_name "$name"; then
+    echo "$TOOL: '$name' is not a block device name. Pass a kernel name such as sdb1." >&2
+    return 2
+  fi
+  if [[ ! -e "$SYSFS/class/block/$name" ]]; then
+    echo "$TOOL: there is no block device named '$name'. Check the name with lsblk." >&2
+    return 1
+  fi
+  disk="$(parent_disk "$name")"
+  choice="$(decision "$name" "$disk")"
+  if [[ "$choice" == readonly ]]; then
+    if ! "$BLOCKDEV" --setro "$DEV_DIR/$name"; then
+      log ro_policy device="$DEV_DIR/$name" disk="$disk" decision=setro_failed \
+        boot_disk="$(boot_list)"
+      echo "$TOOL: could not set $DEV_DIR/$name read-only. Treat it as writable and check the kernel log." >&2
+      return 1
+    fi
+  fi
+  ro="$(read_ro "$name")"
+  log ro_policy device="$DEV_DIR/$name" disk="$disk" decision="$choice" ro="$ro" \
+    boot_disk="$(boot_list)"
+  return 0
+}
+
+apply_all() {
+  local name rc=0
+  while IFS= read -r name; do
+    apply_one "$name" || rc=1
+  done < <(policy_devices)
+  return "$rc"
+}
+
+check_all() {
+  local name disk choice ro state count=0 writable=0
+  while IFS= read -r name; do
+    count=$((count + 1))
+    disk="$(parent_disk "$name")"
+    choice="$(decision "$name" "$disk")"
+    ro="$(read_ro "$name")"
+    case "$choice" in
+      exempt_boot_disk) state=exempt ;;
+      unlocked) state=unlocked ;;
+      *)
+        if [[ "$ro" == 1 ]]; then
+          state=ro
+        else
+          state=rw
+          writable=$((writable + 1))
+        fi
+        ;;
+    esac
+    printf '%s %s disk=%s\n' "$state" "$name" "$disk"
+  done < <(policy_devices)
+  printf 'boot_disk=%s devices=%d writable=%d\n' "$(boot_list)" "$count" "$writable"
+  if ((writable > 0)); then
+    echo "$TOOL: $writable device(s) that should be read-only are writable. Run 'sudo airlock-setro --all' or reboot." >&2
+    return 1
+  fi
+  return 0
+}
+
+main() {
+  if (($# != 1)); then
+    echo "$TOOL: give one device name, --all, or --check. Run '$TOOL --help' for details." >&2
+    return 2
+  fi
+  case "$1" in
+    -h | --help)
+      usage
+      return 0
+      ;;
+  esac
+  find_boot_disks
+  case "$1" in
+    --all | --check) ;;
+    -*)
+      echo "$TOOL: unknown option '$1'. Use a device name, --all, or --check." >&2
+      return 2
+      ;;
+  esac
+  if [[ "$BOOT_STATE" == unknown && "$1" != --check ]]; then
+    log ro_policy_boot_disk_unknown decision=fail_closed
+  fi
+  case "$1" in
+    --all) apply_all ;;
+    --check) check_all ;;
+    *) apply_one "$1" ;;
+  esac
+}
+
+main "$@"

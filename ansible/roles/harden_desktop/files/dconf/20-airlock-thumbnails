@@ -1,0 +1,7 @@
+# AIRLOCK task 5.1: no thumbnails or previews of any file.
+# Test: tests/goss/desktop.yaml
+[org/gnome/nautilus/preferences]
+show-image-thumbnails='never'
+
+[org/gnome/desktop/thumbnailers]
+disable-all=true

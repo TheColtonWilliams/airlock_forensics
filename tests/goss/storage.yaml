@@ -1,0 +1,316 @@
+# goss checks for harden_storage (tasks 3.1 to 3.4, 3.8, 3A.1, 3A.2, 3A.4). Run inside the booted
+# image by tests/run-qemu-tests.sh, which attaches extra virtual disks (ext4, one with a swap-type
+# partition, one with LVM/mdraid/swap signatures). Check syntax with: goss -g tests/goss/storage.yaml render
+# Every unit masked by the role has a check here; tests/unit/test_harden_coverage.py enforces it.
+file:
+  /etc/systemd/system/udisks2.service:
+    title: '3.1: udisks2.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/swap.target:
+    title: '3.3: swap.target masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/hibernate.target:
+    title: '3.3: hibernate.target masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/hybrid-sleep.target:
+    title: '3.3: hybrid-sleep.target masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/suspend-then-hibernate.target:
+    title: '3.3: suspend-then-hibernate.target masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/systemd-hibernate.service:
+    title: '3.3: systemd-hibernate.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/systemd-hybrid-sleep.service:
+    title: '3.3: systemd-hybrid-sleep.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/systemd-suspend-then-hibernate.service:
+    title: '3.3: systemd-suspend-then-hibernate.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/systemd-hibernate-resume.service:
+    title: '3.3: systemd-hibernate-resume.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/lvm2-monitor.service:
+    title: '3A.2: lvm2-monitor.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/mdmonitor.service:
+    title: '3A.2: mdmonitor.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/mdmonitor-oneshot.timer:
+    title: '3A.2: mdmonitor-oneshot.timer masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/mdcheck_start.timer:
+    title: '3A.2: mdcheck_start.timer masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/mdcheck_continue.timer:
+    title: '3A.2: mdcheck_continue.timer masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/multipathd.service:
+    title: '3A.2: multipathd.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/multipathd.socket:
+    title: '3A.2: multipathd.socket masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/smartmontools.service:
+    title: '3A.2: smartmontools.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/e2scrub_all.timer:
+    title: '3A.2: e2scrub_all.timer masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/e2scrub_all.service:
+    title: '3A.2: e2scrub_all.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/e2scrub_reap.service:
+    title: '3A.2: e2scrub_reap.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /usr/local/sbin/airlock-setro:
+    title: '3.2: software read-only policy helper installed'
+    exists: true
+    mode: "0755"
+    owner: root
+    filetype: file
+  /etc/udev/rules.d/99-forensic-ro.rules:
+    title: '3.2: software read-only udev rule installed'
+    exists: true
+    filetype: file
+    contents:
+      - '/KERNEL=="sd\*\|nvme\*\|mmcblk\*\|vd\*"/'
+      - '/RUN\+="\/usr\/local\/sbin\/airlock-setro %k"/'
+  /etc/systemd/system-generators/systemd-gpt-auto-generator:
+    title: '3.4: systemd-gpt-auto-generator masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/sleep.conf.d/90-airlock-no-hibernate.conf:
+    title: '3.3: systemd sleep configuration forbids hibernation'
+    exists: true
+    contents:
+      - AllowHibernation=no
+      - AllowHybridSleep=no
+      - AllowSuspendThenHibernate=no
+  /etc/dconf/profile/user:
+    title: '3.1: dconf user profile reads the locked system database'
+    exists: true
+    contents:
+      - user-db:user
+      - system-db:local
+  /etc/dconf/db/local.d/10-airlock-automount:
+    title: '3.1: automount keyfile installed'
+    exists: true
+  /etc/udev/rules.d/85-hdparm.rules:
+    title: '3A.2: hdparm udev rule (spin-down and power commands) masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/udev/rules.d/99-airlock-sg-root-only.rules:
+    title: '3A.4: SCSI generic nodes root-only udev rule installed'
+    exists: true
+    contents:
+      - '/SUBSYSTEM=="scsi_generic", MODE:="0600", OWNER:="root", GROUP:="root"/'
+      - '/SUBSYSTEM=="bsg", MODE:="0600", OWNER:="root", GROUP:="root"/'
+  /swap.img:
+    title: '3.3: installer swap file removed'
+    exists: false
+
+service:
+  udisks2.service:
+    title: '3.1: udisks2.service not running'
+    running: false
+  swap.target:
+    title: '3.3: swap.target not running'
+    running: false
+  hibernate.target:
+    title: '3.3: hibernate.target not running'
+    running: false
+  hybrid-sleep.target:
+    title: '3.3: hybrid-sleep.target not running'
+    running: false
+  suspend-then-hibernate.target:
+    title: '3.3: suspend-then-hibernate.target not running'
+    running: false
+  systemd-hibernate.service:
+    title: '3.3: systemd-hibernate.service not running'
+    running: false
+  systemd-hybrid-sleep.service:
+    title: '3.3: systemd-hybrid-sleep.service not running'
+    running: false
+  systemd-suspend-then-hibernate.service:
+    title: '3.3: systemd-suspend-then-hibernate.service not running'
+    running: false
+  systemd-hibernate-resume.service:
+    title: '3.3: systemd-hibernate-resume.service not running'
+    running: false
+  lvm2-monitor.service:
+    title: '3A.2: lvm2-monitor.service not running'
+    running: false
+  mdmonitor.service:
+    title: '3A.2: mdmonitor.service not running'
+    running: false
+  mdmonitor-oneshot.timer:
+    title: '3A.2: mdmonitor-oneshot.timer not running'
+    running: false
+  mdcheck_start.timer:
+    title: '3A.2: mdcheck_start.timer not running'
+    running: false
+  mdcheck_continue.timer:
+    title: '3A.2: mdcheck_continue.timer not running'
+    running: false
+  multipathd.service:
+    title: '3A.2: multipathd.service not running'
+    running: false
+  multipathd.socket:
+    title: '3A.2: multipathd.socket not running'
+    running: false
+  smartmontools.service:
+    title: '3A.2: smartmontools.service not running'
+    running: false
+  e2scrub_all.timer:
+    title: '3A.2: e2scrub_all.timer not running'
+    running: false
+  e2scrub_all.service:
+    title: '3A.2: e2scrub_all.service not running'
+    running: false
+  e2scrub_reap.service:
+    title: '3A.2: e2scrub_reap.service not running'
+    running: false
+package:
+  sg3-utils-udev:
+    title: '3A.4: package sg3-utils-udev not installed'
+    installed: false
+  sg3-utils:
+    title: '3A.4: package sg3-utils not installed'
+    installed: false
+  sdparm:
+    title: '3A.4: package sdparm not installed'
+    installed: false
+command:
+  'kernel command line':
+    title: '3.3, 3.4, 3A.1: every hardening entry is on the running kernel command line'
+    exec: cat /proc/cmdline
+    exit-status: 0
+    stdout:
+      - '/(^|\s)noresume(\s|$)/'
+      - '/(^|\s)systemd\.gpt_auto=0(\s|$)/'
+      - '/(^|\s)rd\.systemd\.gpt_auto=0(\s|$)/'
+      - '/(^|\s)rd\.lvm=0(\s|$)/'
+      - '/(^|\s)rd\.md=0(\s|$)/'
+      - '/(^|\s)rd\.dm=0(\s|$)/'
+      - '/(^|\s)rd\.luks=0(\s|$)/'
+      - '/(^|\s)nodmraid(\s|$)/'
+  'software read-only policy':
+    title: '3.2, 3.8: every sd/nvme/mmcblk/vd device off the boot disk is read-only (needs at least one extra disk)'
+    exec: /usr/local/sbin/airlock-setro --check
+    exit-status: 0
+    stdout:
+      - '/^ro /'
+      - '/writable=0$/'
+    timeout: 30000
+  'no swap':
+    title: '3.3, 3.8: no swap is active, even with a swap-type partition attached'
+    exec: 'test -z "$(swapon --show --noheadings)"'
+    exit-status: 0
+  'no fstab swap':
+    title: '3.3: fstab has no active swap line'
+    exec: "awk '$1 !~ /^#/ && $3 == \"swap\"' /etc/fstab"
+    exit-status: 0
+    stdout:
+      - '!/swap/'
+  'fstab by UUID':
+    title: '3A.2: fstab names only the AIRLOCK partitions, by UUID, so nothing on an attached disk is mounted or checked'
+    exec: "awk '$1 !~ /^#/ && NF >= 2' /etc/fstab"
+    exit-status: 0
+    stdout:
+      - '!/^\/dev\/(sd|nvme|mmcblk|vd)/'
+      - '!/^(LABEL|PARTLABEL|PARTUUID)=/'
+  'no automount':
+    title: '3.1, 3.8: no filesystem from a disk other than the boot disk is mounted'
+    exec: >-
+      b="$(lsblk -ndo PKNAME "$(findmnt -no SOURCE /)")";
+      findmnt -rn -o SOURCE | grep '^/dev/' | sort -u | while read -r s; do
+      p="$(lsblk -ndo PKNAME "$s" 2>/dev/null || true)";
+      [ "$p" = "$b" ] || [ "$s" = "/dev/$b" ] || echo "foreign mount: $s"; done
+    exit-status: 0
+    stdout:
+      - '!/foreign mount/'
+  'automount off':
+    title: '3.1: org.gnome.desktop.media-handling automount is false'
+    exec: dconf read /org/gnome/desktop/media-handling/automount
+    exit-status: 0
+    stdout: ['/^false$/']
+  'automount-open off':
+    title: '3.1: org.gnome.desktop.media-handling automount-open is false'
+    exec: dconf read /org/gnome/desktop/media-handling/automount-open
+    exit-status: 0
+    stdout: ['/^false$/']
+  'autorun-never on':
+    title: '3.1: org.gnome.desktop.media-handling autorun-never is true'
+    exec: dconf read /org/gnome/desktop/media-handling/autorun-never
+    exit-status: 0
+    stdout: ['/^true$/']
+  'automount locks':
+    title: '3.1: media-handling keys are locked'
+    exec: dconf list-locks /org/gnome/desktop/media-handling/
+    exit-status: 0
+    stdout:
+      - /org/gnome/desktop/media-handling/automount
+      - /org/gnome/desktop/media-handling/automount-open
+      - /org/gnome/desktop/media-handling/autorun-never
+  'lvm autoactivation off':
+    title: '3A.1, 3A.2: LVM activates nothing automatically (auto_activation_volume_list empty, event_activation 0)'
+    exec: >-
+      test ! -e /etc/lvm/lvm.conf || {
+      grep -Eq '^\s*auto_activation_volume_list\s*=\s*\[\s*\]' /etc/lvm/lvm.conf &&
+      grep -Eq '^\s*event_activation\s*=\s*0' /etc/lvm/lvm.conf; }
+    exit-status: 0
+  'md autoassembly off':
+    title: '3A.1, 3A.2: mdadm assembles no array automatically (AUTO -all)'
+    exec: "test ! -e /etc/mdadm/mdadm.conf || grep -Eq '^AUTO\\s+-all' /etc/mdadm/mdadm.conf"
+    exit-status: 0
+  'sg nodes root only':
+    title: '3A.4: every /dev/sg* and /dev/bsg/* node is mode 0600, owned by root:root'
+    exec: >-
+      find /dev -maxdepth 1 -name 'sg[0-9]*' \( ! -perm 600 -o ! -user root -o ! -group root \) -print;
+      find /dev/bsg -mindepth 1 \( ! -perm 600 -o ! -user root -o ! -group root \) -print 2>/dev/null; true
+    exit-status: 0
+    stdout:
+      - '!/\/dev\//'

@@ -1,0 +1,5 @@
+# AIRLOCK task 3.6: every network interface except loopback is unmanaged and set down when it appears.
+# NM_UNMANAGED is read by NetworkManager, ID_NET_MANAGED_BY by systemd-networkd (both are masked too).
+# This file runs after 80-net-setup-link.rules, so $name is the final interface name.
+# Test: tests/goss/network.yaml, tests/vm/test_airgap.sh
+SUBSYSTEM=="net", ACTION=="add|change|move", KERNEL!="lo", ENV{NM_UNMANAGED}="1", ENV{ID_NET_MANAGED_BY}="org.airlock.unmanaged", RUN+="/usr/sbin/ip link set dev $name down"

@@ -1,0 +1,17 @@
+# Control 5.3: avahi-daemon (and its socket), cups-browsed, ModemManager, geoclue, and bluetooth are masked;
+# the geoclue demo agent no longer autostarts. Nothing announces or discovers the machine.
+# Test: tests/goss/services.yaml (units linked to /dev/null, not running; no listener off loopback)
+- name: Discovery | Mask discovery and location daemons
+  ansible.builtin.file:
+    src: /dev/null
+    dest: "/etc/systemd/system/{{ item }}"
+    state: link
+    force: true
+  notify: Harden services | Reload systemd
+  loop: "{{ harden_services_discovery_masked_units }}"
+
+- name: Discovery | Remove discovery autostart entries
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ harden_services_discovery_autostart_absent }}"

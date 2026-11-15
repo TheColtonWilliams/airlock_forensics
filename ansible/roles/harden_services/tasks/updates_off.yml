@@ -1,0 +1,69 @@
+# Control 5.3: no update checks or automatic updates. unattended-upgrades, apt-daily timers, motd-news,
+# fwupd, PackageKit, and update-notifier are masked; apt periodic jobs are off; login-message scripts that
+# contact servers are removed; release upgrade prompts are off.
+# Test: tests/goss/services.yaml (units linked to /dev/null, apt periodic file, motd scripts gone)
+- name: Updates | Mask update system units
+  ansible.builtin.file:
+    src: /dev/null
+    dest: "/etc/systemd/system/{{ item }}"
+    state: link
+    force: true
+  notify: Harden services | Reload systemd
+  loop: "{{ harden_services_updates_masked_units }}"
+
+- name: Updates | Mask update-notifier user units for every user
+  ansible.builtin.file:
+    src: /dev/null
+    dest: "/etc/systemd/user/{{ item }}"
+    state: link
+    force: true
+  loop: "{{ harden_services_updates_masked_user_units }}"
+
+- name: Updates | Remove update-notifier autostart entries
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ harden_services_updates_autostart_absent }}"
+
+- name: Updates | Turn off apt periodic jobs
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/99airlock-no-periodic
+    content: |
+      // AIRLOCK task 5.3: the USB system never checks for or installs updates.
+      // Updates arrive by restaging ASSETS or reflashing. Test: tests/goss/services.yaml
+      APT::Periodic::Enable "0";
+      APT::Periodic::Update-Package-Lists "0";
+      APT::Periodic::Download-Upgradeable-Packages "0";
+      APT::Periodic::Unattended-Upgrade "0";
+      APT::Periodic::AutocleanInterval "0";
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Updates | Remove login-message scripts that contact servers
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ harden_services_updates_motd_absent }}"
+
+- name: Updates | Turn off motd news
+  ansible.builtin.copy:
+    dest: /etc/default/motd-news
+    content: |
+      # AIRLOCK task 5.3: never fetch login news.
+      ENABLED=0
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Updates | Check for release-upgrade settings
+  ansible.builtin.stat:
+    path: /etc/update-manager/release-upgrades
+  register: harden_services_release_upgrades
+
+- name: Updates | Never prompt for a release upgrade
+  ansible.builtin.lineinfile:
+    path: /etc/update-manager/release-upgrades
+    regexp: '^Prompt='
+    line: Prompt=never
+  when: harden_services_release_upgrades.stat.exists

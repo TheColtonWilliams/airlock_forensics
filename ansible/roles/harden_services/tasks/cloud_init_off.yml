@@ -1,0 +1,27 @@
+# Control 5.3: cloud-init is disabled and masked, so it never looks for a network datasource or re-runs
+# first-boot setup when the drive boots on a new machine.
+# Test: tests/goss/services.yaml (cloud-init.disabled present, units linked to /dev/null)
+- name: Cloud-init | Create configuration directory
+  ansible.builtin.file:
+    path: /etc/cloud
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Cloud-init | Disable cloud-init
+  ansible.builtin.copy:
+    dest: /etc/cloud/cloud-init.disabled
+    content: "AIRLOCK: cloud-init is disabled. The USB system never uses a network.\n"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Cloud-init | Mask cloud-init units
+  ansible.builtin.file:
+    src: /dev/null
+    dest: "/etc/systemd/system/{{ item }}"
+    state: link
+    force: true
+  notify: Harden services | Reload systemd
+  loop: "{{ harden_services_cloud_init_masked_units }}"

@@ -1,0 +1,27 @@
+# Support file (not a control): the dconf "user" profile that makes every user read the
+# locked system database "local". harden_desktop ships the same profile.
+- name: Dconf | Install dconf-cli
+  ansible.builtin.apt:
+    name: dconf-cli
+    state: present
+
+- name: Dconf | Create keyfile and lock directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - /etc/dconf/profile
+    - /etc/dconf/db/local.d
+    - /etc/dconf/db/local.d/locks
+
+- name: Dconf | Install user profile
+  ansible.builtin.copy:
+    src: dconf-profile-user
+    dest: /etc/dconf/profile/user
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Harden storage | Update dconf database

@@ -1,0 +1,16 @@
+# harden_desktop: one control per file. Each file names its test in its first comment.
+# Controls and tests are listed in docs/controls.md.
+- name: Thumbnails | Nautilus and GNOME thumbnailers off
+  ansible.builtin.import_tasks: thumbnails_dconf.yml
+
+- name: Thumbnails | Thumbnailer packages removed and the rest diverted
+  ansible.builtin.import_tasks: thumbnailers_removed.yml
+
+- name: Volume monitors | gvfs volume monitors disabled
+  ansible.builtin.import_tasks: volume_monitors_off.yml
+
+- name: Indexer | File indexer masked
+  ansible.builtin.import_tasks: indexer_masked.yml
+
+- name: Screen lock | Off
+  ansible.builtin.import_tasks: screen_lock_off.yml

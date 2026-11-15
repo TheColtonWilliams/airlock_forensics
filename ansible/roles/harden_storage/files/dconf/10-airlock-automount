@@ -1,0 +1,6 @@
+# AIRLOCK task 3.1: the desktop never mounts, opens, or runs anything from attached media.
+# Test: tests/goss/storage.yaml
+[org/gnome/desktop/media-handling]
+automount=false
+automount-open=false
+autorun-never=true

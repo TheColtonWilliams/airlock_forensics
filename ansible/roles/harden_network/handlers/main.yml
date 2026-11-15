@@ -1,0 +1,22 @@
+# Handlers touch the running system, so they are skipped inside a chroot.
+- name: Harden network | Reload systemd
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+
+- name: Harden network | Reload udev rules
+  ansible.builtin.command: udevadm control --reload
+  changed_when: true
+  when: not (ansible_facts['is_chroot'] | default(false))
+
+- name: Harden network | Rebuild initramfs
+  ansible.builtin.command: update-initramfs -u -k all
+  changed_when: true
+  when: not (ansible_facts['is_chroot'] | default(false))
+
+- name: Harden network | Reload firewall
+  ansible.builtin.systemd_service:
+    name: nftables.service
+    state: restarted
+  when:
+    - harden_network_start_firewall | bool
+    - not (ansible_facts['is_chroot'] | default(false))

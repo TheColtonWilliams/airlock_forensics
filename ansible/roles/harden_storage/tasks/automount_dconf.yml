@@ -1,0 +1,22 @@
+# Control 3.1: GNOME media-handling keys automount=false, automount-open=false, autorun-never=true, locked.
+# Test: tests/goss/storage.yaml (dconf read and dconf list-locks for org/gnome/desktop/media-handling)
+- name: Automount | dconf profile reads the local system database
+  ansible.builtin.import_tasks: _dconf_profile.yml
+
+- name: Automount | Install media-handling keyfile
+  ansible.builtin.copy:
+    src: dconf/10-airlock-automount
+    dest: /etc/dconf/db/local.d/10-airlock-automount
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Harden storage | Update dconf database
+
+- name: Automount | Lock media-handling keys
+  ansible.builtin.copy:
+    src: dconf/locks/10-airlock-automount
+    dest: /etc/dconf/db/local.d/locks/10-airlock-automount
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Harden storage | Update dconf database

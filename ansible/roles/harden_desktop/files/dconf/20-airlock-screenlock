@@ -1,0 +1,11 @@
+# AIRLOCK task 5.1: no screen lock. The analyst password is locked, so a locked screen could not be opened.
+# Test: tests/goss/desktop.yaml
+[org/gnome/desktop/screensaver]
+lock-enabled=false
+ubuntu-lock-on-suspend=false
+
+[org/gnome/desktop/lockdown]
+disable-lock-screen=true
+
+[org/gnome/desktop/session]
+idle-delay=uint32 0

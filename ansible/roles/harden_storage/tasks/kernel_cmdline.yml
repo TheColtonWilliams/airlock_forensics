@@ -1,0 +1,43 @@
+# Control 3.3 / 3.4 / 3A.1: kernel command line carries noresume, systemd.gpt_auto=0, rd.systemd.gpt_auto=0,
+# rd.lvm=0, rd.md=0, rd.dm=0, rd.luks=0, nodmraid. The image role writes the GRUB file; this control checks it.
+# Test: tests/goss/storage.yaml (/proc/cmdline contains every entry); tests/unit/test_harden_storage.py
+- name: Kernel command line | Shared variable lists every hardening entry
+  ansible.builtin.assert:
+    that:
+      - item in airlock_kernel_cmdline
+    fail_msg: >-
+      airlock_kernel_cmdline in group_vars/all/main.yml is missing '{{ item }}'.
+      Add it back; harden_storage depends on it.
+    quiet: true
+  loop: "{{ harden_storage_required_cmdline }}"
+
+- name: Kernel command line | Check the GRUB defaults file exists
+  ansible.builtin.stat:
+    path: "{{ harden_storage_grub_cmdline_file }}"
+  register: harden_storage_grub_stat
+
+- name: Kernel command line | GRUB defaults file is present
+  ansible.builtin.assert:
+    that:
+      - harden_storage_grub_stat.stat.exists
+    fail_msg: >-
+      {{ harden_storage_grub_cmdline_file }} is missing. The image role writes it from airlock_kernel_cmdline;
+      run the base role before harden_storage.
+    quiet: true
+
+- name: Kernel command line | Read the GRUB defaults file
+  ansible.builtin.slurp:
+    src: "{{ harden_storage_grub_cmdline_file }}"
+  register: harden_storage_grub_file
+
+- name: Kernel command line | Every entry is on the GRUB command line
+  ansible.builtin.assert:
+    that:
+      - item in harden_storage_grub_tokens
+    fail_msg: "{{ harden_storage_grub_cmdline_file }} does not contain '{{ item }}'. Rebuild it from airlock_kernel_cmdline."
+    quiet: true
+  loop: "{{ harden_storage_required_cmdline }}"
+  vars:
+    # Every word in the file, split on spaces and quotes: GRUB_CMDLINE_LINUX="noresume ..." gives "noresume".
+    harden_storage_grub_tokens: >-
+      {{ harden_storage_grub_file.content | b64decode | regex_findall('[^\s"\x27]+') }}

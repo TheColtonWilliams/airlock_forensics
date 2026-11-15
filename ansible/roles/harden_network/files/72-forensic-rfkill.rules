@@ -1,0 +1,6 @@
+# AIRLOCK task 3.5: every radio starts soft-blocked as soon as its rfkill device appears, and only
+# root may change rfkill state. Removing the "uaccess" tag before 73-seat-late.rules runs stops the
+# desktop session from getting access to /dev/rfkill, so there is no desktop radio toggle.
+# Test: tests/goss/network.yaml
+ACTION=="add", SUBSYSTEM=="rfkill", ATTR{soft}="1"
+KERNEL=="rfkill", SUBSYSTEM=="misc", TAG-="uaccess", MODE="0600", OWNER="root", GROUP="root"

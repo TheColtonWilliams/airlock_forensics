@@ -1,0 +1,26 @@
+# Control 3A.1 / 3A.2: LVM never activates a volume group it finds on an attached disk.
+# rd.lvm=0 is a dracut option and Ubuntu boots with initramfs-tools, so lvm.conf carries the setting
+# (auto_activation_volume_list = [] and event_activation = 0) and the initramfs is rebuilt with it.
+# Test: tests/goss/storage.yaml (lvmconfig output); tests/vm/test_storage_untouched.sh
+- name: LVM | Check for lvm.conf
+  ansible.builtin.stat:
+    path: "{{ harden_storage_lvm_conf_path }}"
+  register: harden_storage_lvm_conf
+
+- name: LVM | No automatic activation of any logical volume
+  ansible.builtin.lineinfile:
+    path: "{{ harden_storage_lvm_conf_path }}"
+    regexp: '^\s*auto_activation_volume_list\s*='
+    insertafter: '^activation \{'
+    line: "\tauto_activation_volume_list = []  # AIRLOCK task 3A.2"
+  when: harden_storage_lvm_conf.stat.exists
+  notify: Harden storage | Rebuild initramfs
+
+- name: LVM | No udev event activation
+  ansible.builtin.lineinfile:
+    path: "{{ harden_storage_lvm_conf_path }}"
+    regexp: '^\s*event_activation\s*='
+    insertafter: '^global \{'
+    line: "\tevent_activation = 0  # AIRLOCK task 3A.2"
+  when: harden_storage_lvm_conf.stat.exists
+  notify: Harden storage | Rebuild initramfs

@@ -1,0 +1,15 @@
+# Control 3A.1 / 3A.2: mdadm never assembles a RAID array it finds on an attached disk.
+# rd.md=0 is a dracut option, so mdadm.conf carries "AUTO -all" and the initramfs is rebuilt with it.
+# Test: tests/goss/storage.yaml (mdadm.conf AUTO -all); tests/vm/test_storage_untouched.sh
+- name: RAID | Check for mdadm.conf
+  ansible.builtin.stat:
+    path: "{{ harden_storage_mdadm_conf_path }}"
+  register: harden_storage_mdadm_conf
+
+- name: RAID | No automatic assembly of any array
+  ansible.builtin.lineinfile:
+    path: "{{ harden_storage_mdadm_conf_path }}"
+    regexp: '^AUTO\s'
+    line: "AUTO -all"
+  when: harden_storage_mdadm_conf.stat.exists
+  notify: Harden storage | Rebuild initramfs

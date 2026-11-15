@@ -1,0 +1,6 @@
+# AIRLOCK task 3A.4: SCSI generic (/dev/sg*) and block SCSI generic (/dev/bsg/*) nodes belong to
+# root only. These nodes pass raw SCSI commands (SG_IO) that bypass the read-only flag.
+# ":=" makes the values final so no later rule can widen them.
+# Test: tests/goss/storage.yaml
+SUBSYSTEM=="scsi_generic", MODE:="0600", OWNER:="root", GROUP:="root"
+SUBSYSTEM=="bsg", MODE:="0600", OWNER:="root", GROUP:="root"

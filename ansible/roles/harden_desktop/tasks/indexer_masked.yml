@@ -1,0 +1,38 @@
+# Control 5.2: the file indexer never runs. tracker-miner-fs-3 (Ubuntu 24.04) and localsearch-3 (later
+# releases) user units are masked for every user, their autostart entries removed, and the miner
+# settings locked to index nothing.
+# Test: tests/goss/desktop.yaml (user units linked to /dev/null, autostart gone, dconf keys)
+- name: Indexer | Mask indexer user units for every user
+  ansible.builtin.file:
+    src: /dev/null
+    dest: "/etc/systemd/user/{{ item }}"
+    state: link
+    force: true
+  loop: "{{ harden_desktop_indexer_masked_user_units }}"
+
+- name: Indexer | Remove indexer autostart entries
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ harden_desktop_indexer_autostart_absent }}"
+
+- name: Indexer | dconf profile reads the local system database
+  ansible.builtin.import_tasks: _dconf_profile.yml
+
+- name: Indexer | Install miner keyfile
+  ansible.builtin.copy:
+    src: dconf/20-airlock-indexer
+    dest: /etc/dconf/db/local.d/20-airlock-indexer
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Harden desktop | Update dconf database
+
+- name: Indexer | Lock miner keys
+  ansible.builtin.copy:
+    src: dconf/locks/20-airlock-indexer
+    dest: /etc/dconf/db/local.d/locks/20-airlock-indexer
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Harden desktop | Update dconf database

@@ -1,0 +1,16 @@
+# harden_network: one control per file. Each file names its test in its first comment.
+# Controls and tests are listed in docs/controls.md.
+- name: Radios | rfkill blocks every radio at boot
+  ansible.builtin.import_tasks: rfkill_unit.yml
+
+- name: Radios | Radio kernel modules cannot load
+  ansible.builtin.import_tasks: radio_modules.yml
+
+- name: Network services | Masked
+  ansible.builtin.import_tasks: network_services_masked.yml
+
+- name: Interfaces | Unmanaged and down
+  ansible.builtin.import_tasks: netif_unmanaged.yml
+
+- name: Firewall | Drop everything except loopback
+  ansible.builtin.import_tasks: nftables.yml

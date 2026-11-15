@@ -1,0 +1,9 @@
+# AIRLOCK task 5.2: if the miner ever starts, it indexes nothing and watches nothing.
+# crawling-interval=-2 disables crawling. Test: tests/goss/desktop.yaml
+[org/freedesktop/tracker/miner/files]
+index-recursive-directories=@as []
+index-single-directories=@as []
+index-removable-devices=false
+index-optical-discs=false
+enable-monitors=false
+crawling-interval=-2

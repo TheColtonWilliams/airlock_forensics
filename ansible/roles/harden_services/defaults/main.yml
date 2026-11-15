@@ -1,0 +1,84 @@
+# harden_services: no telemetry, no update checks, no discovery daemons, no snapd.
+# Every unit listed under *_masked_units / *_masked_user_units must have a goss check in
+# tests/goss/services.yaml; tests/unit/test_harden_coverage.py fails if one is missing.
+
+# Task 5.3: crash reporting, error reporting, kernel oops reporting, Ubuntu Pro client.
+harden_services_telemetry_masked_units:
+  - apport.service
+  - apport-forward.socket
+  - whoopsie.service
+  - whoopsie.path
+  - kerneloops.service
+  - ubuntu-advantage.service
+  - ubuntu-advantage-desktop-daemon.service
+  - ua-timer.timer
+  - ua-timer.service
+  - ua-reboot-cmds.service
+  - esm-cache.service
+  - apt-news.service
+# ubuntu-report ships user units on 24.04, not a system unit.
+harden_services_telemetry_masked_user_units:
+  - ubuntu-report.service
+  - ubuntu-report.path
+harden_services_telemetry_autostart_absent:
+  - /etc/xdg/autostart/ubuntu-report-on-upgrade.desktop
+  - /etc/xdg/autostart/ubuntu-advantage-notification.desktop
+
+# Task 5.3: anything that checks for or installs updates (apt timers, unattended-upgrades,
+# motd-news, firmware updates, PackageKit, release upgrade checks).
+harden_services_updates_masked_units:
+  - unattended-upgrades.service
+  - apt-daily.timer
+  - apt-daily.service
+  - apt-daily-upgrade.timer
+  - apt-daily-upgrade.service
+  - motd-news.timer
+  - motd-news.service
+  - fwupd.service
+  - fwupd-refresh.timer
+  - fwupd-refresh.service
+  - fwupd-offline-update.service
+  - packagekit.service
+  - packagekit-offline-update.service
+harden_services_updates_masked_user_units:
+  - update-notifier-crash.path
+  - update-notifier-crash.service
+  - update-notifier-release.path
+  - update-notifier-release.service
+  - update-notifier-livepatch.path
+  - update-notifier-livepatch.service
+harden_services_updates_autostart_absent:
+  - /etc/xdg/autostart/update-notifier.desktop
+# Login-message scripts that contact Ubuntu servers or check for updates (pam_motd runs them).
+harden_services_updates_motd_absent:
+  - /etc/update-motd.d/50-motd-news
+  - /etc/update-motd.d/85-fwupd
+  - /etc/update-motd.d/90-updates-available
+  - /etc/update-motd.d/91-contract-ua-esm-status
+  - /etc/update-motd.d/91-release-upgrade
+  - /etc/update-motd.d/92-unattended-upgrades
+  - /etc/update-motd.d/95-hwe-eol
+
+# Task 5.3: discovery and location daemons, Bluetooth, modem manager.
+harden_services_discovery_masked_units:
+  - avahi-daemon.service
+  - avahi-daemon.socket
+  - cups-browsed.service
+  - ModemManager.service
+  - geoclue.service
+  - bluetooth.service
+harden_services_discovery_autostart_absent:
+  - /etc/xdg/autostart/geoclue-demo-agent.desktop
+
+# cloud-init would look for a network datasource and re-run setup on a new machine.
+harden_services_cloud_init_masked_units:
+  - cloud-init-local.service
+  - cloud-init.service
+  - cloud-config.service
+  - cloud-final.service
+  - cloud-init-hotplugd.socket
+  - cloud-init-hotplugd.service
+
+# Task 5.4: snapd. airlock group var snapd_policy is "remove" (default) or "hold".
+harden_services_snap_autostart_absent:
+  - /etc/xdg/autostart/snap-userd-autostart.desktop

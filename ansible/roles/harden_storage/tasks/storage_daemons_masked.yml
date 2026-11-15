@@ -1,0 +1,11 @@
+# Control 3A.2: lvm2-monitor, mdmonitor, md checks, multipathd, smartd, and e2scrub are masked.
+# None of them may watch, check, or send commands to an attached disk.
+# Test: tests/goss/storage.yaml (each unit linked to /dev/null, not running)
+- name: Disk daemons | Mask disk daemons and timers
+  ansible.builtin.file:
+    src: /dev/null
+    dest: "/etc/systemd/system/{{ item }}"
+    state: link
+    force: true
+  notify: Harden storage | Reload systemd
+  loop: "{{ harden_storage_daemon_masked_units }}"

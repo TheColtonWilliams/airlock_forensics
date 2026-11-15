@@ -1,0 +1,17 @@
+# Control 3A.4: /dev/sg* and /dev/bsg/* belong to root only (mode 0600), and no SG_IO tool ships.
+# Note: root can still send SG_IO through /dev/sdX; the software read-only policy does not stop that.
+# Test: tests/goss/storage.yaml (udev rule present, sg3-utils and sdparm not installed, sg nodes 0600)
+- name: SCSI generic | Install root-only udev rule
+  ansible.builtin.copy:
+    src: 99-airlock-sg-root-only.rules
+    dest: /etc/udev/rules.d/99-airlock-sg-root-only.rules
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Harden storage | Reload udev rules
+
+- name: SCSI generic | Remove SG_IO tools
+  ansible.builtin.apt:
+    name: "{{ harden_storage_sg_packages_absent }}"
+    state: absent
+    purge: true

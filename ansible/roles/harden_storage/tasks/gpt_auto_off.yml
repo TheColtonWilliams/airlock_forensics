@@ -1,0 +1,18 @@
+# Control 3.4: systemd-gpt-auto-generator never mounts or swaps on partitions it finds by GPT type.
+# Disabled twice: systemd.gpt_auto=0 on the kernel command line (kernel_cmdline.yml) and the generator masked here.
+# Test: tests/goss/storage.yaml (generator linked to /dev/null); tests/vm/test_storage_untouched.sh
+- name: GPT auto | Create system-generators directory
+  ansible.builtin.file:
+    path: /etc/systemd/system-generators
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: GPT auto | Mask systemd-gpt-auto-generator
+  ansible.builtin.file:
+    src: /dev/null
+    dest: /etc/systemd/system-generators/systemd-gpt-auto-generator
+    state: link
+    force: true
+  notify: Harden storage | Reload systemd

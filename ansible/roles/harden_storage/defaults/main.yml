@@ -1,0 +1,70 @@
+# harden_storage: no auto-mount, software read-only policy on attached disks, no swap,
+# no hibernate, no volume assembly, no commands sent to attached disks.
+# Every unit listed under *_masked_units must have a goss check in tests/goss/storage.yaml;
+# tests/unit/test_harden_coverage.py fails if one is missing.
+
+# Task 3.1 (also listed in 3A.2): udisks2 mounts disks for the desktop.
+harden_storage_automount_masked_units:
+  - udisks2.service
+
+# Task 3.3: swap units are pulled in by swap.target.
+harden_storage_swap_masked_units:
+  - swap.target
+# Files these controls edit (tests point them at temporary copies).
+harden_storage_fstab_path: /etc/fstab
+harden_storage_lvm_conf_path: /etc/lvm/lvm.conf
+harden_storage_mdadm_conf_path: /etc/mdadm/mdadm.conf
+# Swap files the Ubuntu installer may create. Removed after their fstab line is commented out.
+harden_storage_swap_files:
+  - /swap.img
+
+# Task 3.3: no hibernate (writes RAM to a swap device) and no resume from one.
+harden_storage_hibernate_masked_units:
+  - hibernate.target
+  - hybrid-sleep.target
+  - suspend-then-hibernate.target
+  - systemd-hibernate.service
+  - systemd-hybrid-sleep.service
+  - systemd-suspend-then-hibernate.service
+  - systemd-hibernate-resume.service
+
+# Task 3A.2: daemons that watch, check, assemble, or send commands to disks.
+# smartd.service is an alias of smartmontools.service; masking the real name masks both.
+# guymager depends on smartmontools, so the package stays and only the daemon is masked.
+harden_storage_daemon_masked_units:
+  - lvm2-monitor.service
+  - mdmonitor.service
+  - mdmonitor-oneshot.timer
+  - mdcheck_start.timer
+  - mdcheck_continue.timer
+  - multipathd.service
+  - multipathd.socket
+  - smartmontools.service
+  - e2scrub_all.timer
+  - e2scrub_all.service
+  - e2scrub_reap.service
+
+# Tasks 3.3, 3.4, 3A.1: entries that must be on the kernel command line.
+# The image role writes them from airlock_kernel_cmdline (group_vars/all/main.yml) into this file.
+harden_storage_grub_cmdline_file: /etc/default/grub.d/90-airlock.cfg
+harden_storage_required_cmdline:
+  - noresume
+  - systemd.gpt_auto=0
+  - rd.systemd.gpt_auto=0
+  - rd.lvm=0
+  - rd.md=0
+  - rd.dm=0
+  - rd.luks=0
+  - nodmraid
+
+# Task 3A.4: packages whose only job is sending SCSI generic (SG_IO) commands to disks.
+# sg3-utils-udev also runs sg_inq on every new disk from a udev rule.
+harden_storage_sg_packages_absent:
+  - sg3-utils-udev
+  - sg3-utils
+  - sdparm
+
+# Task 3A.2: package udev rules that send commands to new disks (spin-down, APM).
+# Each is overridden by a same-named link to /dev/null in /etc/udev/rules.d.
+harden_storage_udev_rules_masked:
+  - 85-hdparm.rules

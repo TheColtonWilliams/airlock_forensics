@@ -1,0 +1,23 @@
+# Control 3.3: no swap. swap.target is masked, fstab swap lines are commented out, swap files removed.
+# GPT swap partitions on attached disks are covered by gpt_auto_off.yml.
+# Test: tests/goss/storage.yaml (swap.target linked to /dev/null, swapon --show empty); tests/vm/test_storage_untouched.sh
+- name: Swap | Mask swap units
+  ansible.builtin.file:
+    src: /dev/null
+    dest: "/etc/systemd/system/{{ item }}"
+    state: link
+    force: true
+  notify: Harden storage | Reload systemd
+  loop: "{{ harden_storage_swap_masked_units }}"
+
+- name: Swap | Comment out swap lines in fstab
+  ansible.builtin.replace:
+    path: "{{ harden_storage_fstab_path }}"
+    regexp: '^(\s*[^#\s]\S*\s+\S+\s+swap\s.*)$'
+    replace: '# AIRLOCK: swap disabled (task 3.3): \1'
+
+- name: Swap | Remove swap files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ harden_storage_swap_files }}"

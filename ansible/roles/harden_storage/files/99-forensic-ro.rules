@@ -1,0 +1,9 @@
+# AIRLOCK software read-only policy (task 3.2). This is not a write blocker: it sets the kernel
+# read-only flag, which filesystem drivers honour and root can clear. Use a hardware write blocker too.
+#
+# Every sd*, nvme*, mmcblk*, and vd* disk and partition is passed to airlock-setro, which runs
+# blockdev --setro on it unless it is on the disk that holds / (ASSETS and OUTPUT live there and
+# OUTPUT must stay writable). The helper logs each decision to the session log.
+# "change" is included so a re-read partition table cannot leave a new partition writable.
+# Test: tests/functional/test_udev_ro.sh, tests/goss/storage.yaml, tests/vm/test_automount.sh
+ACTION=="add|change", SUBSYSTEM=="block", KERNEL=="sd*|nvme*|mmcblk*|vd*", RUN+="/usr/local/sbin/airlock-setro %k"

@@ -1,0 +1,4 @@
+# AIRLOCK task 3.1: users cannot change these keys.
+/org/gnome/desktop/media-handling/automount
+/org/gnome/desktop/media-handling/automount-open
+/org/gnome/desktop/media-handling/autorun-never

@@ -1,0 +1,35 @@
+# Control 5.3: apport, whoopsie, kerneloops, ubuntu-report, and the Ubuntu Pro client (ua-timer, esm-cache,
+# apt-news) are masked; their autostart entries removed. Nothing reports crashes or usage.
+# Test: tests/goss/services.yaml (units linked to /dev/null, not running; autostart files gone)
+- name: Telemetry | Mask telemetry system units
+  ansible.builtin.file:
+    src: /dev/null
+    dest: "/etc/systemd/system/{{ item }}"
+    state: link
+    force: true
+  notify: Harden services | Reload systemd
+  loop: "{{ harden_services_telemetry_masked_units }}"
+
+- name: Telemetry | Mask telemetry user units for every user
+  ansible.builtin.file:
+    src: /dev/null
+    dest: "/etc/systemd/user/{{ item }}"
+    state: link
+    force: true
+  loop: "{{ harden_services_telemetry_masked_user_units }}"
+
+- name: Telemetry | Remove telemetry autostart entries
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ harden_services_telemetry_autostart_absent }}"
+
+- name: Telemetry | Turn off apport crash collection
+  ansible.builtin.copy:
+    dest: /etc/default/apport
+    content: |
+      # AIRLOCK task 5.3: no crash reports are collected or sent.
+      enabled=0
+    owner: root
+    group: root
+    mode: "0644"

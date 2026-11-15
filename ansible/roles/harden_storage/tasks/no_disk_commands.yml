@@ -1,0 +1,12 @@
+# Control 3A.2: no SMART self-tests, spin-down, or power commands sent to attached disks.
+# smartd is masked in storage_daemons_masked.yml; package udev rules that send commands (hdparm) are
+# overridden by links to /dev/null in /etc/udev/rules.d.
+# Test: tests/goss/storage.yaml (85-hdparm.rules linked to /dev/null)
+- name: Disk commands | Mask package udev rules that send disk commands
+  ansible.builtin.file:
+    src: /dev/null
+    dest: "/etc/udev/rules.d/{{ item }}"
+    state: link
+    force: true
+  loop: "{{ harden_storage_udev_rules_masked }}"
+  notify: Harden storage | Reload udev rules

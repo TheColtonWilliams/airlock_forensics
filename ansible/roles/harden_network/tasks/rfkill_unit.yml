@@ -1,0 +1,35 @@
+# Control 3.5: forensic-rfkill.service runs "rfkill block all" before NetworkManager and the network;
+# a udev rule soft-blocks every radio as it appears and makes /dev/rfkill root-only (no desktop toggle);
+# systemd-rfkill (which restores saved state) is masked.
+# Test: tests/goss/network.yaml (unit enabled, rfkill shows nothing unblocked, rule present)
+- name: Radios | Install forensic-rfkill.service
+  ansible.builtin.copy:
+    src: forensic-rfkill.service
+    dest: /etc/systemd/system/forensic-rfkill.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Harden network | Reload systemd
+
+- name: Radios | Enable forensic-rfkill.service
+  ansible.builtin.systemd_service:
+    name: forensic-rfkill.service
+    enabled: true
+
+- name: Radios | Install rfkill udev rule
+  ansible.builtin.copy:
+    src: 72-forensic-rfkill.rules
+    dest: /etc/udev/rules.d/72-forensic-rfkill.rules
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Harden network | Reload udev rules
+
+- name: Radios | Mask systemd-rfkill state restore
+  ansible.builtin.file:
+    src: /dev/null
+    dest: "/etc/systemd/system/{{ item }}"
+    state: link
+    force: true
+  notify: Harden network | Reload systemd
+  loop: "{{ harden_network_rfkill_masked_units }}"

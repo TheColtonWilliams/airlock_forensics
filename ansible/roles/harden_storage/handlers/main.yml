@@ -1,0 +1,19 @@
+# Handlers touch the running system, so they are skipped inside a chroot (image tools that
+# build without booting). The Packer build and first-boot provisioning run on a booted system.
+- name: Harden storage | Reload udev rules
+  ansible.builtin.command: udevadm control --reload
+  changed_when: true
+  when: not (ansible_facts['is_chroot'] | default(false))
+
+- name: Harden storage | Update dconf database
+  ansible.builtin.command: dconf update
+  changed_when: true
+
+- name: Harden storage | Reload systemd
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+
+- name: Harden storage | Rebuild initramfs
+  ansible.builtin.command: update-initramfs -u -k all
+  changed_when: true
+  when: not (ansible_facts['is_chroot'] | default(false))

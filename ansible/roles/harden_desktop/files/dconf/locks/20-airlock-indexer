@@ -1,0 +1,7 @@
+# AIRLOCK task 5.2: users cannot change these keys.
+/org/freedesktop/tracker/miner/files/index-recursive-directories
+/org/freedesktop/tracker/miner/files/index-single-directories
+/org/freedesktop/tracker/miner/files/index-removable-devices
+/org/freedesktop/tracker/miner/files/index-optical-discs
+/org/freedesktop/tracker/miner/files/enable-monitors
+/org/freedesktop/tracker/miner/files/crawling-interval

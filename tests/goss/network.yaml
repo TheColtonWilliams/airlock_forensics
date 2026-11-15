@@ -1,0 +1,198 @@
+# goss checks for harden_network (tasks 3.5 to 3.8): radios blocked, network services masked,
+# every interface down, drop-all firewall, no listener off loopback. Run inside the booted image by
+# tests/run-qemu-tests.sh. Check syntax with: goss -g tests/goss/network.yaml render
+# Behaviour (DNS, HTTP, ping all fail with a NIC attached) is tested by tests/vm/test_airgap.sh.
+# Every unit masked by the role has a check here; tests/unit/test_harden_coverage.py enforces it.
+file:
+  /etc/systemd/system/systemd-rfkill.service:
+    title: '3.5: systemd-rfkill.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/systemd-rfkill.socket:
+    title: '3.5: systemd-rfkill.socket masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/NetworkManager.service:
+    title: '3.5: NetworkManager.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/NetworkManager-wait-online.service:
+    title: '3.5: NetworkManager-wait-online.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/NetworkManager-dispatcher.service:
+    title: '3.5: NetworkManager-dispatcher.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/systemd-networkd.service:
+    title: '3.5: systemd-networkd.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/systemd-networkd.socket:
+    title: '3.5: systemd-networkd.socket masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/systemd-networkd-wait-online.service:
+    title: '3.5: systemd-networkd-wait-online.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/systemd-resolved.service:
+    title: '3.5: systemd-resolved.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/systemd-timesyncd.service:
+    title: '3.5: systemd-timesyncd.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/wpa_supplicant.service:
+    title: '3.5: wpa_supplicant.service masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/forensic-rfkill.service:
+    title: '3.5: forensic-rfkill.service installed'
+    exists: true
+    contents:
+      - ExecStart=/usr/sbin/rfkill block all
+      - '/^Before=.*NetworkManager\.service/'
+  /etc/udev/rules.d/72-forensic-rfkill.rules:
+    title: '3.5: new radios start blocked and /dev/rfkill is root-only'
+    exists: true
+    contents:
+      - '/SUBSYSTEM=="rfkill", ATTR\{soft\}="1"/'
+      - '/TAG-="uaccess"/'
+  /etc/modprobe.d/forensic-radios.conf:
+    title: '3.6: radio kernel modules cannot load'
+    exists: true
+    contents:
+      - install cfg80211 /bin/false
+      - install mac80211 /bin/false
+      - install bluetooth /bin/false
+      - install btusb /bin/false
+      - options rfkill default_state=0
+  /etc/udev/rules.d/99-forensic-netif.rules:
+    title: '3.6: every network interface is unmanaged and set down'
+    exists: true
+    contents:
+      - ENV{NM_UNMANAGED}="1"
+      - '/RUN\+="\/usr\/sbin\/ip link set dev \$name down"/'
+  /etc/nftables.conf:
+    title: '3.7: drop-all ruleset installed'
+    exists: true
+    contents:
+      - '/policy drop;/'
+
+service:
+  forensic-rfkill.service:
+    title: '3.5: forensic-rfkill.service is enabled at boot'
+    enabled: true
+  nftables.service:
+    title: '3.7: nftables loads the drop-all ruleset at boot'
+    enabled: true
+    running: true
+  systemd-rfkill.service:
+    title: '3.5: systemd-rfkill.service not running'
+    running: false
+  systemd-rfkill.socket:
+    title: '3.5: systemd-rfkill.socket not running'
+    running: false
+  NetworkManager.service:
+    title: '3.5: NetworkManager.service not running'
+    running: false
+  NetworkManager-wait-online.service:
+    title: '3.5: NetworkManager-wait-online.service not running'
+    running: false
+  NetworkManager-dispatcher.service:
+    title: '3.5: NetworkManager-dispatcher.service not running'
+    running: false
+  systemd-networkd.service:
+    title: '3.5: systemd-networkd.service not running'
+    running: false
+  systemd-networkd.socket:
+    title: '3.5: systemd-networkd.socket not running'
+    running: false
+  systemd-networkd-wait-online.service:
+    title: '3.5: systemd-networkd-wait-online.service not running'
+    running: false
+  systemd-resolved.service:
+    title: '3.5: systemd-resolved.service not running'
+    running: false
+  systemd-timesyncd.service:
+    title: '3.5: systemd-timesyncd.service not running'
+    running: false
+  wpa_supplicant.service:
+    title: '3.5: wpa_supplicant.service not running'
+    running: false
+command:
+  'rfkill all blocked':
+    title: '3.5, 3.8: rfkill lists nothing unblocked'
+    exec: "! rfkill -n -o SOFT 2>/dev/null | grep -qx unblocked"
+    exit-status: 0
+  'radio modules refused':
+    title: '3.6: modprobe refuses cfg80211 and bluetooth'
+    exec: "modprobe -n -v cfg80211; modprobe -n -v bluetooth"
+    exit-status: 0
+    stdout:
+      - '/install \/bin\/false/'
+  'no radio modules loaded':
+    title: '3.6, 3.8: lsmod shows no bluetooth, btusb, cfg80211, or mac80211'
+    exec: lsmod
+    exit-status: 0
+    stdout:
+      - '!/^bluetooth\s/'
+      - '!/^btusb\s/'
+      - '!/^cfg80211\s/'
+      - '!/^mac80211\s/'
+  'no wireless interface':
+    title: '3.6, 3.8: ip -br link shows no wl* or ww* interface'
+    exec: ip -br link
+    exit-status: 0
+    stdout:
+      - '!/^wl/'
+      - '!/^ww/'
+  'nothing up but lo':
+    title: '3.6, 3.8: no interface is up except loopback'
+    exec: "command -v ip >/dev/null && { ip -o link show up | grep -v ': lo:' || true; }"
+    exit-status: 0
+    stdout:
+      - '!/[0-9]+: /'
+  'no default route':
+    title: '3.5, 3.8: no IPv4 or IPv6 default route'
+    exec: "command -v ip >/dev/null && ip route show default && ip -6 route show default"
+    exit-status: 0
+    stdout:
+      - '!/default/'
+  'drop policy loaded':
+    title: '3.7, 3.8: the running ruleset drops input, output, and forward'
+    exec: nft list ruleset
+    exit-status: 0
+    stdout:
+      - '/hook input priority filter; policy drop;/'
+      - '/hook output priority filter; policy drop;/'
+      - '/hook forward priority filter; policy drop;/'
+      - '/iifname "lo" accept/'
+      - '/oifname "lo" accept/'
+  'no listener off loopback':
+    title: '3.8: no TCP or UDP socket listens on an address other than loopback'
+    exec: >-
+      command -v ss >/dev/null && { ss -H -tuln | awk '{print $5}' |
+      grep -Ev '^(127\.[0-9.]+(%lo)?|\[::1\](%lo)?|\[::ffff:127\.[0-9.]+\]):[0-9]+$' || true; }
+    exit-status: 0
+    stdout:
+      - '!/:/'
+  'radios off on the kernel command line':
+    title: '3.5: rfkill.default_state=0 is on the running kernel command line'
+    exec: cat /proc/cmdline
+    exit-status: 0
+    stdout:
+      - '/(^|\s)rfkill\.default_state=0(\s|$)/'

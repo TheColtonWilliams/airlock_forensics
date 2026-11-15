@@ -1,0 +1,10 @@
+# Control 3.1 / 3A.2: udisks2 is masked, so no desktop component can mount or power down a disk.
+# Test: tests/goss/storage.yaml (udisks2.service linked to /dev/null, not running); tests/vm/test_automount.sh
+- name: Automount | Mask udisks2
+  ansible.builtin.file:
+    src: /dev/null
+    dest: "/etc/systemd/system/{{ item }}"
+    state: link
+    force: true
+  notify: Harden storage | Reload systemd
+  loop: "{{ harden_storage_automount_masked_units }}"

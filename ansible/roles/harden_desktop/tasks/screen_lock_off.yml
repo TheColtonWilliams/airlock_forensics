@@ -1,0 +1,23 @@
+# Control 5.1: the screen never locks. The analyst account has a locked password, so a lock screen
+# could never be unlocked and a long run would be lost. Keys locked.
+# Test: tests/goss/desktop.yaml (dconf read lock-enabled false, disable-lock-screen true)
+- name: Screen lock | dconf profile reads the local system database
+  ansible.builtin.import_tasks: _dconf_profile.yml
+
+- name: Screen lock | Install screen lock keyfile
+  ansible.builtin.copy:
+    src: dconf/20-airlock-screenlock
+    dest: /etc/dconf/db/local.d/20-airlock-screenlock
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Harden desktop | Update dconf database
+
+- name: Screen lock | Lock screen lock keys
+  ansible.builtin.copy:
+    src: dconf/locks/20-airlock-screenlock
+    dest: /etc/dconf/db/local.d/locks/20-airlock-screenlock
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Harden desktop | Update dconf database

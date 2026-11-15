@@ -1,0 +1,37 @@
+# harden_storage: one control per file. Each file names its test in its first comment.
+# Controls and tests are listed in docs/controls.md.
+- name: Automount | udisks2 masked
+  ansible.builtin.import_tasks: automount_udisks2.yml
+
+- name: Automount | Desktop automount keys locked
+  ansible.builtin.import_tasks: automount_dconf.yml
+
+- name: Read-only policy | udev rule and helper
+  ansible.builtin.import_tasks: readonly_udev.yml
+
+- name: Swap | No swap
+  ansible.builtin.import_tasks: no_swap.yml
+
+- name: Hibernate | No hibernate
+  ansible.builtin.import_tasks: no_hibernate.yml
+
+- name: Kernel command line | Hardening entries present
+  ansible.builtin.import_tasks: kernel_cmdline.yml
+
+- name: GPT auto | Generator disabled
+  ansible.builtin.import_tasks: gpt_auto_off.yml
+
+- name: Disk daemons | Masked
+  ansible.builtin.import_tasks: storage_daemons_masked.yml
+
+- name: LVM | No automatic activation
+  ansible.builtin.import_tasks: lvm_autoactivation_off.yml
+
+- name: RAID | No automatic assembly
+  ansible.builtin.import_tasks: md_autoassembly_off.yml
+
+- name: Disk commands | Package udev rules that send disk commands masked
+  ansible.builtin.import_tasks: no_disk_commands.yml
+
+- name: SCSI generic | Root only, no SG_IO tools
+  ansible.builtin.import_tasks: sg_root_only.yml

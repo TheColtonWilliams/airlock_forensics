@@ -1,0 +1,51 @@
+# harden_desktop: no thumbnails, previews, indexers, volume monitors, or screen lock.
+# Every unit listed under *_masked_user_units must have a goss check in tests/goss/desktop.yaml;
+# tests/unit/test_harden_coverage.py fails if one is missing.
+
+# Task 5.1: packages whose only job is making thumbnails or previews of files.
+# Thumbnailers shipped inside packages that must stay (librsvg2-common for gdm3, heif and webp
+# loaders for gnome-control-center, evince, totem, gnome-font-viewer) are diverted instead.
+harden_desktop_thumbnailer_packages_absent:
+  - ffmpegthumbnailer
+  - gnome-sushi
+  - libgdk-pixbuf2.0-bin
+  - libgsf-bin
+  - gnome-epub-thumbnailer
+  - ooo-thumbnailer
+  - tumbler
+  - icoextract-thumbnailer
+  - gnome-model-thumbnailer
+  - gnome-nds-thumbnailer
+# Directories the GNOME thumbnail factory reads *.thumbnailer files from.
+harden_desktop_thumbnailer_dirs:
+  - /usr/share/thumbnailers
+  - /usr/local/share/thumbnailers
+
+# Task 5.1: gvfs volume monitors (user units). udisks2 mounts disks; the others mount phones,
+# cameras, and online accounts. Their .monitor registration files are diverted too.
+harden_desktop_volume_monitor_masked_user_units:
+  - gvfs-udisks2-volume-monitor.service
+  - gvfs-mtp-volume-monitor.service
+  - gvfs-gphoto2-volume-monitor.service
+  - gvfs-afc-volume-monitor.service
+  - gvfs-goa-volume-monitor.service
+harden_desktop_volume_monitor_files:
+  - /usr/share/gvfs/remote-volume-monitors/udisks2.monitor
+  - /usr/share/gvfs/remote-volume-monitors/mtp.monitor
+  - /usr/share/gvfs/remote-volume-monitors/gphoto2.monitor
+  - /usr/share/gvfs/remote-volume-monitors/afc.monitor
+  - /usr/share/gvfs/remote-volume-monitors/goa.monitor
+
+# Task 5.2: the file indexer. Ubuntu 24.04 (GNOME 46) ships tracker-miners 3.7, whose units are
+# tracker-miner-fs-3 and friends; GNOME 47 and later rename them localsearch-3. Both names are masked.
+harden_desktop_indexer_masked_user_units:
+  - tracker-miner-fs-3.service
+  - tracker-miner-fs-control-3.service
+  - tracker-writeback-3.service
+  - tracker-xdg-portal-3.service
+  - localsearch-3.service
+  - localsearch-control-3.service
+  - localsearch-writeback-3.service
+harden_desktop_indexer_autostart_absent:
+  - /etc/xdg/autostart/tracker-miner-fs-3.desktop
+  - /etc/xdg/autostart/localsearch-3.desktop

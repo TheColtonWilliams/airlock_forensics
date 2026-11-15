@@ -1,0 +1,193 @@
+# goss checks for harden_desktop (tasks 5.1, 5.2, 5.5): no thumbnails, previews, volume monitors,
+# indexer, or screen lock. Run inside the booted image by tests/run-qemu-tests.sh.
+# Check syntax with: goss -g tests/goss/desktop.yaml render
+# Every unit masked by the role has a check here; tests/unit/test_harden_coverage.py enforces it.
+file:
+  /etc/systemd/user/gvfs-udisks2-volume-monitor.service:
+    title: '5.1: user unit gvfs-udisks2-volume-monitor.service masked for every user'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/user/gvfs-mtp-volume-monitor.service:
+    title: '5.1: user unit gvfs-mtp-volume-monitor.service masked for every user'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/user/gvfs-gphoto2-volume-monitor.service:
+    title: '5.1: user unit gvfs-gphoto2-volume-monitor.service masked for every user'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/user/gvfs-afc-volume-monitor.service:
+    title: '5.1: user unit gvfs-afc-volume-monitor.service masked for every user'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/user/gvfs-goa-volume-monitor.service:
+    title: '5.1: user unit gvfs-goa-volume-monitor.service masked for every user'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /usr/share/gvfs/remote-volume-monitors/udisks2.monitor:
+    title: '5.1: volume monitor registration /usr/share/gvfs/remote-volume-monitors/udisks2.monitor removed'
+    exists: false
+  /usr/share/gvfs/remote-volume-monitors/mtp.monitor:
+    title: '5.1: volume monitor registration /usr/share/gvfs/remote-volume-monitors/mtp.monitor removed'
+    exists: false
+  /usr/share/gvfs/remote-volume-monitors/gphoto2.monitor:
+    title: '5.1: volume monitor registration /usr/share/gvfs/remote-volume-monitors/gphoto2.monitor removed'
+    exists: false
+  /usr/share/gvfs/remote-volume-monitors/afc.monitor:
+    title: '5.1: volume monitor registration /usr/share/gvfs/remote-volume-monitors/afc.monitor removed'
+    exists: false
+  /usr/share/gvfs/remote-volume-monitors/goa.monitor:
+    title: '5.1: volume monitor registration /usr/share/gvfs/remote-volume-monitors/goa.monitor removed'
+    exists: false
+  /etc/systemd/user/tracker-miner-fs-3.service:
+    title: '5.2: user unit tracker-miner-fs-3.service masked for every user'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/user/tracker-miner-fs-control-3.service:
+    title: '5.2: user unit tracker-miner-fs-control-3.service masked for every user'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/user/tracker-writeback-3.service:
+    title: '5.2: user unit tracker-writeback-3.service masked for every user'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/user/tracker-xdg-portal-3.service:
+    title: '5.2: user unit tracker-xdg-portal-3.service masked for every user'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/user/localsearch-3.service:
+    title: '5.2: user unit localsearch-3.service masked for every user'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/user/localsearch-control-3.service:
+    title: '5.2: user unit localsearch-control-3.service masked for every user'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/user/localsearch-writeback-3.service:
+    title: '5.2: user unit localsearch-writeback-3.service masked for every user'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/xdg/autostart/tracker-miner-fs-3.desktop:
+    title: '5.2: indexer autostart /etc/xdg/autostart/tracker-miner-fs-3.desktop removed'
+    exists: false
+  /etc/xdg/autostart/localsearch-3.desktop:
+    title: '5.2: indexer autostart /etc/xdg/autostart/localsearch-3.desktop removed'
+    exists: false
+  /etc/dconf/db/local:
+    title: '5.1: compiled dconf system database exists'
+    exists: true
+    filetype: file
+
+package:
+  ffmpegthumbnailer:
+    title: '5.1: package ffmpegthumbnailer not installed'
+    installed: false
+  gnome-sushi:
+    title: '5.1: package gnome-sushi not installed'
+    installed: false
+  libgdk-pixbuf2.0-bin:
+    title: '5.1: package libgdk-pixbuf2.0-bin not installed'
+    installed: false
+  libgsf-bin:
+    title: '5.1: package libgsf-bin not installed'
+    installed: false
+  gnome-epub-thumbnailer:
+    title: '5.1: package gnome-epub-thumbnailer not installed'
+    installed: false
+  ooo-thumbnailer:
+    title: '5.1: package ooo-thumbnailer not installed'
+    installed: false
+  tumbler:
+    title: '5.1: package tumbler not installed'
+    installed: false
+  icoextract-thumbnailer:
+    title: '5.1: package icoextract-thumbnailer not installed'
+    installed: false
+  gnome-model-thumbnailer:
+    title: '5.1: package gnome-model-thumbnailer not installed'
+    installed: false
+  gnome-nds-thumbnailer:
+    title: '5.1: package gnome-nds-thumbnailer not installed'
+    installed: false
+command:
+  'no thumbnailer registered':
+    title: '5.1: no *.thumbnailer file is left where the GNOME thumbnail factory looks'
+    exec: "find /usr/share/thumbnailers /usr/local/share/thumbnailers -name '*.thumbnailer' 2>/dev/null; true"
+    exit-status: 0
+    stdout:
+      - '!/\.thumbnailer$/'
+  'nautilus thumbnails never':
+    title: '5.1: org.gnome.nautilus.preferences show-image-thumbnails is never'
+    exec: dconf read /org/gnome/nautilus/preferences/show-image-thumbnails
+    exit-status: 0
+    stdout: ["/^'never'$/"]
+  'thumbnailers disabled':
+    title: '5.1: org.gnome.desktop.thumbnailers disable-all is true'
+    exec: dconf read /org/gnome/desktop/thumbnailers/disable-all
+    exit-status: 0
+    stdout: ['/^true$/']
+  'thumbnail locks':
+    title: '5.1: thumbnail keys are locked'
+    exec: dconf list-locks /org/
+    exit-status: 0
+    stdout:
+      - /org/gnome/nautilus/preferences/show-image-thumbnails
+      - /org/gnome/desktop/thumbnailers/disable-all
+  'indexer indexes nothing':
+    title: '5.2: tracker miner settings index nothing and watch nothing'
+    exec: >-
+      dconf read /org/freedesktop/tracker/miner/files/index-recursive-directories;
+      dconf read /org/freedesktop/tracker/miner/files/enable-monitors;
+      dconf read /org/freedesktop/tracker/miner/files/index-removable-devices
+    exit-status: 0
+    stdout:
+      - '/^@as \[\]$/'
+      - '/^false$/'
+      - '!/^true$/'
+  'indexer locks':
+    title: '5.2: tracker miner keys are locked'
+    exec: dconf list-locks /org/freedesktop/tracker/miner/files/
+    exit-status: 0
+    stdout:
+      - /org/freedesktop/tracker/miner/files/index-recursive-directories
+      - /org/freedesktop/tracker/miner/files/enable-monitors
+  'no indexer process':
+    title: '5.2: no tracker-miner-fs or localsearch process runs'
+    exec: "pgrep -l -f 'tracker-miner-fs|localsearch' || true"
+    exit-status: 0
+    stdout:
+      - '!/tracker-miner|localsearch/'
+  'no volume monitor process':
+    title: '5.1: no gvfs volume monitor process runs'
+    exec: "pgrep -l -f 'gvfs-[a-z0-9]+-volume-monitor' || true"
+    exit-status: 0
+    stdout:
+      - '!/volume-monitor/'
+  'screen lock off':
+    title: '5.1: screen lock is off (the analyst password is locked, so a lock screen could not be opened)'
+    exec: >-
+      dconf read /org/gnome/desktop/screensaver/lock-enabled;
+      dconf read /org/gnome/desktop/lockdown/disable-lock-screen
+    exit-status: 0
+    stdout:
+      - '/^false$/'
+      - '/^true$/'
+  'screen lock locks':
+    title: '5.1: screen lock keys are locked'
+    exec: dconf list-locks /org/gnome/desktop/
+    exit-status: 0
+    stdout:
+      - /org/gnome/desktop/screensaver/lock-enabled
+      - /org/gnome/desktop/lockdown/disable-lock-screen
+      - /org/gnome/desktop/session/idle-delay

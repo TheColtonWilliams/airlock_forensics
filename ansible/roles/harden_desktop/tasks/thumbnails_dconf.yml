@@ -1,0 +1,22 @@
+# Control 5.1: Nautilus show-image-thumbnails='never' and org.gnome.desktop.thumbnailers disable-all=true, locked.
+# Test: tests/goss/desktop.yaml (dconf read and dconf list-locks)
+- name: Thumbnails | dconf profile reads the local system database
+  ansible.builtin.import_tasks: _dconf_profile.yml
+
+- name: Thumbnails | Install thumbnail keyfile
+  ansible.builtin.copy:
+    src: dconf/20-airlock-thumbnails
+    dest: /etc/dconf/db/local.d/20-airlock-thumbnails
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Harden desktop | Update dconf database
+
+- name: Thumbnails | Lock thumbnail keys
+  ansible.builtin.copy:
+    src: dconf/locks/20-airlock-thumbnails
+    dest: /etc/dconf/db/local.d/locks/20-airlock-thumbnails
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Harden desktop | Update dconf database
