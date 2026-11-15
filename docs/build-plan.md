@@ -402,19 +402,22 @@ Not verified by the research and still open: the ISO/IEC 27037 to 27043 text (pa
 
 | # | Task | Touches | Status |
 |---|---|---|---|
-| 0.1 | Create GitHub repo, public, name chosen | github.com | todo |
+| 0.1 | Create GitHub repo, public, name chosen | github.com | needs-human |
 | 0.2 | Pick license (Apache-2.0 or MIT) and commit LICENSE | LICENSE | todo |
-| 0.3 | README with one-paragraph purpose and the "not a write blocker, not court-validated" statement | README.md | todo |
-| 0.4 | SECURITY.md with disclosure contact and supported versions | SECURITY.md | todo |
-| 0.5 | CONTRIBUTING.md: one control = one task + one test + one doc line | CONTRIBUTING.md | todo |
+| 0.3 | README with one-paragraph purpose and the "not a write blocker, not court-validated" statement | README.md | done |
+| 0.4 | SECURITY.md with disclosure contact and supported versions | SECURITY.md | done |
+| 0.5 | CONTRIBUTING.md: one control = one task + one test + one doc line | CONTRIBUTING.md | done |
 | 0.6 | docs/decision-log.md seeded with the decisions in this file | docs/decision-log.md | todo |
-| 0.7 | Copy the threat model from section 1.4 into docs/threat-model.md | docs/threat-model.md | todo |
-| 0.8 | Branch protection on main: PR required, CI green required | github settings | todo |
-| 0.9 | Issue templates: control request, bug, tool request | .github/ISSUE_TEMPLATE/ | todo |
+| 0.7 | Copy the threat model from section 1.4 into docs/threat-model.md | docs/threat-model.md | done |
+| 0.8 | Branch protection on main: PR required, CI green required | github settings | needs-human |
+| 0.9 | Issue templates: control request, bug, tool request | .github/ISSUE_TEMPLATE/ | done |
 | 0.10 | .editorconfig, .gitattributes (LF), pre-commit with ansible-lint, shellcheck, yamllint | repo root | todo |
 | 0.11 | Build-tool spike before Milestone 1: build the base image twice with Packer plus Ansible and twice with mkosi, diff the results, and record which is reproducible enough. The research rates mkosi and live-build above Packer for reproducibility; the rest of this plan assumes Packer until this spike says otherwise | docs/decision-log.md | needs-human |
 
 0.11: needs a KVM host and a person: scripts/build-tool-spike.sh does the two Packer builds and the comparison (compare mode tested by tests/functional/test_build_tool_spike.sh); the mkosi steps are in docs/build.md.
+0.1: needs the owner's GitHub account: the exact steps (create the empty public repo `airlock`, push, settings) are in docs/dev/repo-setup.md.
+0.8: needs the owner (admin on the GitHub repo): scripts/setup-branch-protection.sh applies the rule with `gh api` (tested with a stub gh by tests/unit/test_repo_meta.py); steps in docs/dev/repo-setup.md.
+0.3, 0.4, 0.5, 0.7, 0.9: checked by tests/unit/test_repo_meta.py (content, links, wording rules, threat model copied from 1.4, issue forms parse).
 
 ## Milestone 1: Build pipeline, unhardened (v0.1 part 1)
 
@@ -476,6 +479,7 @@ Linux-only alternative to Milestone 2B for people who want a complete image buil
 2.5.1 resolved (decision log 2026-11-15): 2A is kept because make-usb.sh reuses the 2B manifest and staging code (scripts/gen-manifest.py, scripts/fetch-assets.sh) and the base image from scripts/build.sh. 2A.1 to 2A.5 and 2A.7: verified by tests/functional/test_make_usb.sh (heavy steps stubbed; flash, ASSETS mount and read-back real on a loop device).
 2A.6: implemented; verified by tests/goss/smoke.yaml (via tests/run-qemu-tests.sh --only '^smoke\.yaml$' on an overlay of the drive) in the QEMU/CI stage; the read-back, staged-file check and overlay plumbing pass tests/functional/test_make_usb.sh.
 2A.8: implemented; `sudo ./make-usb.sh --yes --profile ci --target /dev/loopN --confirm loopN` (with AIRLOCK_FLASH_TEST=1 and an lsblk wrapper that marks the loop device removable) runs against a loop device in tests/functional/test_make_usb.sh part B; the build.yml job itself belongs to the CI package and is verified in the CI stage.
+2A.8 (CI job): implemented as job make-usb-loop in .github/workflows/build.yml (64 GB loop device, lsblk wrapper, the built image reused from the build job; structure checked by tests/unit/test_repo_meta.py); verified by .github/workflows/build.yml in the QEMU/CI stage.
 
 ## Milestone 2B: Two-stage install, the default path for Windows and Linux users (v0.1 part 2)
 
@@ -483,14 +487,14 @@ Stage 1: write a small base image to the USB drive with any imaging tool. Stage 
 
 | # | Task | Touches | Status |
 |---|---|---|---|
-| 2B.1 | CI builds the base image from Milestone 1: Ubuntu 24.04 minimal desktop, portable boot (1.9), storage and network hardening already applied, Ansible, the repo's roles at a pinned tag, and `forensic-provision`. Everything that may be redistributed is already installed in place: all Ubuntu-archive tools, the CI-built llama.cpp, YARA rule packs, and Python tools whose licences allow it. Left out: EZ Tools, model weights, NSRL, ClamAV databases, MalwareBazaar | .github/workflows/release.yml | todo |
-| 2B.2 | Publish base image, SHA256SUMS, and signature as GitHub Release assets; keep each file under GitHub's per-file size limit or split it (confirm the current limit) | .github/workflows/release.yml | todo |
+| 2B.1 | CI builds the base image from Milestone 1: Ubuntu 24.04 minimal desktop, portable boot (1.9), storage and network hardening already applied, Ansible, the repo's roles at a pinned tag, and `forensic-provision`. Everything that may be redistributed is already installed in place: all Ubuntu-archive tools, the CI-built llama.cpp, YARA rule packs, and Python tools whose licences allow it. Left out: EZ Tools, model weights, NSRL, ClamAV databases, MalwareBazaar | .github/workflows/release.yml | doing |
+| 2B.2 | Publish base image, SHA256SUMS, and signature as GitHub Release assets; keep each file under GitHub's per-file size limit or split it (confirm the current limit) | .github/workflows/release.yml | doing |
 | 2B.3 | Quickstart, Windows: download, check with `Get-FileHash`, write with Rufus in DD mode or balenaEtcher. Quickstart, Linux: `scripts/flash.sh` (Milestone 2) | docs/quickstart.md | done |
 | 2B.4 | `forensic-provision` runs unattended on first boot with zero prompts and no network: reads `profile.json` written by the fetcher, refuses to run while any disk other than the boot drive is attached | ansible/roles/session_tools/files/forensic-provision | done |
 | 2B.5 | Provisioning runs the same Ansible roles locally, every download checked against `pins.yml`, cached and resumable after a failure or power loss | forensic-provision | done |
 | 2B.6 | Finish: goss tests on the real hardware, hardening re-applied last, network off, manifest written (tool versions, model hashes, hardware, date), reboot | forensic-provision | doing |
 | 2B.7 | To add or change parts later: rerun the fetcher on the host computer with a new profile; the next boot detects the changed `ASSETS` set, verifies it, and applies it offline | forensic-provision | done |
-| 2B.8 | CI: boot the base image in QEMU with a virtual NIC, provision with the CI profile, run the full test suite | .github/workflows/build.yml | todo |
+| 2B.8 | CI: boot the base image in QEMU with a virtual NIC, provision with the CI profile, run the full test suite | .github/workflows/build.yml | doing |
 | 2B.9 | Pre-positioning, partition layout: EFI, BIOS boot, a fixed-size exFAT partition labelled `ASSETS` (sized for the default profile), then the ext4 root last so it grows to fill the drive. `ASSETS` is empty in the published image, so it compresses to almost nothing | packer/http/user-data | doing |
 | 2B.10 | `assets/manifest.json` generated from `pins.yml`: every external file with URL, size, SHA-256, target path, and which profile needs it | scripts/gen-manifest.py | done |
 | 2B.11 | Host-side fetchers `fetch-assets.ps1` (Windows) and `fetch-assets.sh` (Linux): prompt for profile and optional abuse.ch key, download each file in the manifest, verify SHA-256, copy onto the `ASSETS` partition of the flashed drive, write `profile.json`; resumable; reports free space before starting | scripts/fetch-assets.ps1, scripts/fetch-assets.sh | done |
@@ -498,10 +502,10 @@ Stage 1: write a small base image to the USB drive with any imaging tool. Stage 
 | 2B.13 | Placement: small executables (EZ Tools) are copied into `/opt`. Large data (GGUF models, classifier weights, NSRL, ClamAV and MalwareBazaar databases) stays on `ASSETS`, mounted read-only with `noexec`, and the tools point at it there, so nothing is copied twice | ansible/roles/base/, forensic-provision | doing |
 | 2B.14 | Hash check of every `ASSETS` file at each boot's `forensic-session-start`, result in the session log | ansible/roles/session_tools/files/ | done |
 | 2B.15 | Signed manifest: `assets/manifest.json` is signed in the release workflow and the public key is baked into the base image, so pinned files are checked against something the `ASSETS` partition cannot rewrite. Files that change daily (ClamAV, MalwareBazaar) are checked by vendor signature where one exists and otherwise recorded as trusted-at-staging | .github/workflows/release.yml, forensic-provision | doing |
-| 2B.16 | CI: build base image, run `fetch-assets.sh` against it as a loop device, boot in QEMU with no NIC, confirm provisioning completes offline and the full test suite passes | .github/workflows/build.yml | todo |
+| 2B.16 | CI: build base image, run `fetch-assets.sh` against it as a loop device, boot in QEMU with no NIC, confirm provisioning completes offline and the full test suite passes | .github/workflows/build.yml | doing |
 | 2B.17 | Add a separate exFAT `OUTPUT` partition for case output and reports, readable on Windows. `ASSETS` is mounted read-only during runs. Every output file is hashed into `outputs.sha256` | packer/http/user-data, ansible/roles/base/ | doing |
 | 2B.18 | Asset placement by licence: EZ Tools (MIT per the research, confirm each repo's LICENSE), Dissect and NudeNet (AGPL, ship licence and source offer) may be baked into the base image; ClamAV signatures, MalwareBazaar, NSRL, YARA packs, and model weights stay user-fetched | docs/licenses.md, assets/manifest.json | done |
-| 2B.19 | Release cadence: rebuild the base image monthly and out of band for parser CVEs; rerun the validation suite (4F) before each release | docs/release-process.md | todo |
+| 2B.19 | Release cadence: rebuild the base image monthly and out of band for parser CVEs; rerun the validation suite (4F) before each release | docs/release-process.md | done |
 
 2B.17: per-run `outputs.sha256` and its Ed25519 signature are implemented in `forensic_analyze/signing.py` and verified by tests/unit/test_analyze_core.py and tests/functional/test_analyze_quick.sh; the OUTPUT partition itself is built by the image package and verified in the QEMU/CI stage.
 2B.9: implemented; layout plan checked by tests/unit/test_packer_user_data.py and the naming/exFAT helper by tests/functional/test_build_partition_layout.sh here; the installed drive is verified by tests/goss/base.yaml (drive-layout) in the QEMU/CI stage.
@@ -511,6 +515,10 @@ Stage 1: write a small base image to the USB drive with any imaging tool. Stage 
 2B.6: implemented; verified by tests/unit/test_provision.py here with a stub goss; the real goss run on hardware or the booted image is verified by .github/workflows/build.yml (2B.8, 2B.16) in the QEMU/CI stage, and needs goss and tests/goss on the image (see the provisioning notes in docs/assets.md).
 2B.10, 2B.11, 2B.18: gen-manifest, both fetchers (bash, and PowerShell under pwsh 7 on Linux) and the licence table pass tests/unit/test_manifest.py, tests/unit/test_assets_fetch.py and tests/functional/test_fetch_assets.sh here; Windows PowerShell 5.1 on Windows is covered by 4G.2.
 2B.15: implemented: scripts/gen-signing-key.sh, scripts/sign-manifest.sh and the on-drive check (airlock_common.assets) pass tests/unit/test_manifest_signing.py, tests/unit/test_assets.py and tests/functional/test_assets.sh; the signing step in .github/workflows/release.yml and baking the public key into the image are verified in the CI stage.
+2B.1: implemented; verified by .github/workflows/release.yml (image job) in the QEMU/CI stage. The release writes assets/manifest.json, its .sig and manifest-signing.pub.pem before scripts/build.sh; copying them into the image (/var/lib/airlock/manifest.json, /etc/airlock/manifest-signing.pub.pem) still needs a role task.
+2B.2: implemented; the split (1900 MiB parts; GitHub's 2 GiB per-file limit, verify before each release) and SHA256SUMS steps run here in tests/unit/test_repo_meta.py; publishing is verified by .github/workflows/release.yml in the CI stage.
+2B.8, 2B.16: implemented; verified by .github/workflows/build.yml (job provision, NIC and no NIC) in the QEMU/CI stage. With the air gap, 2B.8 also provisions offline: the NIC must stay down (decision log 2026-11-15).
+2B.19: monthly rebuild scheduled in .github/workflows/build.yml; cadence and the validation rerun in docs/release-process.md (checked by tests/unit/test_repo_meta.py).
 
 ## Milestone 3: Storage and network hardening (v0.1 part 3, gates v0.1 release)
 
@@ -526,12 +534,13 @@ Stage 1: write a small base image to the USB drive with any imaging tool. Stage 
 | 3.8 | goss tests: automount, blockdev ro on second disk, no swap, rfkill, no wlan interface, no bluetooth module, network services masked, no interface up except loopback, nftables drop policy loaded, no listening socket off loopback | tests/goss/storage.yaml, tests/goss/network.yaml | doing |
 | 3.9 | QEMU test harness: boots image with two extra virtual disks (ext4, one with swap-type partition), runs goss over serial console, exits non-zero on failure | tests/run-qemu-tests.sh | todo |
 | 3.10 | Verify on bare metal: attach a scratch USB drive, `findmnt` shows nothing, `blockdev --getro` is 1, `dd` write fails | manual | needs-human |
-| 3.11 | Tag v0.1 | git | todo |
+| 3.11 | Tag v0.1 | git | blocked |
 
 3.1, 3.3, 3.4: implemented; verified by tests/goss/storage.yaml and tests/vm/test_automount.sh in the QEMU/CI stage (file-editing parts and dconf keys already pass tests/unit/test_harden_storage.py and tests/unit/test_harden_desktop.py).
 3.5, 3.6, 3.7: implemented; verified by tests/goss/network.yaml and tests/vm/test_airgap.sh in the QEMU/CI stage (ruleset, modprobe block list, and unit files already pass tests/unit/test_harden_network.py).
 3.8: implemented; verified by tests/goss/storage.yaml and tests/goss/network.yaml in the QEMU/CI stage (both render with `goss render`; tests/unit/test_harden_coverage.py checks every masked unit has a check).
 3.10: needs a person and a real PC; the checklist is in docs/validation-guide.md, section "Bare-metal check".
+3.11: blocked until the Milestone 0 to 3A checks pass in the QEMU/CI stage (build.yml) and 0.1/0.8 are done; the tag gate is in docs/release-process.md.
 
 ## Milestone 3A: Write-protection hardening from the research (v0.1 part 3)
 
@@ -545,14 +554,14 @@ The software read-only layer is defence in depth. Documentation and on-screen te
 | 3A.4 | Restrict `/dev/sg*` and `/dev/bsg/*` to root and ship no tool that sends SG_IO commands to a target | ansible/roles/harden_storage/ | doing |
 | 3A.5 | Write tracer: record write and discard requests issued to the target during a run (blktrace or a kprobe) and put the count in `run.json` and the report. Expected value is 0 | forensic-analyze/tracer.py | done |
 | 3A.6 | HPA and DCO detection (`hdparm -N`, `--dco-identify`) logged, never removed. SSD targets get a warning that the drive's own garbage collection can change before and after hashes | forensic-analyze/target.py | done |
-| 3A.7 | Write-blocker record: make, model, firmware, and a link to its CFTT or DHS test report; the docs list only blockers that have one | forensic-analyze/target.py, docs/write-blockers.md | doing |
+| 3A.7 | Write-blocker record: make, model, firmware, and a link to its CFTT or DHS test report; the docs list only blockers that have one | forensic-analyze/target.py, docs/write-blockers.md | done |
 | 3A.8 | Run the NIST CFTT Federated Testing write-block tests against the built image and publish the result as software read-only policy test results | validation/ | needs-human |
 | 3A.9 | Sandbox every parser: unprivileged user, bubblewrap or `systemd-run` with `PrivateNetwork=yes`, `ProtectSystem=strict`, read-only view of the evidence, one writable output folder, seccomp filter, memory and time limits. Root opens the device once and hands workers a read-only handle | forensic-analyze/sandbox.py | done |
 | 3A.10 | goss and functional tests for 3A.1 to 3A.9, including a disk with LVM, mdraid, and swap signatures that must stay untouched | tests/ | todo |
 
 3A.1, 3A.2, 3A.4: implemented; verified by tests/goss/storage.yaml and tests/vm/test_storage_untouched.sh in the QEMU/CI stage (the GRUB-file assertion and the lvm.conf, mdadm.conf, and fstab edits already pass tests/unit/test_harden_storage.py).
 3A.10 (storage part): tests/vm/test_storage_untouched.sh is written and checks the LVM/mdraid/swap signature disk (serial airlock-sig, AIRLOCK_TEST_DISK_SIG) stays read-only, unassembled, unmounted, and byte-identical; it runs in the QEMU/CI stage once the harness attaches that disk.
-3A.7: the write-blocker prompt and record (make, model, firmware, report link in `run.json`) are implemented in `forensic_analyze/target.py` and verified by tests/unit/test_analyze_target.py; `docs/write-blockers.md` belongs to the docs package.
+3A.7: the write-blocker prompt and record (make, model, firmware, report link in `run.json`) are implemented in `forensic_analyze/target.py` and verified by tests/unit/test_analyze_target.py; `docs/write-blockers.md` lists no blocker, because none could be named with a CFTT or DHS report the authors were certain of, and explains how to check a report (tests/unit/test_repo_meta.py fails on a row without a nist.gov or dhs.gov link).
 3A.9: the bubblewrap and unshare methods are verified here by tests/functional/test_sandbox.sh; the systemd-run method is verified by the same test in the QEMU/CI stage (systemd is PID 1 only there).
 3A.8: needs a person with the NIST CFTT Federated Testing suite, a test drive, and a PC; the method, the AIRLOCK-side checks, and the results template ("software read-only policy test results", Markdown and JSON) are in validation/cftt/, and the validation report reads `validation/cftt/results-<release>.json` (checked by tests/unit/test_validation_report.py).
 
@@ -577,13 +586,14 @@ Tool selection principle: CLI-first, one tool per artifact class, each with a kn
 | 4.13 | goss tests: each tool binary present and `--version` runs; `dotnet --list-runtimes` shows 9.x; `target-query --version` runs; helpers present and executable | tests/goss/tools.yaml | doing |
 | 4.14 | Functional test: a 64 MB NTFS test image with known created and deleted files, checked into tests/fixtures (built by a script, not hand-made); `fls -rd`, MFTECmd `$MFT` and `$J`, and Dissect `target-query -f mft` must each find the known deleted file names | tests/fixtures/, tests/functional/ | doing |
 | 4.15 | Clock handling: with no network there is no time sync. `forensic-session-start` shows the hardware clock in UTC, asks the operator to confirm or correct it against a trusted clock, and logs the answer and any offset | ansible/roles/session_tools/files/ | done |
-| 4.16 | Tag v0.2 | git | todo |
+| 4.16 | Tag v0.2 | git | blocked |
 
 4.1, 4.2, 4.3, 4.5, 4.6, 4.7, 4.8: implemented; verified by tests/goss/tools.yaml in the QEMU/CI stage (role shape, noble package names, pins and hashed requirements already pass tests/unit/test_tools_roles.py and tests/unit/test_tools_pins.py; the goss commands were run here against the same packages and against the Dissect, Plaso, usncarve and bulk_extractor builds made from the pinned files).
 4.4: implemented; verified by tests/goss/tools.yaml in the QEMU/CI stage (tests/unit/test_tools_eztools.py runs the role's provisioning steps here); the eleven EZ Tools zips are `sha256: null` (download.ericzimmermanstools.com unreachable from the authoring host) and must be pinned before EZ Tools can be provisioned.
 4.9: implemented; verified by tests/goss/tools.yaml in the QEMU/CI stage; `pins.sleuthkit_java_deb` (The Sleuth Kit Java 4.15.0 .deb) needs a person to find its asset name and pin it before Autopsy can be provisioned.
 4.13: implemented; verified by tests/goss/tools.yaml in the QEMU/CI stage (the file renders with `goss render`; its tool checks pass here with the venv paths pointed at local builds).
 4.14: implemented; tests/functional/test_parsers_ntfs.sh passes here for fls -rd, icat and Dissect; its MFTECmd step is verified in the QEMU/CI stage (run with AIRLOCK_REQUIRE_ALL_PARSERS=1 where EZ Tools are staged). The fixture has no `$UsnJrnl` (ntfs-3g never writes one), so the `$J` step runs only on an image with a journal (decision log 2026-11-15).
+4.16: blocked until the Milestone 4 to 4G checks pass in the QEMU/CI stage and the validation report is attached to a release.
 
 ## Milestone 4A: Hash sets and signatures (v0.2)
 
@@ -757,8 +767,8 @@ Added 2026-11-14 after a review of test coverage. The earlier milestones test th
 
 | # | Task | Touches | Status |
 |---|---|---|---|
-| 4G.1 | Unit tests (pytest) for all Python: schema validation in `emit()`, each export, the report verifier, the sandbox wrapper, target and mode pickers. Add ruff to the lint job | tests/unit/, .github/workflows/lint.yml | todo |
-| 4G.2 | PowerShell: PSScriptAnalyzer in lint, and a Windows CI runner that runs `fetch-assets.ps1` against a virtual disk and checks the staged files and hashes | tests/windows/, .github/workflows/ | todo |
+| 4G.1 | Unit tests (pytest) for all Python: schema validation in `emit()`, each export, the report verifier, the sandbox wrapper, target and mode pickers. Add ruff to the lint job | tests/unit/, .github/workflows/lint.yml | doing |
+| 4G.2 | PowerShell: PSScriptAnalyzer in lint, and a Windows CI runner that runs `fetch-assets.ps1` against a virtual disk and checks the staged files and hashes | tests/windows/, .github/workflows/ | doing |
 | 4G.3 | Flash script refusal tests: non-removable disk, the disk holding `/`, a mounted disk, a too-small disk, a wrong typed confirmation. Each must refuse and write nothing | tests/functional/test_flash.sh | done |
 | 4G.4 | Asset tamper tests: a swapped file, a truncated file, an edited manifest, and a bad signature must each be detected at provisioning and at session start, with the feature disabled and named | tests/functional/test_assets.sh | done |
 | 4G.5 | Air-gap behaviour test: boot with a virtual network card attached to a live network and attempt DNS, HTTP, and ping from root. All must fail. Config checks alone (3.8) do not prove this | tests/functional/test_airgap.sh | doing |
@@ -773,12 +783,16 @@ Added 2026-11-14 after a review of test coverage. The earlier milestones test th
 | 4G.14 | Report verifier tests: hand-written sentences with a wrong date, a wrong path, a missing citation, and a non-existent finding ID must each be rejected | tests/unit/test_verify.py | done |
 | 4G.15 | Scale test: a fixture with several hundred thousand files; record run time and peak memory per module and fail on regression | validation/scale/ | doing |
 | 4G.16 | Refresh test: restage a newer signature set and a changed profile, boot, and confirm `forensic-import` applies it offline and logs the hashes | tests/functional/test_refresh.sh | done |
-| 4G.17 | Manual hardware checklist, one page, run on every machine in the matrix: boots UEFI and BIOS, Secure Boot on, internal disk read-only, scratch drive not mounted and not writable, tier chosen, Quick run completes, report opens on Windows from `OUTPUT` | docs/hardware-checklist.md | todo |
-| 4G.18 | First-use test: someone who has not seen the project follows the quickstart on Windows with no help; every point where they stall becomes an issue | docs/quickstart.md | todo |
+| 4G.17 | Manual hardware checklist, one page, run on every machine in the matrix: boots UEFI and BIOS, Secure Boot on, internal disk read-only, scratch drive not mounted and not writable, tier chosen, Quick run completes, report opens on Windows from `OUTPUT` | docs/hardware-checklist.md | needs-human |
+| 4G.18 | First-use test: someone who has not seen the project follows the quickstart on Windows with no help; every point where they stall becomes an issue | docs/quickstart.md | needs-human |
 
 4G.5: implemented at tests/vm/test_airgap.sh (it must run inside the guest, so it lives in tests/vm/, not tests/functional/); verified by tests/vm/test_airgap.sh --positive-control in the QEMU/CI stage.
 4G.8: kill and resume, output drive full, read errors (an ext4 filesystem shut down under the evidence file; device-mapper is not available here), and BitLocker without a key or with a wrong key pass in tests/functional/test_faults.sh; BitLocker with the right key: implemented; verified by tests/functional/test_faults.sh in the QEMU/CI stage once a BitLocker fixture made on Windows exists.
 4G.15: implemented; verified here at small scale by tests/functional/test_validation.sh and tests/unit/test_validation_scale.py (baseline `quick-300` in validation/scale/baseline.json); the full-size run (`scale.py generate --files 300000`, then `run --update-baseline` once) is verified by validation/scale/scale.py in the QEMU/CI stage. Measured here: the inventory module's Dissect MFT listing costs about 57 ms per file, so that run needs several hours.
+4G.1: implemented; the unit job (tests/run-unit.sh) and ruff (scripts/lint.sh) are in .github/workflows/lint.yml (structure checked by tests/unit/test_repo_meta.py); verified by .github/workflows/lint.yml in the CI stage.
+4G.2: implemented; tests/windows/Test-FetchAssets.ps1 passes here under pwsh 7 against a folder (-AssetsDir); the VHDX with an exFAT and an NTFS ASSETS volume, Windows PowerShell 5.1, and PSScriptAnalyzer are verified by .github/workflows/windows.yml in the CI stage.
+4G.17: needs a person and the PCs in the matrix; the one-page checklist and results table are in docs/hardware-checklist.md.
+4G.18: needs a person who has not seen the project; the protocol and results table are in docs/hardware-checklist.md, section "First-use test on Windows".
 
 ## Milestone 5: Desktop and service hardening, CI (v0.3)
 
@@ -789,13 +803,16 @@ Added 2026-11-14 after a review of test coverage. The earlier milestones test th
 | 5.3 | Role `harden_services`: mask apport, whoopsie, ubuntu-report, motd-news, unattended-upgrades, avahi-daemon, cups-browsed, ModemManager, geoclue | ansible/roles/harden_services/ | doing |
 | 5.4 | Decide snapd: remove it (default) or hold refreshes. Record in decision log | ansible/group_vars/all.yml | done |
 | 5.5 | goss tests for every unit in 5.1 to 5.4 | tests/goss/desktop.yaml, services.yaml | doing |
-| 5.6 | GitHub Actions: lint job (ansible-lint, shellcheck, yamllint, packer validate) on every PR | .github/workflows/lint.yml | todo |
-| 5.7 | GitHub Actions: build-and-test job, checks `/dev/kvm`, runs tests/run-qemu-tests.sh, uploads image as artifact | .github/workflows/build.yml | todo |
+| 5.6 | GitHub Actions: lint job (ansible-lint, shellcheck, yamllint, packer validate) on every PR | .github/workflows/lint.yml | doing |
+| 5.7 | GitHub Actions: build-and-test job, checks `/dev/kvm`, runs tests/run-qemu-tests.sh, uploads image as artifact | .github/workflows/build.yml | doing |
 | 5.8 | Re-apply hardening as the last play in site.yml so no tool role can undo it; test asserts order | ansible/site.yml | done |
-| 5.9 | Tag v0.3 | git | todo |
+| 5.9 | Tag v0.3 | git | blocked |
 
 5.1, 5.2, 5.3: implemented; verified by tests/goss/desktop.yaml and tests/goss/services.yaml in the QEMU/CI stage (dconf keys and locks, apt periodic settings, and the snapd pin already pass tests/unit/test_harden_desktop.py and tests/unit/test_harden_services.py). 5.2: the 24.04 indexer is tracker-miner-fs-3; both it and localsearch-3 are masked (decision log 2026-11-15).
 5.5: implemented; verified by tests/goss/desktop.yaml and tests/goss/services.yaml in the QEMU/CI stage (both render with `goss render`; tests/unit/test_harden_coverage.py checks every masked unit, removed package, and removed file has a check).
+5.6: implemented; .github/workflows/lint.yml runs scripts/lint.sh (ansible-lint, shellcheck, yamllint, ruff, packer fmt and validate, pins) and actionlint on every pull request; scripts/lint.sh and actionlint pass here, the workflow structure is checked by tests/unit/test_repo_meta.py; verified by .github/workflows/lint.yml in the CI stage.
+5.7: implemented; verified by .github/workflows/build.yml (job build: /dev/kvm check with TCG fallback and the self-hosted runner variable, scripts/build.sh, tests/run-qemu-tests.sh, image artifact) in the QEMU/CI stage.
+5.9: blocked until the Milestone 5 controls pass in the QEMU/CI stage and lint, build and test run green on every change.
 
 ## Milestone 6: Supply chain and signed releases (v0.4)
 
@@ -803,24 +820,33 @@ Added 2026-11-14 after a review of test coverage. The earlier milestones test th
 |---|---|---|---|
 | 6.1 | Pin apt to a dated snapshot.ubuntu.com mirror during build | packer/http/user-data | done |
 | 6.2 | Every downloaded artifact listed in `ansible/group_vars/pins.yml` with URL, version, SHA-256 | ansible/group_vars/pins.yml | doing |
-| 6.3 | Release workflow on tag: build, test, syft SBOM, cosign keyless signature, GitHub Release with image, SHA256SUMS, .sig, SBOM | .github/workflows/release.yml | todo |
-| 6.4 | docs/validation-guide.md: how a user proves the stick is read-only on their own hardware with a scratch drive | docs/validation-guide.md | todo |
+| 6.3 | Release workflow on tag: build, test, syft SBOM, cosign keyless signature, GitHub Release with image, SHA256SUMS, .sig, SBOM | .github/workflows/release.yml | doing |
+| 6.4 | docs/validation-guide.md: how a user proves the stick is read-only on their own hardware with a scratch drive | docs/validation-guide.md | done |
 | 6.5 | Optional role `tools_sift` behind `install_sift=false`, runs Cast, then hardening re-applies; test proves rfkill and automount still hold afterward | ansible/roles/tools_sift/ | doing |
 | 6.6 | License review of every bundled package before any prebuilt image is published; EZ Tools redistribution terms, Dissect AGPL, model licences (Qwen3-VL Apache 2.0, NudeNet, SigLIP), and YARA rule pack licences recorded in docs/licenses.md | docs/licenses.md | todo |
-| 6.7 | Tag v0.4 | git | todo |
+| 6.7 | Tag v0.4 | git | blocked |
 
 6.2: scripts/check-pins.py checks every entry has all ten fields with valid values (tests/unit/test_manifest.py) and runs in scripts/lint.sh; entries whose host was unreachable from the authoring environment still carry sha256: null, and `check-pins.py --strict` (release workflow) blocks the release until someone with access fills them.
 6.5: implemented; verified by tests/goss/sift.yaml in the QEMU/CI stage on an image built with `-e install_sift=true` (tests/unit/test_tools_sift.py passes here: SIFT is off by default, Cast is pinned, and every hardening role runs after tools_sift).
+6.3: implemented; verified by .github/workflows/release.yml in the CI stage (tag check, check-pins --strict, signed manifest, build, QEMU tests, syft SBOM, validation report, cosign keyless signature of SHA256SUMS, GitHub Release; a draft until AIRLOCK_LICENCE_REVIEW_DONE=true). The split and SHA256SUMS steps run here in tests/unit/test_repo_meta.py; syft and cosign are pinned by SHA-256 in pins.yml.
+6.4: section "Your own validation (task 6.4)" in docs/validation-guide.md (checked by tests/unit/test_repo_meta.py).
+6.7: blocked until a tagged release has published a signed image, checksums, SBOM and licence record (6.3 in CI, 6.6 licence review).
 
 ## Milestone 7: Live ISO variant and 1.0 (v0.5, v1.0)
 
 | # | Task | Touches | Status |
 |---|---|---|---|
-| 7.1 | Evaluate live-build vs Cubic-free ISO remaster for an amnesic variant; record decision | docs/decision-log.md | todo |
-| 7.2 | Live ISO build target reusing the same Ansible roles | packer/ or live/ | todo |
-| 7.3 | Secure Boot test matrix: three laptops, document results | docs/hardware-matrix.md | todo |
-| 7.4 | Outside review: ask two DFIR practitioners to break the read-only guarantees and file issues | github issues | todo |
-| 7.5 | README final, docs complete, tag v1.0 | README.md | todo |
+| 7.1 | Evaluate live-build vs Cubic-free ISO remaster for an amnesic variant; record decision | docs/decision-log.md | done |
+| 7.2 | Live ISO build target reusing the same Ansible roles | packer/ or live/ | doing |
+| 7.3 | Secure Boot test matrix: three laptops, document results | docs/hardware-matrix.md | needs-human |
+| 7.4 | Outside review: ask two DFIR practitioners to break the read-only guarantees and file issues | github issues | needs-human |
+| 7.5 | README final, docs complete, tag v1.0 | README.md | blocked |
+
+7.1: recorded in docs/decision-log.md (2026-11-15): live-build, reusing the Ansible roles through a chroot hook, not an ISO remaster.
+7.2: implemented in live/build.sh and live/hooks/0500-airlock-site.hook.chroot (live/README.md); the configuration stage passes tests/unit/test_repo_meta.py here; the ISO build and its boot tests need a build host and are verified in the QEMU/CI stage. The base role must skip the partition layout, boot loader install and first-boot tasks when airlock_target is live.
+7.3: needs a person and three laptops; the matrix, steps and results table are in docs/hardware-matrix.md, section "Secure Boot test matrix".
+7.4: needs two outside practitioners; the brief is in docs/hardware-matrix.md, section "Outside review", and findings use .github/ISSUE_TEMPLATE/outside-review.yml.
+7.5: blocked until the Milestone 7 checks (7.2 in the QEMU/CI stage, 7.3, 7.4) are recorded; README.md is written (0.3).
 
 # Part 4: Decisions, alternatives, risks
 

@@ -72,6 +72,12 @@ table below and stays user-fetched.
 | faketime / libfaketime (`validation/synthetic/build.sh`: synthetic images at planned times; validation host only) | 0.9.10 (noble) | GPL-2.0-only |
 | ntfs-3g, exfatprogs, exfat-fuse, sleuthkit, testdisk (`validation/`: building and checking synthetic images; validation host only) | noble | GPL-2.0-or-later (ntfs-3g, exfatprogs, exfat-fuse, testdisk); CPL-1.0, IBM-PL-1.0, GPL-2.0-or-later parts (sleuthkit) |
 | qemu-system-x86, qemu-utils, ovmf, zstd, curl, openssl, python3-yaml, gdisk, e2fsprogs, util-linux, exfatprogs (`scripts/prereqs.sh` installs them when missing) | noble | GPL-2.0 (QEMU), BSD-2-Clause-Patent (OVMF), BSD-3-Clause or GPL-2.0 (zstd), curl, Apache-2.0 (OpenSSL), MIT (PyYAML), GPL-2.0-or-later (gdisk, e2fsprogs, util-linux, exfatprogs) |
+| cosign (release workflow: keyless signature of `SHA256SUMS`; pin `cosign_linux_amd64`) | 2.6.5 | Apache-2.0 |
+| syft (release workflow: SPDX SBOM of the image; pin `syft_linux_amd64`) | 1.57.1 | Apache-2.0 |
+| actionlint (lint workflow: checks the workflow files; pin `actionlint_linux_amd64`) | 1.7.7 | MIT |
+| GitHub Actions `actions/checkout`, `actions/setup-python`, `actions/upload-artifact`, `actions/download-artifact` (CI runners only, pinned to commit SHAs) | 7.0.1, 7.1.0, 7.0.2, 8.0.2 | MIT |
+| PSScriptAnalyzer (Windows CI runner only, PowerShell Gallery) | 1.25.0 (newest GitHub tag; verify on the Gallery) | MIT |
+| live-build (`live/build.sh`, the live ISO variant; build host only) | 3.0~a57-1ubuntu49.1 (noble) | GPL-3.0-or-later |
 
 ## Local AI (role `tools_ai`, Milestone 4B; decision log 2026-11-15)
 
@@ -118,6 +124,9 @@ confirms their terms; until then they are staged too.
 | `faster_whisper_small_tokenizer` | small | MIT (OpenAI Whisper weights; CTranslate2 conversion by Systran) | assets | no: user-fetched onto ASSETS (2B.18) |
 | `faster_whisper_small_vocabulary` | small | MIT (OpenAI Whisper weights; CTranslate2 conversion by Systran) | assets | no: user-fetched onto ASSETS (2B.18) |
 | `goss_linux_amd64` | 0.4.9 | Apache-2.0 (test tool; copied into the test VM by tests/run-qemu-tests.sh, never baked into the image) | build | n/a: build host only |
+| `actionlint_linux_amd64` | 1.7.7 | MIT (workflow linter, CI only; never in the image) | build | n/a: build host only |
+| `cosign_linux_amd64` | 2.6.5 | Apache-2.0 (release signing tool, CI only; never in the image) | build | n/a: build host only |
+| `syft_linux_amd64` | 1.57.1 | Apache-2.0 (SBOM tool, CI only; never in the image) | build | n/a: build host only |
 | `llama_cpp_source` | b9562 | MIT | image | yes: baked by the build |
 | `malwarebazaar_sha256_full` | daily | CC0-1.0 per abuse.ch terms (unconfirmed, plan 6.6); user-fetched, never baked | assets | no: user-fetched onto ASSETS (2B.18) |
 | `nsrl_rds_modern_minimal` | 2026.06.1 | NIST NSRL data, US Government work (redistribution unconfirmed, plan 6.6); user-fetched | assets | no: user-fetched onto ASSETS (2B.18) |

@@ -96,3 +96,50 @@ On each machine, with a default-profile drive (tiers 0 to 2 staged):
 | discrete | AMD (RADV) | | | to be tested | | | | | |
 | discrete | NVIDIA (NVK, open driver) | | | to be tested | | | | | |
 | integrated | any | | | to be tested | | | | | |
+
+## Secure Boot test matrix: three laptops (task 7.3)
+
+Needs a person and three different laptops (task status: needs-human). The aim is coverage of
+firmware kinds, not of brands: pick laptops that differ in firmware age and Secure Boot keys, and
+record capacities and firmware facts, never a brand as a requirement.
+
+Pick, if you can:
+
+1. a laptop whose firmware trusts the Microsoft UEFI CA 2011 (most made before 2024);
+2. a laptop whose firmware has the 2023 CA and still trusts the 2011 CA;
+3. a laptop with the 2023 CA only, or with the 2011 CA revoked by a firmware or DBX update.
+
+On each laptop, with the release image freshly written:
+
+1. Read the BitLocker warning at the top of this page first.
+2. In the firmware setup, note the firmware version and date and whether Secure Boot is on.
+3. Boot the AIRLOCK drive with Secure Boot **on**. Record whether the desktop appears. If it does,
+   run `mokutil --sb-state` and `cat /etc/airlock/boot-chain.json`.
+4. If it does not boot, note the exact message, then try with Secure Boot **off** (and turn it
+   back on afterwards).
+5. Run [hardware-checklist.md](hardware-checklist.md) on the laptop.
+
+| Laptop | Firmware version and date | CA trusted (2011, 2023, both, unknown) | Secure Boot on: result | Secure Boot off: result | Checklist passed | Date | Tester |
+|---|---|---|---|---|---|---|---|
+| 1 | | | | | | | |
+| 2 | | | | | | | |
+| 3 | | | | | | | |
+
+Done when all three rows are filled in. A laptop that refuses the drive with Secure Boot on is a
+result, not a failure of the test: record it and open an issue with the message shown.
+
+## Outside review (task 7.4)
+
+Needs people (task status: needs-human). Ask two DFIR practitioners who did not build AIRLOCK to
+try to break its read-only guarantees, using scratch drives and synthetic data only. Give them:
+
+* the release, [threat-model.md](threat-model.md), [controls.md](controls.md), and
+  [validation-guide.md](validation-guide.md);
+* the brief: make the drive write to an attached disk, reach a network, run code from evidence,
+  or report something the evidence does not support;
+* the "Outside review finding" issue form (`.github/ISSUE_TEMPLATE/outside-review.yml`) for each
+  finding, and the Security tab for anything exploitable by someone other than the operator.
+
+| Reviewer (as credited) | Release | Areas tried | Issues filed | Date |
+|---|---|---|---|---|
+| | | | | |

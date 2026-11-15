@@ -106,3 +106,12 @@ archive (from the dated snapshot, task 6.1). Runbook using them in order:
 * `hivexget`, `hivexml`, `hivexsh` (noble `libhivex-bin`): registry values; open hives without `-w` (4.8).
 * `autopsy` (optional, `install_autopsy=false`; Autopsy 4.23.1 zip and Sleuth Kit Java .deb staged on ASSETS, Java 17 from noble): GUI case manager; while a case is open it runs its search server on this computer only (4.9).
 * `cast` (optional, `install_sift=false`; Cast 1.0.13 .deb): installs SANS SIFT in server mode at image build only; hardening re-applies after it (6.5).
+
+## CI, release, and repository tools (host side; never on the image)
+
+* `.github/workflows/lint.yml` (5.6, 4G.1): `scripts/lint.sh` plus actionlint, `tests/run-unit.sh`, and `tests/run-functional.sh` as root, on every pull request.
+* `.github/workflows/build.yml` (5.7, 2A.8, 2B.8, 2B.16): builds the image, boot-tests it under UEFI, Secure Boot and BIOS (KVM, else TCG), runs `make-usb.sh --yes --profile ci` on a loop device, and provisions the staged image offline with and without a network card, then runs the full suite.
+* `.github/workflows/windows.yml` (4G.2): PSScriptAnalyzer on every `.ps1`, and `tests/windows/Test-FetchAssets.ps1` (fetcher under PowerShell 5.1 and 7 against a VHDX with an exFAT or NTFS `ASSETS` volume).
+* `.github/workflows/release.yml` (6.3, 2B.1, 2B.2): on a version tag, build, test, signed manifest, syft SBOM, validation report, image parts, `SHA256SUMS` with a cosign keyless signature, GitHub Release. See `docs/release-process.md`.
+* `scripts/setup-branch-protection.sh [--dry-run] [--reviews N] [--with-build]` (0.8): protects `main` with `gh api` (pull request and green checks required) and turns on private vulnerability reporting. See `docs/dev/repo-setup.md`.
+* `live/build.sh [--config-only]` (7.2): builds the amnesic live ISO with live-build, applying `ansible/site.yml` in a chroot hook. See `live/README.md`.

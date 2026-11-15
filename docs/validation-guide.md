@@ -76,3 +76,43 @@ the command output, and `sudo airlock-setro --check` output. Do not attach evide
 * A radio driver that does not depend on `cfg80211` or `bluetooth` would not be stopped by the module
   block. `rfkill` and the masked network services are the second and third layers; the firewall is
   the fourth.
+
+## Your own validation (task 6.4)
+
+AIRLOCK is not court-validated. If you use it in casework, validate it yourself, as deployed, under
+your own lab procedure (SWGDE and the UK Forensic Science Regulator expect this). This section is
+a starting point for that record. It needs the AIRLOCK drive, a scratch USB drive, and a second
+computer. Keep everything you write down; a step you skip is a step that did not pass.
+
+1. **Check the release before you write it.** Follow "Checking a release" in
+   [release-process.md](release-process.md): reassemble the image if it came in parts, check every
+   SHA-256 against `SHA256SUMS`, and check the cosign signature on `SHA256SUMS`. Record the release
+   tag and the image SHA-256.
+2. **Read the project's own results.** Each release carries a signed validation report
+   (`validation-report.md` and its `.sig`, see [validation.md](validation.md)): pass or fail per
+   artifact class on synthetic and public reference images, parser versions, and the software
+   read-only policy test results. Note any class marked failed or not measured, and read
+   [known-limitations.md](known-limitations.md).
+3. **Prove the drive is read-only on your PC.** Run the bare-metal check above on every PC model
+   you will use, and the one-page [hardware-checklist.md](hardware-checklist.md).
+4. **Prove an analysis does not change the drive it reads.** Put a few known files on the scratch
+   drive, delete one, and hash the whole drive on the second computer. Boot AIRLOCK, then run
+   `forensic-analyze --preset quick` on the scratch drive (answer the questions, or use the flags
+   in [workflows/guided-analysis.md](workflows/guided-analysis.md)). Pass when: the run ends `ok`,
+   the report shows a write-request count of `0` and matching before and after hashes, the deleted
+   file is listed as deleted, and the second computer's hash of the scratch drive is unchanged.
+5. **Check the output on another computer.** Open `report.html` and `findings.csv` from the
+   `OUTPUT` partition on Windows or Linux, and check the signature on the run folder as described in
+   [workflows/guided-analysis.md](workflows/guided-analysis.md).
+6. **Repeat after every change.** A new AIRLOCK release, a new PC model, a new USB bridge, or a new
+   hardware write blocker each need the checks again.
+
+### Validation record
+
+| Date | Release and image SHA-256 | Signature checked | Project report read (classes failed or not measured) | PC model(s) | Bare-metal check | Analysis check (tracer 0, hashes match, deleted file found) | Output opened elsewhere | Tester | Reviewer |
+|---|---|---|---|---|---|---|---|---|---|
+| | | | | | | | | | |
+
+A pass shows the software read-only policy and the analysis behaved on that PC with that drive.
+It does not make AIRLOCK a write blocker, and it does not validate the tools for a kind of
+evidence you did not test.
