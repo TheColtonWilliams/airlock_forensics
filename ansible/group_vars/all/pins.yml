@@ -50,9 +50,10 @@ pins:
     license: "Apache-2.0 (fetched on the build host; baked into the image at /opt/airlock/bin/goss, the provisioning self-test)"
     notes: >-
       Downloaded and hashed 2026-11-15; the hash matches the release's goss-linux-amd64.sha256.
-      Fetched on the build host by scripts/prereqs.sh, then copied into the image by the base
-      role (tasks/image_inputs.yml), which checks it against this hash again; tag image marks
-      that it ships in the published image.
+      Fetched on the build host by scripts/build.sh and staged through the Packer upload; the
+      base role (tasks/image_inputs.yml) checks it against this hash again before installing
+      /opt/airlock/bin/goss. scripts/prereqs.sh fetches a host copy for the QEMU harness. Tag
+      image marks that it ships in the published image.
   # --- CI and release tools (.github/workflows; never in the image) -------------------------
   cosign_linux_amd64:
     url: https://github.com/sigstore/cosign/releases/download/v2.6.5/cosign-linux-amd64
