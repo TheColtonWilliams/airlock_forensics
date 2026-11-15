@@ -17,8 +17,13 @@ tools_ai_llama_cmake_flags:
   - -DGGML_NATIVE=OFF
   - -DGGML_BACKEND_DL=ON
   - -DGGML_CPU_ALL_VARIANTS=ON
-  # Nothing that can fetch from the network at run time.
+  # Nothing that can fetch from the network at build or run time: no HTTPS client (LLAMA_CURL
+  # is deprecated in newer tags, LLAMA_OPENSSL replaced it) and no web UI, whose build step
+  # otherwise runs npm or downloads a prebuilt UI from huggingface.co (scripts/ui-assets.cmake).
   - -DLLAMA_CURL=OFF
+  - -DLLAMA_OPENSSL=OFF
+  - -DLLAMA_BUILD_UI=OFF
+  - -DLLAMA_USE_PREBUILT_UI=OFF
   - -DBUILD_SHARED_LIBS=ON
   - -DLLAMA_BUILD_TESTS=OFF
   - -DLLAMA_BUILD_EXAMPLES=OFF
@@ -114,7 +119,27 @@ tools_ai_features: "{{ airlock_profile_features | default({}) }}"
 
 # Task 4B.15: Ubuntu's signed NVIDIA kernel modules (linux-modules-nvidia-*), staged on ASSETS
 # and installed offline. Off by default; the open drivers stay the default. No DKMS, no MOK.
-# List the pins.yml ids of every .deb to install (kernel modules matching the image's kernel
-# ABI, nvidia-kernel-common, and the userspace Vulkan driver libnvidia-gl).
+# The pins.yml ids of every .deb to install: all nvidia_deb_* pins (kernel modules matching the
+# image's kernel ABI, nvidia-kernel-common, the userspace Vulkan driver libnvidia-gl, and the
+# packages they depend on that the image lacks). tests/unit/test_pins.py keeps this list equal
+# to the nvidia_deb_* pins.
 tools_ai_nvidia_proprietary: false
-tools_ai_nvidia_deb_pins: []
+tools_ai_nvidia_deb_pins:
+  - nvidia_deb_binutils
+  - nvidia_deb_binutils_common
+  - nvidia_deb_binutils_x86_64_linux_gnu
+  - nvidia_deb_libbinutils
+  - nvidia_deb_libctf_nobfd0
+  - nvidia_deb_libctf0
+  - nvidia_deb_libgprofng0
+  - nvidia_deb_libnvidia_common_580
+  - nvidia_deb_libnvidia_compute_580
+  - nvidia_deb_libnvidia_egl_wayland1
+  - nvidia_deb_libnvidia_gl_580
+  - nvidia_deb_libsframe1
+  - nvidia_deb_linux_modules_nvidia_580_7_0_0_42_generic
+  - nvidia_deb_linux_objects_nvidia_580_7_0_0_42_generic
+  - nvidia_deb_linux_signatures_nvidia_7_0_0_42_generic
+  - nvidia_deb_nvidia_firmware_580_580_178_04
+  - nvidia_deb_nvidia_kernel_common_580
+  - nvidia_deb_ocl_icd_libopencl1

@@ -44,7 +44,9 @@ profiles:
       sift: false
       nvidia_proprietary: false
   ci:
-    description: "CI only: small test assets, no large models."
+    # yara: true pulls in the two YARA packs; yara_forge_core (about 1.7 MB, pinned) is the real
+    # download CI staging exercises (yara_signature_base is skipped while its hash is null).
+    description: "CI only: the YARA rule packs (small, pinned), no models, no hash sets."
     features:
       ai_tiers: []
       classifiers: false

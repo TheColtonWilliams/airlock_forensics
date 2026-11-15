@@ -1,0 +1,159 @@
+# Controls 2B.15 (trusted manifest baked in) and 2B.6 support (goss for the provisioning
+# self-test): installs what scripts/build.sh staged and checked on the build host and Packer
+# uploaded into the build VM (packer variable image_inputs_dir):
+#   manifest.json, manifest.json.sig -> /var/lib/airlock/  (airlock_common.paths.baked_manifest)
+#   manifest-signing.pub.pem         -> /etc/airlock/      (airlock_common.paths.manifest_public_key)
+#   goss (pins.goss_linux_amd64)     -> /opt/airlock/bin/goss
+#   build-kind.json                  -> read here; build_info.yml records it in build-info.json
+# Nothing is downloaded here and the image never uses a network for this: the build VM only
+# copies files whose hashes and signature are checked again below. A release build must carry
+# all of them; a dev build (scripts/build.sh --dev) carries a throwaway key and manifest and is
+# labelled "dev" in /etc/airlock/build-info.json (decision log 2026-11-15).
+# Image phase only; skipped for the live ISO when live/build.sh staged nothing.
+# Tests: tests/unit/test_base_image_inputs.py, tests/goss/base.yaml (baked manifest, goss).
+
+- name: Look for the staged build inputs (2B.15)
+  ansible.builtin.stat:
+    path: "{{ base_image_inputs_dir }}/build-kind.json"
+  register: base_inputs_kind_file
+
+- name: Fail when the build inputs were not uploaded (2B.15)
+  ansible.builtin.assert:
+    that:
+      - base_inputs_kind_file.stat.exists
+    fail_msg: >-
+      {{ base_image_inputs_dir }}/build-kind.json is missing: the trusted manifest, its key and goss
+      were not uploaded. Build with scripts/build.sh, which stages them (use --dev for a test build).
+    quiet: true
+  when: airlock_target != 'live'
+
+- name: Read the build kind (2B.15)
+  ansible.builtin.slurp:
+    src: "{{ base_image_inputs_dir }}/build-kind.json"
+  register: base_inputs_kind_raw
+  when: base_inputs_kind_file.stat.exists
+
+- name: Record the build kind (2B.15)
+  ansible.builtin.set_fact:
+    base_build_kind: "{{ (base_inputs_kind_raw.content | b64decode | from_json).kind }}"
+  when: base_inputs_kind_file.stat.exists
+
+- name: Check the build kind (2B.15)
+  ansible.builtin.assert:
+    that:
+      - base_build_kind in ['release', 'dev']
+    fail_msg: build-kind.json must say release or dev, not '{{ base_build_kind }}'.
+    quiet: true
+  when: base_inputs_kind_file.stat.exists
+
+- name: Look for each staged file (2B.15, 2B.6)
+  ansible.builtin.stat:
+    path: "{{ base_image_inputs_dir }}/{{ item }}"
+    checksum_algorithm: sha256
+  loop: [manifest.json, manifest.json.sig, manifest-signing.pub.pem, goss]
+  register: base_inputs_files
+  when: base_inputs_kind_file.stat.exists
+
+- name: Collect the staged files (2B.15, 2B.6)
+  ansible.builtin.set_fact:
+    base_inputs_present: >-
+      {{ base_inputs_files.results | selectattr('stat', 'defined') | selectattr('stat.exists')
+         | map(attribute='item') | list }}
+    base_inputs_goss_sha256: >-
+      {{ base_inputs_files.results | selectattr('item', 'equalto', 'goss') | map(attribute='stat')
+         | map(attribute='checksum', default='') | first | default('') }}
+  when: base_inputs_kind_file.stat.exists
+
+- name: The trusted manifest, its signature and public key were staged (2B.15)
+  ansible.builtin.assert:
+    that:
+      - "'manifest.json' in base_inputs_present"
+      - "'manifest.json.sig' in base_inputs_present"
+      - "'manifest-signing.pub.pem' in base_inputs_present"
+    fail_msg: >-
+      The {{ base_build_kind }} build is missing the trusted manifest, its signature or the public key.
+      scripts/build.sh should have refused; rerun it.
+    quiet: true
+  when: base_inputs_kind_file.stat.exists
+
+- name: A release build carries goss for the provisioning self-test (2B.6)
+  ansible.builtin.assert:
+    that:
+      - "'goss' in base_inputs_present"
+    fail_msg: The release build has no goss binary. Fill pins.goss_linux_amd64 and rerun scripts/build.sh.
+    quiet: true
+  when:
+    - base_inputs_kind_file.stat.exists
+    - base_build_kind == 'release'
+
+- name: Check the manifest signature with the public key that will be baked in (2B.15)
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - pkeyutl
+      - -verify
+      - -pubin
+      - -inkey
+      - "{{ base_image_inputs_dir }}/manifest-signing.pub.pem"
+      - -rawin
+      - -in
+      - "{{ base_image_inputs_dir }}/manifest.json"
+      - -sigfile
+      - "{{ base_image_inputs_dir }}/manifest.json.sig"
+  register: base_inputs_verify
+  changed_when: false
+  failed_when: base_inputs_verify.rc != 0
+  when: base_inputs_kind_file.stat.exists
+
+- name: Check goss against its pin (2B.6)
+  ansible.builtin.assert:
+    that:
+      - pins.goss_linux_amd64.sha256 is string
+      - pins.goss_linux_amd64.sha256 is match('^[0-9a-f]{64}$')
+      - base_inputs_goss_sha256 == pins.goss_linux_amd64.sha256
+    fail_msg: >-
+      The staged goss does not match pins.goss_linux_amd64 (sha256 {{ base_inputs_goss_sha256 }}).
+      It was not installed; rerun scripts/build.sh.
+    quiet: true
+  when:
+    - base_inputs_kind_file.stat.exists
+    - "'goss' in base_inputs_present"
+
+- name: Make the folders for the baked files (2B.15, 2B.6)
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ airlock_state_dir }}", mode: "0750" }
+    - { path: "{{ airlock_etc_dir }}", mode: "0755" }
+    - { path: "{{ airlock_opt_dir }}/bin", mode: "0755" }
+  when: base_inputs_kind_file.stat.exists
+
+- name: Bake in the trusted manifest, its signature and the public key (2B.15)
+  ansible.builtin.copy:
+    src: "{{ base_image_inputs_dir }}/{{ item.src }}"
+    dest: "{{ item.dest }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - { src: manifest.json, dest: "{{ airlock_state_dir }}/manifest.json" }
+    - { src: manifest.json.sig, dest: "{{ airlock_state_dir }}/manifest.json.sig" }
+    - { src: manifest-signing.pub.pem, dest: "{{ airlock_etc_dir }}/manifest-signing.pub.pem" }
+  when: base_inputs_kind_file.stat.exists
+
+- name: Install goss for the provisioning self-test (2B.6)
+  ansible.builtin.copy:
+    src: "{{ base_image_inputs_dir }}/goss"
+    dest: "{{ airlock_opt_dir }}/bin/goss"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0755"
+  when:
+    - base_inputs_kind_file.stat.exists
+    - "'goss' in base_inputs_present"

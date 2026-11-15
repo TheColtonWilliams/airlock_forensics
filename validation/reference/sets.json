@@ -1,5 +1,5 @@
 {
-  "note": "Public reference sets with published ground truth (task 4F.2). Fetched on the host by validation/reference/fetch.sh, never on the AIRLOCK drive. sha256 null = not pinned yet: the hosts were not reachable from the authoring environment on 2026-11-15, so no hash and no size could be computed and each URL is the publisher's address as documented, not yet checked. A person with access runs 'fetch.sh --record --only ID' once, checks the publisher's page, and commits the recorded hash. scoring_truth names the file validation/run.sh scores against; it is written by hand from the published ground truth (format: docs/validation.md).",
+  "note": "Public reference sets with published ground truth (task 4F.2). Fetched on the host by validation/reference/fetch.sh, never on the AIRLOCK drive. sha256 null = not pinned yet: cfreds-archive.nist.gov was not reachable from the authoring environment on 2026-11-15, so the three CFReDS sets have no hash or size and their URLs are the publisher's addresses as documented, not yet checked. The two Digital Corpora sets were downloaded from the publisher's S3 bucket and hashed on 2026-11-15 (see url_checked). A person with access runs 'fetch.sh --record --only ID' once, checks the publisher's page, and commits the recorded hash. scoring_truth names the file validation/run.sh scores against; it is written by hand from the published ground truth (format: docs/validation.md).",
   "schema": 1,
   "sets": [
     {
@@ -88,10 +88,10 @@
       "image_name": "ntfs1-gen1.E01",
       "license": "Digital Corpora: free for research and education, see the publisher's terms",
       "publisher": "Digital Corpora",
-      "sha256": null,
-      "size": null,
-      "url": "https://downloads.digitalcorpora.org/corpora/drives/nps-2009-ntfs1/ntfs1-gen1.E01",
-      "url_checked": "not reachable from the authoring environment on 2026-11-15",
+      "sha256": "ed26b63cb37350fba5aaf18f8c871515ff787db98bfa1c5d92b179185168dd6e",
+      "size": 9332369,
+      "url": "https://digitalcorpora.s3.amazonaws.com/corpora/drives/nps-2009-ntfs1/ntfs1-gen1.E01",
+      "url_checked": "2026-11-15: downloaded from the publisher's S3 bucket (the origin behind downloads.digitalcorpora.org, which was not reachable from the authoring environment) and hashed; size matches the bucket listing. A person still checks the publisher's page and the ground truth before 4F.2 is closed.",
       "verify": "sha256"
     },
     {
@@ -107,13 +107,13 @@
         "scoring_truth": "validation/reference/truth/nps-2009-canon2-gen6.json"
       },
       "id": "nps-2009-canon2-gen6",
-      "image_name": "canon2-gen6.raw",
+      "image_name": "nps-2009-canon2-gen6.E01",
       "license": "Digital Corpora: free for research and education, see the publisher's terms",
       "publisher": "Digital Corpora",
-      "sha256": null,
-      "size": null,
-      "url": "https://downloads.digitalcorpora.org/corpora/drives/nps-2009-canon2/canon2-gen6.raw",
-      "url_checked": "not reachable from the authoring environment on 2026-11-15",
+      "sha256": "10483722d84e0cefcb693b11dea2d32dbd3ad2f06f8c9656688c8c730fe41579",
+      "size": 31144390,
+      "url": "https://digitalcorpora.s3.amazonaws.com/corpora/drives/nps-2009-canon2/nps-2009-canon2-gen6.E01",
+      "url_checked": "2026-11-15: the earlier name canon2-gen6.raw does not exist; the publisher's S3 bucket listing for corpora/drives/nps-2009-canon2/ has nps-2009-canon2-gen6.E01 (an E01 image, which validation/run.sh accepts). Downloaded from that bucket and hashed; size matches the listing. A person still checks the publisher's page and the ground truth before 4F.2 is closed.",
       "verify": "sha256"
     }
   ]

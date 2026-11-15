@@ -53,7 +53,8 @@ assert_ne "$RC" 0 "bad level must fail"
 
 # ---------------------------------------------------------------- run-ansible.sh
 stage="$TEST_TMP/stage"
-mkdir -p "$stage/ansible" "$stage/profiles"
+mkdir -p "$stage/ansible" "$stage/profiles" "$stage/docs" "$stage/tests/goss"
+printf 'file: {}\n' >"$stage/tests/goss/base.yaml"
 printf -- '- hosts: airlock\n' >"$stage/ansible/site.yml"
 printf '[defaults]\n' >"$stage/ansible/ansible.cfg"
 chmod 0777 "$stage/ansible/site.yml"
@@ -70,6 +71,8 @@ AIRLOCK_REPO_STAGE="$stage" AIRLOCK_REPO_DIR="$repo" AIRLOCK_BUILD_VARS_FILE="$T
   run bash "$scripts/run-ansible.sh"
 assert_eq "$RC" 0 "run-ansible exit"
 assert_file "$repo/ansible/site.yml"
+assert_file "$repo/tests/goss/base.yaml" "tests/goss in the repo copy (provisioning self-test)"
+[[ -d "$repo/docs" ]] || fail "docs/ missing from the repo copy"
 assert_eq "$(stat -c %a "$repo/ansible/site.yml")" 755 "repo copy is not group/world writable"
 assert_contains "$(cat "$calls")" "$repo/ansible"
 assert_contains "$(cat "$calls")" "-c local -i inventory.ini site.yml -e @$TEST_TMP/vars.json"
@@ -101,10 +104,14 @@ printf '{}' >"$TEST_TMP/vars2.json"
 : >"$calls"
 stub fstrim 'echo "/: 1 GiB trimmed"'
 stub fake-poweroff "touch '$TEST_TMP/powered-off'"
+mkdir -p "$TEST_TMP/inputs2"
+printf 'x' >"$TEST_TMP/inputs2/manifest.json"
 AIRLOCK_REPO_DIR="$repo" AIRLOCK_BUILD_VARS_FILE="$TEST_TMP/vars2.json" AIRLOCK_REPO_STAGE="$TEST_TMP/stage2" \
+  AIRLOCK_INPUTS_STAGE="$TEST_TMP/inputs2" \
   AIRLOCK_FINALIZE_CONSOLE="$console" AIRLOCK_FINALIZE_POWEROFF=fake-poweroff \
   run bash "$TEST_TMP/finalize.sh"
 assert_eq "$RC" 0 "finalize exit"
+assert_no_file "$TEST_TMP/inputs2" "build inputs upload folder removed"
 assert_contains "$(cat "$calls")" "--tags airlock_finalize"
 assert_contains "$(cat "$calls")" '{"base_finalize_build": true}'
 assert_contains "$(cat "$console")" "AIRLOCK-FINALIZE-OK"
@@ -133,8 +140,11 @@ stub cloud-init 'exit 2' # done with warnings: accepted
 stub systemctl "echo systemctl \"\$*\" >>'$calls'"
 stub apt-get "echo apt-get \"\$*\" >>'$calls'"
 stub ansible-playbook 'echo "ansible-playbook [core 2.16.3]"'
-AIRLOCK_BUILD_USER="$(id -un)" AIRLOCK_REPO_STAGE="$TEST_TMP/upload" run bash "$scripts/bootstrap.sh"
+AIRLOCK_BUILD_USER="$(id -un)" AIRLOCK_REPO_STAGE="$TEST_TMP/upload" AIRLOCK_INPUTS_STAGE="$TEST_TMP/inputs" \
+  run bash "$scripts/bootstrap.sh"
 assert_eq "$RC" 0 "bootstrap exit"
+[[ -d "$TEST_TMP/upload/tests" ]] || fail "tests/ upload folder (for tests/goss) not created"
+[[ -d "$TEST_TMP/inputs" ]] || fail "build inputs upload folder not created"
 assert_contains "$(cat "$calls")" "install -y --no-install-recommends ansible python3-apt"
 assert_contains "$(cat "$calls")" "DPkg::Lock::Timeout=900"
 [[ -d "$TEST_TMP/upload" ]] || fail "upload folder not created"

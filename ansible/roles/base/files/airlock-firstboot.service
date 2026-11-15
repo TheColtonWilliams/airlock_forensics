@@ -4,7 +4,7 @@
 Description=AIRLOCK first boot: machine ID and root filesystem size
 ConditionPathExists=!/var/lib/airlock/firstboot.done
 After=local-fs.target systemd-machine-id-commit.service
-Before=display-manager.service forensic-provision.service
+Before=display-manager.service airlock-provision.service
 
 [Service]
 Type=oneshot

@@ -24,10 +24,13 @@ file:
     title: '2A.6: the first-boot unit ran on this boot'
     exists: true
 
+# {{ if not (index .Vars "provision") }}
+# forensic-provision's self-test runs before the display manager, with "provision": true.
 service:
   gdm:
     title: '2A.6: the desktop started'
     running: true
+# {{ end }}
 
 mount:
   /:

@@ -74,6 +74,16 @@ variable "build_user" {
   description = "Temporary SSH user for Packer. Deleted by the final step of the build."
 }
 
+variable "image_inputs_dir" {
+  type        = string
+  description = "Folder scripts/build.sh fills for one build: manifest.json, manifest.json.sig, manifest-signing.pub.pem, goss, build-kind.json."
+
+  validation {
+    condition     = length(var.image_inputs_dir) > 0
+    error_message = "The image_inputs_dir variable must name the folder scripts/build.sh staged. Build with scripts/build.sh."
+  }
+}
+
 variable "build_ssh_public_key" {
   type        = string
   description = "Public half of the per-build key that scripts/build.sh generates. Never committed."

@@ -33,6 +33,11 @@ EXPECTED = {
     "/org/gnome/desktop/screensaver/lock-enabled": "false",
     "/org/gnome/desktop/lockdown/disable-lock-screen": "true",
     "/org/gnome/desktop/session/idle-delay": "uint32 0",
+    "/org/gnome/desktop/screensaver/idle-activation-enabled": "false",
+    "/org/gnome/desktop/screensaver/ubuntu-lock-on-suspend": "false",
+    "/org/gnome/settings-daemon/plugins/power/sleep-inactive-ac-type": "'nothing'",
+    "/org/gnome/settings-daemon/plugins/power/sleep-inactive-battery-type": "'nothing'",
+    "/org/gnome/settings-daemon/plugins/power/idle-dim": "false",
     "/org/freedesktop/tracker/miner/files/index-recursive-directories": "@as []",
     "/org/freedesktop/tracker/miner/files/enable-monitors": "false",
     "/org/freedesktop/tracker/miner/files/crawling-interval": "-2",
@@ -162,3 +167,28 @@ def test_indexer_names_cover_both_releases() -> None:
     units = defaults["harden_desktop_indexer_masked_user_units"]
     assert "tracker-miner-fs-3.service" in units  # Ubuntu 24.04 (GNOME 46)
     assert "localsearch-3.service" in units  # GNOME 47 and later
+
+
+SCREEN_LOCK_SCHEMAS = (
+    "org/gnome/desktop/screensaver",
+    "org/gnome/desktop/session",
+    "org/gnome/desktop/lockdown",
+    "org/gnome/settings-daemon/plugins/power",
+)
+
+
+def test_screen_lock_has_one_owner() -> None:
+    """1.2 and 5.1: only harden_desktop sets the screen lock and idle keys (decision log)."""
+    owners = []
+    for path in sorted(ROLES.glob("*/files/**/*")):
+        if not path.is_file() or "locks" in path.parts:
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        if any(f"[{schema}]" in text for schema in SCREEN_LOCK_SCHEMAS):
+            owners.append(path.relative_to(ROLES).as_posix())
+    assert owners == ["harden_desktop/files/dconf/20-airlock-screenlock"]
+    base_tasks = (ROLES / "base" / "tasks").glob("*.yml")
+    assert not any("screensaver" in p.read_text(encoding="utf-8") for p in base_tasks)

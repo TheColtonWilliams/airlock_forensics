@@ -211,3 +211,57 @@ def test_initramfs_modules_cover_usb_nvme_vmd_sata() -> None:
 
 def test_uas_quirk_default_names_no_vendor() -> None:
     assert DEFAULTS["base_uas_quirks"] == ""
+
+
+LIVE_SKIPPED = {
+    "boot_disk_facts.yml",
+    "partition_layout.yml",
+    "data_mounts.yml",
+    "grub_cmdline.yml",
+    "grub_usb_compat.yml",
+    "bootloader.yml",
+    "boot_chain.yml",
+    "firstboot.yml",
+}
+
+
+def test_live_target_skips_only_drive_steps() -> None:
+    """7.2: airlock_target=live skips the steps that only fit an installed drive."""
+    assert MAIN["airlock_target"] == "drive"
+    skipped = {
+        e["ansible.builtin.import_tasks"]
+        for e in imports()
+        if e.get("when") == "airlock_target != 'live'"
+    }
+    assert skipped == LIVE_SKIPPED
+    live_vars = REPO / "live" / "build.sh"
+    if live_vars.is_file():
+        assert '"airlock_target": "live"' in live_vars.read_text()
+
+
+def test_firstboot_unit_runs_before_the_provisioning_unit() -> None:
+    """1.10: the first-boot unit orders itself before the unit that really exists."""
+    unit = (ROLE / "files" / "airlock-firstboot.service").read_text()
+    before = re.search(r"^Before=(.*)$", unit, re.M)
+    assert before
+    names = before.group(1).split()
+    assert "airlock-provision.service" in names
+    assert "forensic-provision.service" not in names
+    provision = REPO / "ansible" / "roles" / "session_tools" / "files" / "systemd"
+    assert (provision / "airlock-provision.service").is_file()
+    assert (
+        "ConditionKernelCommandLine=!airlock.noprovision"
+        in (provision / "airlock-provision.service").read_text()
+    )
+
+
+def test_vm_test_hook_is_installed_and_wired_into_the_default_args() -> None:
+    """1.11 harness support: grub variable $airlock_test_args, set only by 06_airlock_vm_test."""
+    text = render_template("90-airlock.cfg.j2")
+    m = re.search(r'^GRUB_CMDLINE_LINUX_DEFAULT="([^"]*)"$', text, re.M)
+    assert m and m.group(1) == r"quiet splash \$airlock_test_args"
+    hook = (ROLE / "files" / "06_airlock_vm_test").read_text()
+    assert 'set airlock_test_args="airlock.noprovision"' in hook
+    tasks = yaml.safe_load((ROLE / "tasks" / "grub_cmdline.yml").read_text())
+    copies = [t["ansible.builtin.copy"] for t in tasks if "ansible.builtin.copy" in t]
+    assert any(c["src"] == "06_airlock_vm_test" and c["mode"] == "0755" for c in copies)

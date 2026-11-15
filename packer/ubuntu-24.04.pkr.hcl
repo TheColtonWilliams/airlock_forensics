@@ -110,10 +110,29 @@ build {
     script           = "${local.packer_dir}/scripts/bootstrap.sh"
   }
 
-  # The repo copy that forensic-provision reuses offline (docs/dev/contract.md section 2).
+  # The repo copy that forensic-provision reuses offline (docs/dev/contract.md section 2):
+  # ansible/, profiles/ and docs/ (evidence-report cites docs by path), plus tests/goss for the
+  # provisioning self-test. bootstrap.sh makes /var/tmp/airlock-repo/tests first.
   provisioner "file" {
-    sources     = ["${local.packer_dir}/../ansible", "${local.packer_dir}/../profiles"]
+    sources = [
+      "${local.packer_dir}/../ansible",
+      "${local.packer_dir}/../profiles",
+      "${local.packer_dir}/../docs",
+    ]
     destination = "/var/tmp/airlock-repo/"
+  }
+
+  provisioner "file" {
+    source      = "${local.packer_dir}/../tests/goss"
+    destination = "/var/tmp/airlock-repo/tests/"
+  }
+
+  # Build inputs that scripts/build.sh staged and checked on the build host (2B.15, 2B.6):
+  # the trusted manifest, its signature and public key, goss, and build-kind.json. The base
+  # role (image_inputs.yml) installs them; finalize.sh deletes this folder.
+  provisioner "file" {
+    source      = "${var.image_inputs_dir}/"
+    destination = "/var/tmp/airlock-inputs"
   }
 
   # Task 1.4: ansible-playbook -c local site.yml inside the guest.

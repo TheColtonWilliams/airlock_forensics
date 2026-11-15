@@ -7,6 +7,7 @@
 
 - name: Boot disk facts
   ansible.builtin.import_tasks: boot_disk_facts.yml
+  when: airlock_target != 'live'
 
 - name: Apt snapshot (6.1)
   ansible.builtin.import_tasks: apt_snapshot.yml
@@ -44,32 +45,49 @@
 - name: Desktop autologin (1.2)
   ansible.builtin.import_tasks: gdm_autologin.yml
 
-- name: Screen lock off (1.2)
-  ansible.builtin.import_tasks: screen_lock.yml
+# Screen lock off (1.2) is owned by harden_desktop (screen_lock_off.yml, control 5.1),
+# which runs right after this role and again last (decision log 2026-11-15).
+
+# Steps that only fit an installed drive are skipped for the live ISO (airlock_target=live,
+# task 7.2, live/build.sh): it has no AIRLOCK partitions, boots through casper, and gets the
+# kernel command line from live-build. harden_storage skips its grub file check to match.
 
 - name: Drive layout (2B.9, 2B.17)
   ansible.builtin.import_tasks: partition_layout.yml
+  when: airlock_target != 'live'
 
 - name: ASSETS and OUTPUT mounts (2B.13, 2B.17)
   ansible.builtin.import_tasks: data_mounts.yml
+  when: airlock_target != 'live'
 
+# Must stay in the base role: harden_storage (next in the first play of site.yml) checks the
+# 90-airlock.cfg written here (tests/unit/test_site_order.py).
 - name: Kernel command line (3.3, 3.4, 3A.1 applied)
   ansible.builtin.import_tasks: grub_cmdline.yml
+  when: airlock_target != 'live'
 
 - name: USB compatibility boot entry (1.12)
   ansible.builtin.import_tasks: grub_usb_compat.yml
+  when: airlock_target != 'live'
 
 - name: Portable boot loader (1.9)
   ansible.builtin.import_tasks: bootloader.yml
+  when: airlock_target != 'live'
 
 - name: Secure Boot chain check (1.13)
   ansible.builtin.import_tasks: boot_chain.yml
+  when: airlock_target != 'live'
 
 - name: QEMU guest agent for the VM tests (1.11)
   ansible.builtin.import_tasks: guest_agent.yml
 
 - name: First-boot unit (1.10)
   ansible.builtin.import_tasks: firstboot.yml
+  when: airlock_target != 'live'
+
+- name: Trusted manifest, its key, and goss baked in (2B.15, 2B.6)
+  ansible.builtin.import_tasks: image_inputs.yml
+  when: airlock_phase == 'image'
 
 - name: Build information (1.5)
   ansible.builtin.import_tasks: build_info.yml

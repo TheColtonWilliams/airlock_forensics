@@ -320,3 +320,54 @@ def test_mdraid_refuses_a_tiny_member() -> None:
             dev_sectors=100,
             when=0,
         )
+
+
+# ---------------------------------------------------- goss variables (harness and provisioning)
+
+GOSS_DIR = LIB.parents[1] / "goss"
+HARNESS_VARS = {
+    "disks": {"ext4": "/dev/disk/by-id/virtio-airlock-ext4", "ntfs": "", "sig": "", "swap": ""},
+    "firmware": "uefi",
+    "nic": False,
+    "provision": False,
+}
+PROVISION_VARS = {"disks": {}, "firmware": "uefi", "nic": False, "provision": True}
+
+
+def _render(path: Path, variables: dict | None) -> str:
+    argv = ["goss", "-g", str(path)]
+    if variables is not None:
+        argv += ["--vars-inline", json.dumps(variables)]
+    res = subprocess.run([*argv, "render"], capture_output=True, text=True, check=False)
+    assert res.returncode == 0, f"{path.name}: {res.stderr}"
+    return res.stdout
+
+
+def test_every_goss_file_is_plain_yaml_before_rendering() -> None:
+    """Template directives live in YAML comments, so unit tests can read the files directly."""
+    yaml = pytest.importorskip("yaml")
+    for path in sorted(GOSS_DIR.glob("*.yaml")):
+        assert isinstance(yaml.safe_load(path.read_text(encoding="utf-8")), dict), path.name
+
+
+@pytest.mark.skipif(shutil.which("goss") is None, reason="needs goss")
+@pytest.mark.parametrize(
+    "variables", [None, HARNESS_VARS, PROVISION_VARS], ids=["no-vars", "harness", "provision"]
+)
+def test_goss_files_render_with_harness_and_provision_vars(variables: dict | None) -> None:
+    for path in sorted(GOSS_DIR.glob("*.yaml")):
+        _render(path, variables)
+
+
+@pytest.mark.skipif(shutil.which("goss") is None, reason="needs goss")
+def test_provision_self_test_skips_disk_and_desktop_checks() -> None:
+    """forensic-provision passes provision=true and no disks; the harness passes provision=false."""
+    checks = {
+        "storage.yaml": "airlock-setro --check",
+        "base.yaml": "desktop-session:",
+        "smoke.yaml": "the desktop started",
+    }
+    for name, needle in checks.items():
+        assert needle in _render(GOSS_DIR / name, HARNESS_VARS), name
+        assert needle not in _render(GOSS_DIR / name, PROVISION_VARS), name
+    assert "    gdm:" not in _render(GOSS_DIR / "base.yaml", PROVISION_VARS)

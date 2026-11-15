@@ -1,6 +1,8 @@
 # goss checks for harden_storage (tasks 3.1 to 3.4, 3.8, 3A.1, 3A.2, 3A.4). Run inside the booted
 # image by tests/run-qemu-tests.sh, which attaches extra virtual disks (ext4, one with a swap-type
-# partition, one with LVM/mdraid/swap signatures). Check syntax with: goss -g tests/goss/storage.yaml render
+# partition, one with LVM/mdraid/swap signatures). forensic-provision runs it too, with
+# --vars-inline '{"provision": true, "disks": {}}': checks that need the test disks are skipped then.
+# Check syntax with: goss -g tests/goss/storage.yaml render
 # Every unit masked by the role has a check here; tests/unit/test_harden_coverage.py enforces it.
 file:
   /etc/systemd/system/udisks2.service:
@@ -237,6 +239,9 @@ command:
       - '/(^|\s)rd\.dm=0(\s|$)/'
       - '/(^|\s)rd\.luks=0(\s|$)/'
       - '/(^|\s)nodmraid(\s|$)/'
+  # {{ if not (index .Vars "provision") }}
+  # Needs the QEMU test disks; skipped in forensic-provision's self-test ("provision": true,
+  # which refuses to run with a second disk attached).
   'software read-only policy':
     title: '3.2, 3.8: every sd/nvme/mmcblk/vd device off the boot disk is read-only (needs at least one extra disk)'
     exec: /usr/local/sbin/airlock-setro --check
@@ -245,6 +250,7 @@ command:
       - '/^ro /'
       - '/writable=0$/'
     timeout: 30000
+  # {{ end }}
   'no swap':
     title: '3.3, 3.8: no swap is active, even with a swap-type partition attached'
     exec: 'test -z "$(swapon --show --noheadings)"'

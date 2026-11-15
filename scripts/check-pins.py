@@ -294,6 +294,10 @@ def bake_policy(pin: dict[str, Any]) -> str:
     stage = pin.get("stage")
     tags = set(pin.get("profiles") or [])
     if stage == "build":
+        # A build-host download that scripts/build.sh hands to the image build (tag ``image``),
+        # such as goss for the provisioning self-test, ends up in the image.
+        if "image" in tags:
+            return "yes: fetched on the build host, baked by the build"
         return "n/a: build host only"
     if stage == "image":
         return "yes: baked by the build"

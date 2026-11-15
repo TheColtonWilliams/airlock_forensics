@@ -6,6 +6,11 @@ airlock_version: "0.1.0-dev"
 # provision: first boot on the analyst's PC, offline, stage=assets pins read from ASSETS.
 airlock_phase: image
 
+# drive: the installed USB drive (Packer build, default). live: the amnesic live ISO
+# (live/build.sh, task 7.2); the base role then skips the partition layout, data mounts,
+# boot loader, grub settings and first-boot unit.
+airlock_target: drive
+
 airlock_user: analyst
 airlock_parse_user: airlock-parse
 

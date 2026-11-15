@@ -1,6 +1,8 @@
-# Control 5.1: the screen never locks. The analyst account has a locked password, so a lock screen
-# could never be unlocked and a long run would be lost. Keys locked.
-# Test: tests/goss/desktop.yaml (dconf read lock-enabled false, disable-lock-screen true)
+# Control 5.1 (also task 1.2, "autologin, no lock"): the screen never locks, never blanks into a
+# lock, and the PC never suspends on idle. The analyst account has a locked password, so a lock
+# screen could never be unlocked and a long run would be lost. Keys locked. This is the only
+# place these keys are set; the base role no longer writes its own copy (decision log 2026-11-15).
+# Test: tests/goss/desktop.yaml (dconf read and list-locks), tests/unit/test_harden_desktop.py
 - name: Screen lock | dconf profile reads the local system database
   ansible.builtin.import_tasks: _dconf_profile.yml
 

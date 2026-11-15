@@ -8,11 +8,6 @@
     argv: [update-grub]
   changed_when: true
 
-- name: Base dconf update
-  ansible.builtin.command:
-    argv: [dconf, update]
-  changed_when: true
-
 - name: Base systemd reload
   ansible.builtin.systemd_service:
     daemon_reload: true

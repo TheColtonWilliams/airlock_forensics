@@ -13,6 +13,7 @@ set -Eeuo pipefail
 repo_dir="${AIRLOCK_REPO_DIR:-/opt/airlock/repo}"
 vars_file="${AIRLOCK_BUILD_VARS_FILE:-/var/tmp/airlock-build-vars.json}"
 repo_stage="${AIRLOCK_REPO_STAGE:-/var/tmp/airlock-repo}"
+inputs_stage="${AIRLOCK_INPUTS_STAGE:-/var/tmp/airlock-inputs}"
 console="${AIRLOCK_FINALIZE_CONSOLE:-/dev/ttyS0}"
 poweroff_cmd="${AIRLOCK_FINALIZE_POWEROFF:-systemctl poweroff}"
 
@@ -47,7 +48,7 @@ say "removing build access (ansible tag airlock_finalize)"
 ansible-playbook -c local -i inventory.ini site.yml --tags airlock_finalize \
   -e "@$vars_file" -e '{"base_finalize_build": true}' 2>&1 | tee -a -- "$console"
 
-rm -rf -- "$repo_stage" "$vars_file"
+rm -rf -- "$repo_stage" "$inputs_stage" "$vars_file"
 
 say "trimming free space so the raw image stays sparse"
 fstrim -av 2>&1 | tee -a -- "$console" || say "fstrim reported a problem; the image is still valid but compresses less"

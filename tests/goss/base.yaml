@@ -1,5 +1,7 @@
 # Base role and image build checks. Run inside the booted image by tests/run-qemu-tests.sh
-# (goss validate, guest network off). Each check names the task it proves.
+# (goss validate, guest network off) and by forensic-provision's self-test (--vars-inline with
+# "provision": true; checks that need a running desktop are skipped then). Each check names the
+# task it proves.
 
 user:
   # 1.2: the analyst account exists; its password is locked (see command analyst-password-locked).
@@ -46,7 +48,7 @@ package:
     installed: true
 
 file:
-  # 1.2: passwordless sudo, autologin, no screen lock.
+  # 1.2: passwordless sudo and autologin.
   /etc/sudoers.d/90-airlock-analyst:
     exists: true
     mode: "0440"
@@ -59,18 +61,10 @@ file:
       - "/^AutomaticLoginEnable=true$/"
       - "/^AutomaticLogin=analyst$/"
       - "/^InitialSetupEnable=false$/"
+  # 1.2 "no screen lock": set once, by harden_desktop (tests/goss/desktop.yaml, 5.1). The old
+  # base-role copy must not come back as a second owner.
   /etc/dconf/db/local.d/10-airlock-session:
-    exists: true
-    contents:
-      - "/^lock-enabled=false$/"
-      - "/^idle-delay=uint32 0$/"
-      - "/^disable-lock-screen=true$/"
-      - "/^sleep-inactive-ac-type='nothing'$/"
-  /etc/dconf/db/local.d/locks/10-airlock-session:
-    exists: true
-    contents:
-      - "/^\\/org\\/gnome\\/desktop\\/screensaver\\/lock-enabled$/"
-      - "/^\\/org\\/gnome\\/desktop\\/session\\/idle-delay$/"
+    exists: false
   /etc/dconf/profile/user:
     exists: true
     contents:
@@ -153,6 +147,21 @@ file:
       - "/\"git_commit\": /"
       - "/\"version\": /"
       - "/\"apt_snapshot\": /"
+      - "/\"build_kind\": \"(release|dev)\"/"
+  # 2B.15: the trusted manifest and its public key are baked in (airlock_common.paths).
+  /var/lib/airlock/manifest.json:
+    exists: true
+    mode: "0644"
+    owner: root
+  /var/lib/airlock/manifest.json.sig:
+    exists: true
+    owner: root
+  /etc/airlock/manifest-signing.pub.pem:
+    exists: true
+    mode: "0644"
+    owner: root
+    contents:
+      - "/BEGIN PUBLIC KEY/"
   # 1.5, 1.2: no build access left.
   /etc/cloud/cloud-init.disabled:
     exists: true
@@ -180,9 +189,12 @@ service:
   airlock-firstboot:
     enabled: false
     running: false
-  # 1.8, 1.2: the desktop runs.
+  # {{ if not (index .Vars "provision") }}
+  # 1.8, 1.2: the desktop runs. Not yet during forensic-provision's self-test (it runs before
+  # the display manager starts), so skipped when .Vars.provision is true.
   gdm:
     running: true
+  # {{ end }}
   # 1.2: no SSH daemon.
   ssh:
     enabled: false
@@ -225,13 +237,15 @@ command:
     exit-status: 0
     stdout:
       - "/^analyst L /"
-  # 1.2: autologin reached a desktop session on seat0.
+  # {{ if not (index .Vars "provision") }}
+  # 1.2: autologin reached a desktop session on seat0 (not yet during provisioning, see gdm).
   desktop-session:
     exec: loginctl list-sessions --no-legend
     exit-status: 0
     stdout:
       - "/analyst/"
       - "/seat0/"
+  # {{ end }}
   # 3.3, 3.4, 3A.1 (applied by base): every airlock_kernel_cmdline entry is on the running kernel.
   # tests/unit/test_base_role.py keeps this list equal to group_vars/all/main.yml.
   kernel-cmdline:
@@ -247,6 +261,19 @@ command:
       - "/(^| )rd\\.luks=0( |$)/"
       - "/(^| )nodmraid( |$)/"
       - "/(^| )rfkill\\.default_state=0( |$)/"
+  # 2B.15: the baked manifest verifies against the baked public key.
+  baked-manifest-signature:
+    exec: >-
+      openssl pkeyutl -verify -pubin -inkey /etc/airlock/manifest-signing.pub.pem -rawin
+      -in /var/lib/airlock/manifest.json -sigfile /var/lib/airlock/manifest.json.sig
+    exit-status: 0
+  # 2B.6: goss is baked in for forensic-provision's self-test (a dev build may lack it when
+  # pins.goss_linux_amd64 was not pinned; build-info.json then says dev).
+  goss-baked:
+    exec: >-
+      if [ -x /opt/airlock/bin/goss ]; then /opt/airlock/bin/goss --help >/dev/null && echo "goss baked";
+      else grep -q '"build_kind": "dev"' /etc/airlock/build-info.json && echo "dev build without goss"; fi
+    exit-status: 0
   # 1.3: running a generic-flavour kernel.
   kernel-generic:
     exec: uname -r

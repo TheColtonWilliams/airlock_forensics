@@ -7,9 +7,14 @@ build-tool spike.
 ## In one line
 
 ```
-scripts/build.sh            # needs Linux x86_64 with KVM; about an hour
+scripts/build.sh --dev      # test build; needs Linux x86_64 with KVM; about an hour
 tests/run-qemu-tests.sh --image output/airlock-<version>/airlock-<version>.raw
 ```
+
+A release build is `scripts/build.sh` without `--dev`. It needs the signed asset manifest in
+`assets/` (`manifest.json`, `manifest.json.sig`, `manifest-signing.pub.pem`, written by the
+release workflow) and stops if any is missing or the signature does not verify. See
+"Build inputs baked into the image" below.
 
 The build writes `output/airlock-<version>/`:
 
@@ -34,7 +39,9 @@ Without KVM the build refuses; `--accel tcg` emulates instead and takes many hou
 1. Reads `ansible/group_vars/all/pins.yml` (`ubuntu_server_iso` URL and SHA-256; it refuses a
    null hash) and `ansible/group_vars/all/main.yml` (version, `apt_snapshot`, partition sizes).
 2. Makes a fresh Ed25519 key for this build only (in a temporary folder, deleted at the end).
-3. Writes the Packer variables and runs `packer validate`, then `packer build` on
+3. Stages the build inputs (trusted manifest, its signature and public key, goss,
+   `build-kind.json`) in that temporary folder; see below.
+4. Writes the Packer variables and runs `packer validate`, then `packer build` on
    `packer/ubuntu-24.04.pkr.hcl`. `--dry-run` prints the variables and the command instead.
    `SOURCE_DATE_EPOCH` sets the recorded build date.
 
@@ -46,17 +53,38 @@ Inside the build VM (QEMU, UEFI firmware):
    (task 6.1), the drive layout below, no swap, no LVM. Two accounts: `analyst` with a locked
    password and no key, and `airlock-build`, which only has the per-build key.
 2. `packer/scripts/bootstrap.sh` waits for cloud-init and installs Ansible from the snapshot.
-3. The repo's `ansible/` and `profiles/` are copied to `/opt/airlock/repo` and
-   `packer/scripts/run-ansible.sh` runs `ansible-playbook -c local site.yml` with
-   `airlock_phase=image` (task 1.4). `--idempotence-check` runs it twice and fails on any change.
+3. The repo's `ansible/`, `profiles/`, `docs/` and `tests/goss/` are copied to
+   `/opt/airlock/repo` (what offline provisioning and its goss self-test read), the build
+   inputs to `/var/tmp/airlock-inputs`, and `packer/scripts/run-ansible.sh` runs
+   `ansible-playbook -c local site.yml` with `airlock_phase=image` (task 1.4).
+   `--idempotence-check` runs it twice and fails on any change.
 4. **Finalize** (`packer/scripts/finalize.sh`, started by Packer's shutdown command in its own
    systemd unit): runs `site.yml --tags airlock_finalize`, which purges the SSH server, deletes
    `airlock-build`, its sudo rule and the installer's cloud-init and network files, disables
-   cloud-init, empties `/etc/machine-id`, and cleans the apt cache; then trims free space,
+   cloud-init, empties `/etc/machine-id`, and cleans the apt cache; deletes the upload folders;
+   then trims free space,
    writes `AIRLOCK-FINALIZE-OK` to the serial port, and powers off. If anything fails it writes
    `AIRLOCK-FINALIZE-FAILED` and does not power off, so the build times out and fails.
 5. **Post-processor** (`packer/scripts/postprocess.sh`, on the host): refuses the image unless the
    serial log has `AIRLOCK-FINALIZE-OK`, compresses it, tests the archive, writes `SHA256SUMS`.
+
+## Build inputs baked into the image
+
+The image never downloads anything for these; `scripts/build.sh` prepares them on the build
+host, Packer uploads them, and the base role (`image_inputs.yml`) checks them again before
+installing them (decision log 2026-11-15).
+
+| Input | Release build (default) | `--dev` build | Installed at |
+|---|---|---|---|
+| Asset manifest + signature | `assets/manifest.json`, `assets/manifest.json.sig` (or `--manifest-dir DIR`); refused if missing or if the signature does not verify | made from this checkout by `scripts/gen-manifest.py` (release `<version>-dev`) and signed with a throwaway key | `/var/lib/airlock/manifest.json`, `.sig` |
+| Public key | `assets/manifest-signing.pub.pem` | the throwaway key's public half; the private half is deleted right after signing | `/etc/airlock/manifest-signing.pub.pem` |
+| goss | `pins.goss_linux_amd64`, SHA-256 checked, cached in `cache/sha256/`; required | the same; skipped with a warning while the pin is null | `/opt/airlock/bin/goss` (provisioning self-test, 2B.6) |
+| Build kind | `release` | `dev` | `"build_kind"` in `/etc/airlock/build-info.json` |
+
+A dev image trusts only its own throwaway key, so it provisions from what the fetcher staged
+(checked against the dev manifest) but never accepts a release-signed manifest from ASSETS as
+newer. Never publish a dev image. `--dry-run` prints the build kind and the staged files;
+`--prepare-tools` also fetches goss into the cache.
 
 ## Drive layout (contract section 3)
 
@@ -137,12 +165,21 @@ tests/run-qemu-tests.sh --image IMAGE.raw [--firmware uefi,uefi-sb,bios] [--nic]
   optionally `airlock-ntfs` (`--ntfs-fixture FILE`). Each is hashed before and after; any
   change fails the run.
 * No network device unless `--nic` (then a QEMU user-mode NIC with `restrict=on`).
+* Offline provisioning is kept out of the way: the guest gets the SMBIOS OEM string
+  `airlock.noprovision` (`-smbios type=11,...`); the image's grub hook
+  `/etc/grub.d/06_airlock_vm_test` turns exactly that word into `airlock.noprovision` on the
+  kernel command line, and `airlock-provision.service` (`ConditionKernelCommandLine=!airlock.noprovision`)
+  skips. The harness fails the run if the word did not arrive. `--provision` leaves it off.
 * Talks to the guest only through the QEMU guest agent on a virtio serial port: copies in the
   host's goss binary, `tests/goss/*.yaml` and `tests/vm/*.sh`, checks the firmware actually
   used and that systemd reaches `running`, then runs every goss file and every VM test as root.
   VM tests get `AIRLOCK_TEST_DIR`, `AIRLOCK_TEST_FIRMWARE`, `AIRLOCK_TEST_NIC` and
   `AIRLOCK_TEST_DISK_{EXT4,SWAP,SIG,NTFS}`; goss files get the same as `--vars-inline`
-  (`.Vars.disks.ext4`, `.Vars.firmware`, `.Vars.nic`), and `AIRLOCK_SIGDISK_SHA256` carries the host's hash of the sig disk. Exit 77 from a VM test is a skip.
+  (`.Vars.disks.ext4`, `.Vars.firmware`, `.Vars.nic`, `.Vars.provision` false), and `AIRLOCK_SIGDISK_SHA256` carries the host's hash of the sig disk. Exit 77 from a VM test is a skip.
+* The same goss files run inside `forensic-provision`'s self-test with `.Vars.provision` true
+  and no disks. Checks that need the test disks or a running desktop sit inside
+  `# {{ if not (index .Vars "provision") }}` ... `# {{ end }}` (template directives in YAML
+  comments, so the files stay plain YAML for the unit tests).
 * `--dry-run` prints the plan and the QEMU command lines; `--keep-work` and `--results DIR` keep
   the serial logs and per-test output.
 

@@ -15,9 +15,12 @@ var() { python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))[sys
 json_of() { printf '%s\n' "$1" | sed -n '/^{/,/^}/p'; }
 jget() { python3 -c 'import json,sys; print(json.loads(sys.stdin.read())[sys.argv[1]])' "$1"; }
 
-# ---------------------------------------------------------------- dry run
-SOURCE_DATE_EPOCH=1700000000 run "$build" --dry-run --output "$TEST_TMP/out" --var boot_wait=5s
+# ---------------------------------------------------------------- dry run (dev build)
+SOURCE_DATE_EPOCH=1700000000 run "$build" --dev --dry-run --output "$TEST_TMP/out" --var boot_wait=5s
 assert_eq "$RC" 0 "dry run: $OUT"
+assert_contains "$OUT" "build_kind=dev"
+assert_contains "$OUT" "DEV build: throwaway manifest signing key"
+assert_contains "$OUT" "image inputs: build-kind.json manifest-signing.pub.pem manifest.json manifest.json.sig"
 vars="$(json_of "$OUT")"
 assert_eq "$(jget iso_sha256 <<<"$vars")" "$(pin ubuntu_server_iso sha256)" "ISO hash from pins.yml"
 assert_eq "$(jget iso_url <<<"$vars")" "$(pin ubuntu_server_iso url)" "ISO URL from pins.yml"
@@ -31,10 +34,39 @@ assert_eq "$(jget build_date <<<"$vars")" "2023-11-14T22:13:20Z" "SOURCE_DATE_EP
 assert_eq "$(jget output_dir <<<"$vars")" "$TEST_TMP/out" "output folder"
 assert_eq "$(jget boot_wait <<<"$vars")" "5s" "--var override"
 assert_eq "$(jget build_ssh_private_key_file <<<"$vars")" "<temporary>" "key path not shown"
+assert_eq "$(jget image_inputs_dir <<<"$vars")" "<temporary>" "inputs folder is per build"
 assert_contains "$OUT" "packer_version=1.11.2"
 assert_contains "$OUT" "qemu_plugin_version=1.1.8"
 assert_contains "$OUT" "command: packer build -var-file="
 assert_not_contains "$OUT" "PRIVATE KEY"
+
+# ---------------------------------------------------------------- release build: signed manifest required
+# No manifest in the folder: refused, with the way out named.
+mkdir -p "$TEST_TMP/no-manifest"
+run "$build" --dry-run --manifest-dir "$TEST_TMP/no-manifest"
+assert_eq "$RC" 1 "release build without a manifest refused"
+assert_contains "$OUT" "release build: $TEST_TMP/no-manifest/manifest.json is missing"
+assert_contains "$OUT" "--dev"
+
+# A signed manifest (made here with a throwaway key, as the release workflow does with its own).
+rel="$TEST_TMP/release-assets"
+"$REPO_ROOT/scripts/gen-signing-key.sh" --out-dir "$TEST_TMP/relkey" >/dev/null
+python3 "$REPO_ROOT/scripts/gen-manifest.py" --release v9.9.9 --out "$rel/manifest.json" >/dev/null 2>&1
+"$REPO_ROOT/scripts/sign-manifest.sh" --key "$TEST_TMP/relkey/manifest-signing.key.pem" \
+  --manifest "$rel/manifest.json" >/dev/null
+cp "$TEST_TMP/relkey/manifest-signing.pub.pem" "$rel/"
+run "$build" --dry-run --manifest-dir "$rel"
+assert_eq "$RC" 0 "release dry run: $OUT"
+assert_contains "$OUT" "build_kind=release"
+assert_contains "$OUT" "signature verified"
+assert_not_contains "$OUT" "DEV build"
+
+# A manifest changed after signing: refused.
+cp -r "$rel" "$TEST_TMP/tampered"
+printf ' ' >>"$TEST_TMP/tampered/manifest.json"
+run "$build" --dry-run --manifest-dir "$TEST_TMP/tampered"
+assert_eq "$RC" 1 "edited manifest refused"
+assert_contains "$OUT" "does not verify"
 
 # ---------------------------------------------------------------- refusals
 bad_pins="$TEST_TMP/pins-null.yml"
@@ -98,15 +130,20 @@ with zipfile.ZipFile(os.path.join(dl, "packer.zip"), "w") as z:
 with zipfile.ZipFile(os.path.join(dl, "plugin.zip"), "w") as z:
     z.writestr("LICENSE.txt", "MPL-2.0")
     z.writestr("packer-plugin-qemu_v1.1.8_x5.0_linux_amd64", "#!/bin/sh\nexit 0\n")
+with open(os.path.join(dl, "goss-linux-amd64"), "w") as f:
+    f.write("#!/bin/sh\necho fake goss\n")
 PY
 fake_pins="$TEST_TMP/pins-fake.yml"
-python3 - "$pins" "$fake_pins" "$(sha256_of "$dl/packer.zip")" "$(sha256_of "$dl/plugin.zip")" <<'PY'
+python3 - "$pins" "$fake_pins" "$(sha256_of "$dl/packer.zip")" "$(sha256_of "$dl/plugin.zip")" \
+  "$(sha256_of "$dl/goss-linux-amd64")" <<'PY'
 import sys, yaml
 d = yaml.safe_load(open(sys.argv[1]))
 d["pins"]["packer_linux_amd64"]["url"] = "https://releases.example.invalid/packer.zip"
 d["pins"]["packer_linux_amd64"]["sha256"] = sys.argv[3]
 d["pins"]["packer_plugin_qemu_linux_amd64"]["url"] = "https://releases.example.invalid/plugin.zip"
 d["pins"]["packer_plugin_qemu_linux_amd64"]["sha256"] = sys.argv[4]
+d["pins"]["goss_linux_amd64"]["url"] = "https://releases.example.invalid/goss-linux-amd64"
+d["pins"]["goss_linux_amd64"]["sha256"] = sys.argv[5]
 yaml.safe_dump(d, open(sys.argv[2], "w"))
 PY
 stub packer 'echo "Packer v0.0.1"' # wrong version on PATH: build.sh must fetch the pinned one
@@ -120,6 +157,23 @@ assert_eq "$RC" 0 "prepare tools: $OUT"
 assert_file "$TEST_TMP/cache/tools/packer-1.11.2/packer"
 assert_file "$TEST_TMP/cache/tools/qemu-plugin-1.1.8/packer-plugin-qemu_v1.1.8_x5.0_linux_amd64"
 assert_contains "$(cat "$log")" "plugins install --path $TEST_TMP/cache/tools/qemu-plugin-1.1.8/packer-plugin-qemu_v1.1.8_x5.0_linux_amd64 github.com/hashicorp/qemu"
+goss_sha="$(sha256_of "$dl/goss-linux-amd64")"
+assert_file "$TEST_TMP/cache/sha256/$goss_sha.goss" "pinned goss fetched into the cache"
+
+# The cached goss is staged for the image, checked against its pin (2B.6).
+run "$build" --dev --dry-run --pins "$fake_pins" --cache "$TEST_TMP/cache"
+assert_eq "$RC" 0 "dev dry run with goss: $OUT"
+assert_contains "$OUT" "goss=$goss_sha (cached)"
+assert_contains "$OUT" "image inputs: build-kind.json goss manifest-signing.pub.pem"
+run "$build" --dry-run --pins "$fake_pins" --cache "$TEST_TMP/cache" --manifest-dir "$rel"
+assert_eq "$RC" 0 "release dry run with goss: $OUT"
+assert_contains "$OUT" "goss=$goss_sha (cached)"
+# A cached file that no longer matches the pin is refused.
+printf 'changed' >>"$TEST_TMP/cache/sha256/$goss_sha.goss"
+run "$build" --dev --dry-run --pins "$fake_pins" --cache "$TEST_TMP/cache"
+assert_eq "$RC" 1 "changed cached goss refused"
+assert_contains "$OUT" "does not match pins.goss_linux_amd64.sha256"
+cp "$dl/goss-linux-amd64" "$TEST_TMP/cache/sha256/$goss_sha.goss"
 
 # Second run: cached zip and installed plugin are reused, nothing is downloaded again.
 stub curl 'echo "unexpected download" >&2; exit 9'

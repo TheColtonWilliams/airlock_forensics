@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # Runs inside the build VM as root, as Packer's first provisioner (task 1.4).
 # Waits for cloud-init, then installs Ansible from the dated apt snapshot that the
-# autoinstall configured (task 6.1), and makes the upload folder for the repo copy.
+# autoinstall configured (task 6.1), and makes the upload folders: the repo copy (with tests/
+# for tests/goss) and the build inputs scripts/build.sh staged (manifest, key, goss).
 # Test: tests/functional/test_build_packer_scripts.sh
 set -euo pipefail
 
 build_user="${AIRLOCK_BUILD_USER:-airlock-build}"
 repo_stage="${AIRLOCK_REPO_STAGE:-/var/tmp/airlock-repo}"
+inputs_stage="${AIRLOCK_INPUTS_STAGE:-/var/tmp/airlock-inputs}"
 apt_lock_timeout="${AIRLOCK_APT_LOCK_TIMEOUT:-900}"
 
 log() { printf 'airlock-bootstrap: %s\n' "$*"; }
@@ -40,6 +42,8 @@ apt-get "${apt_opts[@]}" update ||
 apt-get "${apt_opts[@]}" install -y --no-install-recommends ansible python3-apt ||
   die "installing Ansible failed. Read the apt output above, then rerun scripts/build.sh."
 
-install -d -m 0750 -o "$build_user" -g "$build_user" -- "$repo_stage" ||
+install -d -m 0750 -o "$build_user" -g "$build_user" -- "$repo_stage" "$repo_stage/tests" ||
   die "could not create $repo_stage for the repo upload."
+install -d -m 0750 -o "$build_user" -g "$build_user" -- "$inputs_stage" ||
+  die "could not create $inputs_stage for the build inputs upload."
 log "ok: $(ansible-playbook --version | head -n1)"

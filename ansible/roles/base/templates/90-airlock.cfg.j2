@@ -4,7 +4,10 @@
 # (tasks 3.3, 3.4, 3A.1); the harden_storage role asserts it.
 # Tests: tests/unit/test_base_role.py, tests/goss/base.yaml (kernel-cmdline).
 GRUB_CMDLINE_LINUX="{{ airlock_kernel_cmdline | join(' ') }}"
-GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"
+# $airlock_test_args is a grub variable, empty on every real PC. It is set only by
+# /etc/grub.d/06_airlock_vm_test, to exactly "airlock.noprovision", when the QEMU test
+# harness asks for it (decision log 2026-11-15). Same pattern as Ubuntu's $vt_handoff.
+GRUB_CMDLINE_LINUX_DEFAULT="quiet splash \$airlock_test_args"
 GRUB_TIMEOUT_STYLE=menu
 GRUB_TIMEOUT={{ base_grub_timeout }}
 GRUB_RECORDFAIL_TIMEOUT={{ base_grub_timeout }}

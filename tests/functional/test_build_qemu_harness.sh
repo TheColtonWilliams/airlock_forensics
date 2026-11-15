@@ -37,7 +37,9 @@ for line in "$uefi" "$sb" "$bios"; do
   assert_contains "$line" 'serial=airlock-swap'
   assert_contains "$line" "-accel tcg"
   assert_contains "$line" "-display none"
+  assert_contains "$line" "-smbios type=11\\,value=airlock.noprovision" "unprovisioned image: provisioning skipped"
 done
+assert_contains "$OUT" "noprovision=1"
 assert_contains "$OUT" "overlay_size=$((256 * 1024 * 1024 + 4 * 1024 * 1024 * 1024))"
 assert_contains "$OUT" "goss files: "
 
@@ -47,6 +49,11 @@ bios="$(argv_for "$OUT" bios)"
 assert_contains "$bios" 'user\,model=virtio-net-pci\,restrict=on' "restricted NIC for the air-gap test"
 assert_contains "$bios" 'usb-storage\,bus=xhci.0\,drive=bootdisk'
 assert_not_contains "$bios" "airlock-ext4" "no test disks"
+
+run "$harness" --image "$image" --dry-run --firmware bios --provision
+assert_eq "$RC" 0 "dry run, provisioning allowed"
+assert_not_contains "$(argv_for "$OUT" bios)" "smbios" "--provision passes no OEM string"
+assert_contains "$OUT" "noprovision=0"
 
 run "$harness" --image "$image" --dry-run --firmware bios --ntfs-fixture "$image" --only 'storage|airgap'
 assert_eq "$RC" 0 "dry run, ntfs + only"

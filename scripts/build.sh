@@ -7,7 +7,19 @@
 # them from releases.hashicorp.com into the cache and checks their SHA-256 against pins.yml.
 # A fresh SSH key is made for each build and deleted afterwards; it is never stored.
 #
+# Build inputs baked into the image (Packer uploads them; the image never uses a network):
+#   * the trusted asset manifest, its signature and public key (task 2B.15). A release build
+#     takes assets/manifest.json, assets/manifest.json.sig and assets/manifest-signing.pub.pem
+#     (written by .github/workflows/release.yml) and stops if any is missing or the signature
+#     does not verify. --dev makes a throwaway key and a manifest from this checkout instead
+#     and labels the image "dev" in /etc/airlock/build-info.json; never publish a dev image.
+#   * goss (pins.goss_linux_amd64), checked by SHA-256, for forensic-provision's self-test
+#     (task 2B.6). Required for a release build; a dev build goes on without it when unpinned.
+#
 # Usage: scripts/build.sh [options]
+#   --dev               development build: throwaway manifest signing key (see above)
+#   --manifest-dir DIR  folder with manifest.json, manifest.json.sig and
+#                       manifest-signing.pub.pem for a release build (default: assets/)
 #   --output DIR        output folder (default: output/airlock-<version>)
 #   --cache DIR         download cache (default: cache/)
 #   --accel MODE        auto (default), kvm, or tcg. auto refuses to build without /dev/kvm.
@@ -16,7 +28,7 @@
 #   --idempotence-check run site.yml twice in the guest and fail on any change
 #   --var KEY=VALUE     extra Packer variable (repeatable)
 #   --dry-run           check inputs, print the Packer variables and command, build nothing
-#   --prepare-tools     only fetch and check the pinned Packer and QEMU plugin, then stop
+#   --prepare-tools     only fetch and check the pinned Packer, QEMU plugin and goss, then stop
 #   --pins FILE         pins file (default: ansible/group_vars/all/pins.yml)
 #   --vars FILE         main variables file (default: ansible/group_vars/all/main.yml)
 #   -h, --help          this help
@@ -30,6 +42,7 @@ PACKER_VERSION="1.11.2"
 QEMU_PLUGIN_VERSION="1.1.8"
 PACKER_PIN="packer_linux_amd64"
 QEMU_PLUGIN_PIN="packer_plugin_qemu_linux_amd64"
+GOSS_PIN="goss_linux_amd64"
 
 pins_file="$repo_root/ansible/group_vars/all/pins.yml"
 vars_file="$repo_root/ansible/group_vars/all/main.yml"
@@ -42,6 +55,8 @@ prepare_only=0
 zstd_level=15
 idempotence=0
 extra_vars=()
+build_kind="release"
+manifest_dir="$repo_root/assets"
 
 die() {
   printf 'build.sh: %s\n' "$*" >&2
@@ -50,10 +65,12 @@ die() {
 log() { printf 'build.sh: %s\n' "$*"; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
-usage() { sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,/^# Exit status/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 while (($#)); do
   case "$1" in
+    --dev) build_kind="dev"; shift ;;
+    --manifest-dir) manifest_dir="${2:?--manifest-dir needs a folder}"; shift 2 ;;
     --output) output_dir="${2:?--output needs a folder}"; shift 2 ;;
     --cache) cache_dir="${2:?--cache needs a folder}"; shift 2 ;;
     --accel) accel="${2:?--accel needs auto, kvm, or tcg}"; shift 2 ;;
@@ -114,13 +131,13 @@ fi
 # ---------------------------------------------------------------------------- inputs
 # One KEY=VALUE per line from the pins and variables files. Values are checked here.
 read_inputs() {
-  python3 - "$pins_file" "$vars_file" "$PACKER_PIN" "$QEMU_PLUGIN_PIN" <<'PY'
+  python3 - "$pins_file" "$vars_file" "$PACKER_PIN" "$QEMU_PLUGIN_PIN" "$GOSS_PIN" <<'PY'
 import re
 import sys
 
 import yaml
 
-pins_path, vars_path, packer_pin, plugin_pin = sys.argv[1:5]
+pins_path, vars_path, packer_pin, plugin_pin, goss_pin = sys.argv[1:6]
 with open(pins_path, encoding="utf-8") as fh:
     pins = (yaml.safe_load(fh) or {}).get("pins") or {}
 with open(vars_path, encoding="utf-8") as fh:
@@ -143,7 +160,7 @@ if not url.startswith("https://"):
     fail("pins.ubuntu_server_iso.url must be an https URL")
 
 out = {"ISO_URL": url, "ISO_SHA256": sha}
-for key, pin in (("PACKER", packer_pin), ("QEMU_PLUGIN", plugin_pin)):
+for key, pin in (("PACKER", packer_pin), ("QEMU_PLUGIN", plugin_pin), ("GOSS", goss_pin)):
     entry = pins.get(pin) or {}
     out[f"{key}_URL"] = entry.get("url") or ""
     out[f"{key}_SHA256"] = entry.get("sha256") or ""
@@ -283,9 +300,22 @@ ensure_qemu_plugin() {
     die "packer could not install the QEMU plugin from $bin."
 }
 
+# goss for the image (pins.goss_linux_amd64): downloaded on this host only, kept by hash.
+goss_cached="$cache_dir/sha256/${in[GOSS_SHA256]:-unpinned}.goss"
+goss_pinned() { [[ "${in[GOSS_SHA256]:-}" =~ ^[0-9a-f]{64}$ ]]; }
+ensure_goss() {
+  goss_pinned || return 1
+  fetch_pinned "${in[GOSS_URL]}" "${in[GOSS_SHA256]}" "$goss_cached"
+}
+
 if ((prepare_only)); then
   ensure_packer
   ensure_qemu_plugin
+  if ensure_goss; then
+    log "ok: goss ${in[GOSS_PIN_VERSION]} in $goss_cached"
+  else
+    log "goss is not pinned yet (pins.$GOSS_PIN.sha256 is null); a release build stops until it is"
+  fi
   log "ok: $packer_bin ($("$packer_bin" version | head -n1)), plugins in $PACKER_PLUGIN_PATH"
   "$packer_bin" plugins installed
   exit 0
@@ -308,6 +338,91 @@ def s(b): return struct.pack(">I", len(b)) + b
 print("ssh-ed25519 " + base64.b64encode(s(b"ssh-ed25519") + s(raw)).decode() + " airlock-build-ephemeral")
 ')" || die "could not derive the build public key."
 
+# ---------------------------------------------------------------------------- image inputs
+# Staged in $work/inputs and uploaded by Packer to /var/tmp/airlock-inputs; the base role
+# (image_inputs.yml) checks them again and installs them. Decision log 2026-11-15.
+inputs="$work/inputs"
+mkdir -p -- "$inputs"
+manifest_files=(manifest.json manifest.json.sig manifest-signing.pub.pem)
+verify_manifest() { # DIR
+  openssl pkeyutl -verify -pubin -inkey "$1/manifest-signing.pub.pem" -rawin \
+    -in "$1/manifest.json" -sigfile "$1/manifest.json.sig" >/dev/null 2>&1
+}
+
+if [[ "$build_kind" == "release" ]]; then
+  manifest_dir="$(realpath -m -- "$manifest_dir")"
+  for f in "${manifest_files[@]}"; do
+    [[ -s "$manifest_dir/$f" ]] ||
+      die "release build: $manifest_dir/$f is missing. The release workflow writes the signed manifest there before building; for a test build rerun with --dev."
+  done
+  verify_manifest "$manifest_dir" ||
+    die "release build: $manifest_dir/manifest.json.sig does not verify with $manifest_dir/manifest-signing.pub.pem. Re-sign the manifest (scripts/sign-manifest.sh) and rerun."
+  for f in "${manifest_files[@]}"; do cp -- "$manifest_dir/$f" "$inputs/$f"; done
+  log "release build: trusted manifest from $manifest_dir (signature verified)"
+else
+  # A throwaway key that exists only for this build: the image trusts this dev manifest and
+  # nothing signed with the release key. The private key is deleted right after signing.
+  "$repo_root/scripts/gen-signing-key.sh" --out-dir "$work/devkey" >/dev/null ||
+    die "--dev: could not make a throwaway signing key (scripts/gen-signing-key.sh)."
+  python3 "$repo_root/scripts/gen-manifest.py" --pins "$pins_file" --main "$vars_file" \
+    --release "$version-dev" --out "$inputs/manifest.json" >/dev/null 2>&1 ||
+    die "--dev: scripts/gen-manifest.py could not write a manifest. Run it alone to see why."
+  "$repo_root/scripts/sign-manifest.sh" --key "$work/devkey/manifest-signing.key.pem" \
+    --pub "$work/devkey/manifest-signing.pub.pem" --manifest "$inputs/manifest.json" >/dev/null ||
+    die "--dev: scripts/sign-manifest.sh could not sign the dev manifest."
+  cp -- "$work/devkey/manifest-signing.pub.pem" "$inputs/manifest-signing.pub.pem"
+  rm -rf -- "$work/devkey"
+  verify_manifest "$inputs" || die "--dev: the dev manifest does not verify; nothing was built."
+  log "DEV build: throwaway manifest signing key; this image is labelled dev and must not be published"
+fi
+
+goss_note="none"
+if goss_pinned; then
+  if ((dry_run)); then
+    if [[ -f "$goss_cached" ]]; then
+      cp -- "$goss_cached" "$inputs/goss"
+      goss_note="${in[GOSS_SHA256]} (cached)"
+    else
+      goss_note="${in[GOSS_SHA256]} (a real build downloads it)"
+    fi
+  else
+    ensure_goss
+    cp -- "$goss_cached" "$inputs/goss"
+    goss_note="${in[GOSS_SHA256]}"
+  fi
+elif [[ "$build_kind" == "release" ]] && ((!dry_run)); then
+  die "release build: pins.$GOSS_PIN.sha256 is not pinned, so goss cannot be baked in for the provisioning self-test. Fill it and rerun."
+else
+  log "goss is not pinned (pins.$GOSS_PIN.sha256 is null): this image gets no goss and forensic-provision's self-test will not run"
+  goss_note="not pinned"
+fi
+if [[ -f "$inputs/goss" ]]; then
+  chmod 0755 -- "$inputs/goss"
+  [[ "$(sha256sum -- "$inputs/goss" | cut -d' ' -f1)" == "${in[GOSS_SHA256]}" ]] ||
+    die "the staged goss does not match pins.$GOSS_PIN.sha256. Delete $goss_cached and rerun."
+fi
+
+AL_KIND="$build_kind" python3 - "$inputs" <<'PY'
+import hashlib
+import json
+import os
+import sys
+from pathlib import Path
+
+inputs = Path(sys.argv[1])
+manifest = inputs / "manifest.json"
+goss = inputs / "goss"
+data = {
+    "schema": 1,
+    "kind": os.environ["AL_KIND"],
+    "manifest_release": json.loads(manifest.read_text(encoding="utf-8")).get("release", ""),
+    "manifest_sha256": hashlib.sha256(manifest.read_bytes()).hexdigest(),
+    "goss_sha256": hashlib.sha256(goss.read_bytes()).hexdigest() if goss.is_file() else None,
+}
+(inputs / "build-kind.json").write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
+PY
+[[ -f "$inputs/build-kind.json" ]] || die "could not write build-kind.json."
+
 boot_wait="10s"
 # The ISO's grub menu waits 30 s; under emulation OVMF needs about 15 to 30 s to reach it.
 [[ "$accel" == "tcg" ]] && boot_wait="45s"
@@ -321,7 +436,7 @@ AL_ACCEL="$accel" AL_USER="${in[AIRLOCK_USER]}" AL_VERSION="$version" \
   AL_ROOT="${in[ROOT_IMAGE_GIB]}" AL_ESP="${in[ESP_SIZE_MIB]}" AL_BOOT_WAIT="$boot_wait" \
   AL_DATE="$build_date" AL_KEY="$work/build_key" AL_PUBKEY="$pubkey" AL_COMMIT="$git_commit" \
   AL_IDEMPOTENCE="$idempotence" AL_ISO_SHA="${in[ISO_SHA256]}" AL_ISO_URL="${in[ISO_URL]}" \
-  AL_OUT="$output_dir" AL_ZSTD="$zstd_level" \
+  AL_OUT="$output_dir" AL_ZSTD="$zstd_level" AL_INPUTS="$inputs" \
   python3 - "$var_file" "${extra_vars[@]+"${extra_vars[@]}"}" <<'PY'
 import json
 import os
@@ -341,6 +456,7 @@ out = {
     "esp_size_mib": int(e["AL_ESP"]),
     "git_commit": e["AL_COMMIT"],
     "idempotence_check": e["AL_IDEMPOTENCE"] == "1",
+    "image_inputs_dir": e["AL_INPUTS"],
     "iso_sha256": e["AL_ISO_SHA"],
     "iso_url": e["AL_ISO_URL"],
     "output_dir": e["AL_OUT"],
@@ -365,6 +481,8 @@ if ((dry_run)); then
   log "dry run: no image is built"
   printf 'packer_version=%s\nqemu_plugin_version=%s\naccelerator=%s\noutput=%s\n' \
     "$PACKER_VERSION" "$QEMU_PLUGIN_VERSION" "$accel" "$output_dir"
+  printf 'build_kind=%s\ngoss=%s\n' "$build_kind" "$goss_note"
+  printf 'image inputs: %s\n' "$(cd "$inputs" && find . -maxdepth 1 -type f -printf '%f\n' | sort | paste -sd' ' -)"
   printf 'command: packer'
   printf ' %q' "${packer_args[@]}"
   printf '\n'
@@ -374,6 +492,7 @@ import json, sys
 data = json.load(open(sys.argv[1], encoding="utf-8"))
 data["build_ssh_private_key_file"] = "<temporary>"
 data["build_ssh_public_key"] = "<temporary>"
+data["image_inputs_dir"] = "<temporary>"
 print(json.dumps(data, indent=2, sort_keys=True))
 ' "$var_file"
   exit 0

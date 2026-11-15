@@ -34,6 +34,7 @@ The licence of every third-party component AIRLOCK installs, downloads, or calls
 | cloud-guest-utils (growpart) | 0.33 | GPL-3.0 |
 | exfatprogs | 1.2.2 | GPL-2.0-or-later |
 | gdisk (sgdisk) | 1.0.10 | GPL-2.0-or-later |
+| goss (`/opt/airlock/bin/goss`, provisioning self-test; fetched on the build host, pin `goss_linux_amd64`; also copied into test VMs) | 0.4.9 | Apache-2.0 |
 
 ## Session helpers (role `session_tools`; Ubuntu 24.04 packages, decision log 2026-11-15)
 
@@ -67,7 +68,6 @@ table below and stays user-fetched.
 |---|---|---|
 | Packer | 1.11.2 | BUSL-1.1 |
 | packer-plugin-qemu | 1.1.8 | MPL-2.0 |
-| goss (copied into test VMs) | 0.4.9 | Apache-2.0 |
 | exfat-fuse (`make-usb.sh` staging mount when the kernel has no exFAT driver; installed by `scripts/prereqs.sh`) | 1.4.0 (noble) | GPL-2.0-or-later |
 | faketime / libfaketime (`validation/synthetic/build.sh`: synthetic images at planned times; validation host only) | 0.9.10 (noble) | GPL-2.0-only |
 | ntfs-3g, exfatprogs, exfat-fuse, sleuthkit, testdisk (`validation/`: building and checking synthetic images; validation host only) | noble | GPL-2.0-or-later (ntfs-3g, exfatprogs, exfat-fuse, testdisk); CPL-1.0, IBM-PL-1.0, GPL-2.0-or-later parts (sleuthkit) |
@@ -85,7 +85,7 @@ Exact versions and hashes are in `ansible/group_vars/all/pins.yml`.
 
 | Component | Version | Licence | Where |
 |---|---|---|---|
-| llama.cpp (`llama-server`, `llama-mtmd-cli`) | b9562 | MIT | built into the image, `/opt/llama` |
+| llama.cpp (`llama-server`, `llama-mtmd-cli`) | b12030 | MIT | built into the image, `/opt/llama` |
 | Qwen3-VL 2B, 4B, 8B, 32B Instruct (GGUF) | Q4_K_M, Q8_0, F16 projectors | Apache-2.0 | ASSETS, by tier |
 | SigLIP base patch16-224 (ONNX export) | base-patch16-224 | Apache-2.0 | ASSETS |
 | Whisper small (faster-whisper CTranslate2 conversion) | small | MIT | ASSETS |
@@ -111,23 +111,53 @@ Generated from `ansible/group_vars/all/pins.yml` by `python3 scripts/check-pins.
 while a pin is missing here). Rule (plan 2B.18): what the build bakes in must be
 redistributable; model weights, ClamAV signatures, MalwareBazaar, NSRL, and YARA packs stay
 user-fetched onto ASSETS by `scripts/fetch-assets.*`, so the published base image does not
-redistribute them. EZ Tools and the AGPL Python tools (Dissect, NudeNet) may be baked once 6.6
-confirms their terms; until then they are staged too.
+redistribute them. EZ Tools and NudeNet (AGPL-3.0) are staged onto ASSETS until 6.6 confirms
+their terms. Build-host downloads tagged `image` (goss) are copied into the image by the build.
+
+**Dissect is baked into the image today.** The plan allows it (2B.18: AGPL tools may be baked
+with their licence and a source offer), and `tools_dissect` installs Dissect and its 55 pinned
+dependencies (pin `dissect_pypi`, stage `image`; `tools_dissect/files/requirements.txt`) into
+`/opt/dissect` during the image build, so every image built from this repository carries
+AGPL-3.0-or-later code. The wheels' own licence files are inside the venv; no written source
+offer and no copy of the corresponding source is shipped yet. Before any prebuilt image is
+published, task 6.6 must decide one of: (a) keep Dissect in the image and publish, with each
+release, the AGPL-3.0 text and the corresponding source of the exact pinned versions (the
+sdists for the hashes in `requirements.txt`) or a written offer for it; or (b) move
+`dissect_pypi` to stage `assets` so it is user-fetched and installed at first boot like NudeNet.
+Until 6.6 decides, only self-built images (each user builds their own) are covered.
 
 <!-- pins-table:start -->
 | Pin | Version | Licence | Stage | May be baked into the published image |
 |---|---|---|---|---|
+| `actionlint_linux_amd64` | 1.7.7 | MIT (workflow linter, CI only; never in the image) | build | n/a: build host only |
+| `autopsy_zip` | 4.23.1 | Apache-2.0 (bundled third-party parts carry their own licences) | assets | no: user-fetched onto ASSETS (2B.18) |
+| `bulk_extractor_source` | 2.1.1 | MIT and US-Government public domain (bundled parts: licenses/ in the tarball) | image | yes: baked by the build |
+| `cast_deb` | 1.0.13 | MIT (verify in task 6.6) | image | yes: baked by the build |
 | `clamav_daily_cvd` | rolling | Cisco-Talos ClamAV signature terms (unconfirmed, plan 6.6); user-fetched, never baked | assets | no: user-fetched onto ASSETS (2B.18) |
 | `clamav_main_cvd` | rolling | Cisco-Talos ClamAV signature terms (unconfirmed, plan 6.6); user-fetched, never baked | assets | no: user-fetched onto ASSETS (2B.18) |
+| `cosign_linux_amd64` | 2.6.5 | Apache-2.0 (release signing tool, CI only; never in the image) | build | n/a: build host only |
+| `dissect_pypi` | 3.22 | AGPL-3.0-or-later (dependencies: tools_dissect/files/requirements.txt) | image | yes: baked by the build |
+| `dotnet_host_9_deb` | 9.0.4-1 | MIT (.NET runtime, Microsoft) | image | yes: baked by the build |
+| `dotnet_hostfxr_9_deb` | 9.0.4-1 | MIT (.NET runtime, Microsoft) | image | yes: baked by the build |
+| `dotnet_runtime_9_deb` | 9.0.4-1 | MIT (.NET runtime, Microsoft) | image | yes: baked by the build |
+| `dotnet_runtime_deps_9_deb` | 9.0.4-1 | MIT (.NET runtime, Microsoft) | image | yes: baked by the build |
+| `eztools_amcacheparser` | 1.5.2.0 | MIT (Eric Zimmerman; confirm per tool in task 6.6) | assets | allowed once each repo's MIT licence is confirmed (6.6, unconfirmed) |
+| `eztools_appcompatcacheparser` | 1.5.1.0 | MIT (Eric Zimmerman; confirm per tool in task 6.6) | assets | allowed once each repo's MIT licence is confirmed (6.6, unconfirmed) |
+| `eztools_bstrings` | 1.5.2.0 | MIT (Eric Zimmerman; confirm per tool in task 6.6) | assets | allowed once each repo's MIT licence is confirmed (6.6, unconfirmed) |
+| `eztools_evtxecmd` | 1.5.2.0 | MIT (Eric Zimmerman; confirm per tool in task 6.6) | assets | allowed once each repo's MIT licence is confirmed (6.6, unconfirmed) |
+| `eztools_jlecmd` | 1.5.1.0 | MIT (Eric Zimmerman; confirm per tool in task 6.6) | assets | allowed once each repo's MIT licence is confirmed (6.6, unconfirmed) |
+| `eztools_lecmd` | 1.5.1.0 | MIT (Eric Zimmerman; confirm per tool in task 6.6) | assets | allowed once each repo's MIT licence is confirmed (6.6, unconfirmed) |
+| `eztools_mftecmd` | 1.3.0.0 | MIT (Eric Zimmerman; confirm per tool in task 6.6) | assets | allowed once each repo's MIT licence is confirmed (6.6, unconfirmed) |
+| `eztools_pecmd` | 1.5.1.0 | MIT (Eric Zimmerman; confirm per tool in task 6.6) | assets | allowed once each repo's MIT licence is confirmed (6.6, unconfirmed) |
+| `eztools_rbcmd` | 1.6.0.0 | MIT (Eric Zimmerman; confirm per tool in task 6.6) | assets | allowed once each repo's MIT licence is confirmed (6.6, unconfirmed) |
+| `eztools_recmd` | 2.1.0.0 | MIT (Eric Zimmerman; confirm per tool in task 6.6) | assets | allowed once each repo's MIT licence is confirmed (6.6, unconfirmed) |
+| `eztools_sbecmd` | 2.1.0.0 | MIT (Eric Zimmerman; confirm per tool in task 6.6) | assets | allowed once each repo's MIT licence is confirmed (6.6, unconfirmed) |
 | `faster_whisper_small_config` | small | MIT (OpenAI Whisper weights; CTranslate2 conversion by Systran) | assets | no: user-fetched onto ASSETS (2B.18) |
 | `faster_whisper_small_model` | small | MIT (OpenAI Whisper weights; CTranslate2 conversion by Systran) | assets | no: user-fetched onto ASSETS (2B.18) |
 | `faster_whisper_small_tokenizer` | small | MIT (OpenAI Whisper weights; CTranslate2 conversion by Systran) | assets | no: user-fetched onto ASSETS (2B.18) |
 | `faster_whisper_small_vocabulary` | small | MIT (OpenAI Whisper weights; CTranslate2 conversion by Systran) | assets | no: user-fetched onto ASSETS (2B.18) |
-| `goss_linux_amd64` | 0.4.9 | Apache-2.0 (test tool; copied into the test VM by tests/run-qemu-tests.sh, never baked into the image) | build | n/a: build host only |
-| `actionlint_linux_amd64` | 1.7.7 | MIT (workflow linter, CI only; never in the image) | build | n/a: build host only |
-| `cosign_linux_amd64` | 2.6.5 | Apache-2.0 (release signing tool, CI only; never in the image) | build | n/a: build host only |
-| `syft_linux_amd64` | 1.57.1 | Apache-2.0 (SBOM tool, CI only; never in the image) | build | n/a: build host only |
-| `llama_cpp_source` | b9562 | MIT | image | yes: baked by the build |
+| `goss_linux_amd64` | 0.4.9 | Apache-2.0 (fetched on the build host; baked into the image at /opt/airlock/bin/goss, the provisioning self-test) | build | yes: fetched on the build host, baked by the build |
+| `llama_cpp_source` | b12030 | MIT | image | yes: baked by the build |
 | `malwarebazaar_sha256_full` | daily | CC0-1.0 per abuse.ch terms (unconfirmed, plan 6.6); user-fetched, never baked | assets | no: user-fetched onto ASSETS (2B.18) |
 | `nsrl_rds_modern_minimal` | 2026.06.1 | NIST NSRL data, US Government work (redistribution unconfirmed, plan 6.6); user-fetched | assets | no: user-fetched onto ASSETS (2B.18) |
 | `nvidia_deb_binutils` | 2.42-4ubuntu2.10 | GPL-3.0-or-later (Ubuntu main) | assets | no: opt-in NVIDIA driver set (4B.15); staged only when turned on |
@@ -150,6 +180,7 @@ confirms their terms; until then they are staged too.
 | `nvidia_deb_ocl_icd_libopencl1` | 2.3.2-1build1 | BSD-2-Clause (Ubuntu main) | assets | no: opt-in NVIDIA driver set (4B.15); staged only when turned on |
 | `packer_linux_amd64` | 1.11.2 | BUSL-1.1 (build tool only, never shipped in the image) | build | n/a: build host only |
 | `packer_plugin_qemu_linux_amd64` | 1.1.8 | MPL-2.0 (build tool only, never shipped in the image) | build | n/a: build host only |
+| `plaso_pypi` | 20261027 | Apache-2.0 (dependencies: tools_timeline/files/requirements.txt) | image | yes: baked by the build |
 | `qwen3_vl_2b_instruct_mmproj_gguf` | F16 | Apache-2.0 | assets | no: user-fetched onto ASSETS (2B.18) |
 | `qwen3_vl_2b_instruct_q4_k_m_gguf` | Q4_K_M | Apache-2.0 | assets | no: user-fetched onto ASSETS (2B.18) |
 | `qwen3_vl_32b_instruct_mmproj_gguf` | F16 | Apache-2.0 | assets | no: user-fetched onto ASSETS (2B.18) |
@@ -162,7 +193,10 @@ confirms their terms; until then they are staged too.
 | `siglip_base_patch16_224_onnx` | base-patch16-224 | Apache-2.0 (google/siglip-base-patch16-224; ONNX export by Xenova) | assets | no: user-fetched onto ASSETS (2B.18) |
 | `siglip_base_patch16_224_preprocessor` | base-patch16-224 | Apache-2.0 (google/siglip-base-patch16-224; ONNX export by Xenova) | assets | no: user-fetched onto ASSETS (2B.18) |
 | `siglip_base_patch16_224_tokenizer` | base-patch16-224 | Apache-2.0 (google/siglip-base-patch16-224; ONNX export by Xenova) | assets | no: user-fetched onto ASSETS (2B.18) |
+| `sleuthkit_java_deb` | 4.15.0-1 | CPL-1.0 and IPL-1.0 and GPL-2.0-or-later (The Sleuth Kit; verify in task 6.6) | assets | no: user-fetched onto ASSETS (2B.18) |
+| `syft_linux_amd64` | 1.57.1 | Apache-2.0 (SBOM tool, CI only; never in the image) | build | n/a: build host only |
 | `ubuntu_server_iso` | 24.04.5 | Ubuntu archive (mixed free licences, redistributable) | build | n/a: build host only |
+| `usncarve_pypi` | 1.2.2 | Apache-2.0 | image | yes: baked by the build |
 | `wheel_anyio` | 4.16.0 | MIT | assets | no: user-fetched onto ASSETS (2B.18) |
 | `wheel_av` | 19.0.2 | BSD-3-Clause | assets | no: user-fetched onto ASSETS (2B.18) |
 | `wheel_click` | 8.5.1 | BSD-3-Clause | assets | no: user-fetched onto ASSETS (2B.18) |
@@ -189,30 +223,8 @@ confirms their terms; until then they are staged too.
 | `wheel_tqdm` | 4.70.1 | MPL-2.0 AND MIT | assets | no: user-fetched onto ASSETS (2B.18) |
 | `wheel_truststore` | 0.10.5 | MIT | assets | no: user-fetched onto ASSETS (2B.18) |
 | `wheel_typing_extensions` | 4.16.0 | PSF-2.0 | assets | no: user-fetched onto ASSETS (2B.18) |
-| `autopsy_zip` | 4.23.1 | Apache-2.0 (bundled third-party parts carry their own licences) | assets | no: user-fetched onto ASSETS (2B.18) |
-| `bulk_extractor_source` | 2.1.1 | MIT and US-Government public domain (bundled parts: licenses/ in the tarball) | image | yes: baked by the build |
-| `cast_deb` | 1.0.13 | MIT (verify in task 6.6) | image | yes: baked by the build |
-| `dissect_pypi` | 3.22 | AGPL-3.0-or-later (dependencies: tools_dissect/files/requirements.txt) | image | yes: baked by the build |
-| `dotnet_host_9_deb` | 9.0.4-1 | MIT (.NET runtime, Microsoft) | image | yes: baked by the build |
-| `dotnet_hostfxr_9_deb` | 9.0.4-1 | MIT (.NET runtime, Microsoft) | image | yes: baked by the build |
-| `dotnet_runtime_9_deb` | 9.0.4-1 | MIT (.NET runtime, Microsoft) | image | yes: baked by the build |
-| `dotnet_runtime_deps_9_deb` | 9.0.4-1 | MIT (.NET runtime, Microsoft) | image | yes: baked by the build |
-| `eztools_amcacheparser` | 1.5.2.0 | MIT (Eric Zimmerman; confirm per tool in task 6.6) | assets | allowed once each repo's MIT licence is confirmed (6.6, unconfirmed) |
-| `eztools_appcompatcacheparser` | 1.5.1.0 | MIT (Eric Zimmerman; confirm per tool in task 6.6) | assets | allowed once each repo's MIT licence is confirmed (6.6, unconfirmed) |
-| `eztools_bstrings` | 1.5.2.0 | MIT (Eric Zimmerman; confirm per tool in task 6.6) | assets | allowed once each repo's MIT licence is confirmed (6.6, unconfirmed) |
-| `eztools_evtxecmd` | 1.5.2.0 | MIT (Eric Zimmerman; confirm per tool in task 6.6) | assets | allowed once each repo's MIT licence is confirmed (6.6, unconfirmed) |
-| `eztools_jlecmd` | 1.5.1.0 | MIT (Eric Zimmerman; confirm per tool in task 6.6) | assets | allowed once each repo's MIT licence is confirmed (6.6, unconfirmed) |
-| `eztools_lecmd` | 1.5.1.0 | MIT (Eric Zimmerman; confirm per tool in task 6.6) | assets | allowed once each repo's MIT licence is confirmed (6.6, unconfirmed) |
-| `eztools_mftecmd` | 1.3.0.0 | MIT (Eric Zimmerman; confirm per tool in task 6.6) | assets | allowed once each repo's MIT licence is confirmed (6.6, unconfirmed) |
-| `eztools_pecmd` | 1.5.1.0 | MIT (Eric Zimmerman; confirm per tool in task 6.6) | assets | allowed once each repo's MIT licence is confirmed (6.6, unconfirmed) |
-| `eztools_rbcmd` | 1.6.0.0 | MIT (Eric Zimmerman; confirm per tool in task 6.6) | assets | allowed once each repo's MIT licence is confirmed (6.6, unconfirmed) |
-| `eztools_recmd` | 2.1.0.0 | MIT (Eric Zimmerman; confirm per tool in task 6.6) | assets | allowed once each repo's MIT licence is confirmed (6.6, unconfirmed) |
-| `eztools_sbecmd` | 2.1.0.0 | MIT (Eric Zimmerman; confirm per tool in task 6.6) | assets | allowed once each repo's MIT licence is confirmed (6.6, unconfirmed) |
-| `plaso_pypi` | 20261027 | Apache-2.0 (dependencies: tools_timeline/files/requirements.txt) | image | yes: baked by the build |
-| `sleuthkit_java_deb` | 4.15.0-1 | CPL-1.0 and IPL-1.0 and GPL-2.0-or-later (The Sleuth Kit; verify in task 6.6) | assets | no: user-fetched onto ASSETS (2B.18) |
-| `usncarve_pypi` | 1.2.2 | Apache-2.0 | image | yes: baked by the build |
-| `yara_forge_core` | commit-to-pin | Per-rule licences of the aggregated sources, listed in the package (unconfirmed, plan 6.6) | assets | no: user-fetched onto ASSETS (2B.18) |
-| `yara_signature_base` | commit-to-pin | Detection Rule License (DRL) 1.1 (unconfirmed, plan 6.6); user-fetched | assets | no: user-fetched onto ASSETS (2B.18) |
+| `yara_forge_core` | 20261101 | Mixed, per source rule set, stated in each set's header in the .yar (20261101: 34 sets; DRL 1.1, MIT, BSD-2-Clause, Apache-2.0, GPL and vendor notices; 18 sets state no licence); user-fetched, never baked (plan 6.6) | assets | no: user-fetched onto ASSETS (2B.18) |
+| `yara_signature_base` | 36ab70428fc5b52701b7ee6107c853ff019ed759 | Detection Rule License (DRL) 1.1 (LICENSE file at the pinned commit, read 2026-11-15; attribution terms, plan 6.6); user-fetched | assets | no: user-fetched onto ASSETS (2B.18) |
 <!-- pins-table:end -->
 
 Open licence questions (plan 2.6.5 and 6.6), all **unconfirmed** until a person reviews them:
@@ -223,8 +235,8 @@ Open licence questions (plan 2.6.5 and 6.6), all **unconfirmed** until a person 
 | MalwareBazaar export | abuse.ch states its data is CC0; the Auth-Key terms apply to the download | unconfirmed; user-fetched, key never stored |
 | NSRL RDSv3 | NIST public data; redistribution of the SQLite build not checked | unconfirmed; user-fetched, off-drive by default |
 | EZ Tools | MIT on Eric Zimmerman's repositories (research); each repo's LICENSE to be checked | unconfirmed; staged until checked |
-| Dissect | AGPL-3.0; ship the licence and a source offer if baked | unconfirmed for baking |
+| Dissect | AGPL-3.0; ship the licence and a source offer if baked | baked today by `tools_dissect`; 6.6 decides (a) source with each release or (b) stage it, before any prebuilt image is published (see above) |
 | NudeNet | AGPL-3.0 code (see `wheel_nudenet`); model weights' terms to be checked | unconfirmed |
 | Qwen3-VL, SigLIP, faster-whisper models | Apache-2.0, Apache-2.0, MIT per their model cards | unconfirmed; user-fetched |
-| YARA rule packs (signature-base, YARA Forge) | DRL-1.1 and per-rule licences | unconfirmed; user-fetched |
+| YARA rule packs (signature-base, YARA Forge) | signature-base: DRL 1.1 (LICENSE file at the pinned commit; attribution kept when shared or when matches are reported). YARA Forge core 20261101: each of its 34 source sets carries its own licence in the .yar header (DRL 1.1, MIT, BSD-2-Clause, Apache-2.0, GPL, vendor notices), and 18 sets state none | read 2026-11-15; user-fetched, never baked; 6.6 confirms that reports keep rule authors and references |
 | NVIDIA proprietary driver packages | NVIDIA licence; Canonical redistributes the signed modules | opt-in only (`nvidia_proprietary`) |

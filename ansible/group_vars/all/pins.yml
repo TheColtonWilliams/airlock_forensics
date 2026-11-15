@@ -41,16 +41,18 @@ pins:
   goss_linux_amd64:
     url: https://github.com/goss-org/goss/releases/download/v0.4.9/goss-linux-amd64
     version: "0.4.9"
-    sha256: null
-    size: null
+    sha256: "87dd36cfa1b8b50554e6e2ca29168272e26755b19ba5438341f7c66b36decc19"
+    size: 14180504
     stage: build
     target: null
-    profiles: [build]
+    profiles: [build, image]
     verify: sha256
-    license: "Apache-2.0 (test tool; copied into the test VM by tests/run-qemu-tests.sh, never baked into the image)"
+    license: "Apache-2.0 (fetched on the build host; baked into the image at /opt/airlock/bin/goss, the provisioning self-test)"
     notes: >-
-      Host unreachable from authoring environment 2026-11-15; fill before release.
-      Version 0.4.9 read from the locally installed binary; verify against the release page.
+      Downloaded and hashed 2026-11-15; the hash matches the release's goss-linux-amd64.sha256.
+      Fetched on the build host by scripts/prereqs.sh, then copied into the image by the base
+      role (tasks/image_inputs.yml), which checks it against this hash again; tag image marks
+      that it ships in the published image.
   # --- CI and release tools (.github/workflows; never in the image) -------------------------
   cosign_linux_amd64:
     url: https://github.com/sigstore/cosign/releases/download/v2.6.5/cosign-linux-amd64
@@ -94,8 +96,8 @@ pins:
       downloaded tarball and actionlint_1.7.7_checksums.txt, 2026-11-15.
   # --- Local AI (role tools_ai, Milestone 4B) ------------------------------------------------
   llama_cpp_source:
-    url: https://github.com/ggml-org/llama.cpp/archive/refs/tags/b9562.tar.gz
-    version: "b9562"
+    url: https://github.com/ggml-org/llama.cpp/archive/refs/tags/b12030.tar.gz
+    version: "b12030"
     sha256: null
     size: null
     stage: image
@@ -104,9 +106,16 @@ pins:
     verify: sha256
     license: "MIT"
     notes: >-
-      Task 4B.1: the plan's minimum release (native video input through mtmd). github.com was
-      unreachable from the authoring environment 2026-11-15, so neither the tag nor the hash
-      could be checked; confirm the tag exists, then fill sha256. Built with Vulkan only.
+      Task 4B.1. Tag b12030 (commit a91eab67d8389d979d29fdf6633b2edd0718eb4b, committed
+      2026-10-31T23:49Z) is the newest tag at least two weeks old on 2026-11-15, found with git
+      ls-remote and shallow fetches; the plan's minimum b9562 also exists (commit
+      8f83d6c271d194bde2d410145a0ce73bc42e85cd). At b12030 the tree has llama-mtmd-cli, the
+      --video argument and the CMake options in tools_ai's defaults (LLAMA_CURL is deprecated,
+      a warning only). sha256 stays null: the /archive/ endpoint was refused by the authoring
+      environment's proxy, so the tarball could not be downloaded or hashed. Fill sha256 and size
+      from a download of this URL. GitHub archive tarballs are generated on request and are
+      usually byte-stable, but GitHub does not guarantee it; if the hash ever changes, re-check
+      the tree against the commit above before re-pinning.
   qwen3_vl_2b_instruct_q4_k_m_gguf:
     url: https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct-GGUF/resolve/main/Qwen3VL-2B-Instruct-Q4_K_M.gguf
     version: "Q4_K_M"
@@ -674,37 +683,47 @@ pins:
       NoSuchBucket for rds.nist.gov and www.nist.gov was unreachable from the authoring
       environment, so neither this URL nor the hash could be checked. Fill sha256 from NIST's
       published DBHashes file for this release and correct the URL before release.
-  # Task 4A.5: YARA rule packs, pinned by commit (GitHub was unreachable from the authoring
-  # environment 2026-11-15, so no commit could be checked: "commit-to-pin" must be replaced
-  # by a real commit or release tag in both the version and the URL, and sha256 filled).
+  # Task 4A.5: YARA rule packs, pinned by commit (signature-base) and release tag (YARA Forge).
+  # The YARA Forge core pack is also what the ci profile stages (yara: true), so CI staging
+  # exercises one real pinned download.
   yara_signature_base:
-    url: https://github.com/Neo23x0/signature-base/archive/commit-to-pin.tar.gz
-    version: "commit-to-pin"
+    # yamllint disable-line rule:line-length
+    url: https://github.com/Neo23x0/signature-base/archive/36ab70428fc5b52701b7ee6107c853ff019ed759.tar.gz
+    version: "36ab70428fc5b52701b7ee6107c853ff019ed759"
     sha256: null
     size: null
     stage: assets
     target: yara/signature-base.tar.gz
     profiles: [yara]
     verify: sha256
-    license: "Detection Rule License (DRL) 1.1 (unconfirmed, plan 6.6); user-fetched"
+    license: "Detection Rule License (DRL) 1.1 (LICENSE file at the pinned commit, read 2026-11-15; attribution terms, plan 6.6); user-fetched"
     notes: >-
       Neo23x0 signature-base, yara/ folder compiled at provisioning with empty externals
-      (filename, filepath, extension, filetype, owner, md5). github.com unreachable from
-      authoring environment 2026-11-15; pick a commit, fill version, URL and sha256.
+      (filename, filepath, extension, filetype, owner, md5). Commit 36ab704 (master, merged
+      2026-10-29) is the newest master commit at least two weeks old on 2026-11-15, found with
+      git ls-remote and a shallow fetch; its LICENSE is DRL 1.1. sha256 stays null: the /archive/
+      endpoint was refused by the authoring environment's proxy, so the tarball could not be
+      downloaded or hashed. Fill sha256 and size from a download of this URL (GitHub archive
+      tarballs are usually byte-stable but not guaranteed to be).
   yara_forge_core:
-    url: https://github.com/YARAHQ/yara-forge/releases/download/commit-to-pin/yara-forge-rules-core.zip
-    version: "commit-to-pin"
-    sha256: null
-    size: null
+    url: https://github.com/YARAHQ/yara-forge/releases/download/20261101/yara-forge-rules-core.zip
+    version: "20261101"
+    sha256: "c6d6915f8253bb8e9a8e282e67ae9a45d42587c1349f8bd7f7167bee651c783b"
+    size: 1744645
     stage: assets
     target: yara/yara-forge-rules-core.zip
     profiles: [yara]
     verify: sha256
-    license: "Per-rule licences of the aggregated sources, listed in the package (unconfirmed, plan 6.6)"
+    license: >-
+      Mixed, per source rule set, stated in each set's header in the .yar (20261101: 34 sets; DRL
+      1.1, MIT, BSD-2-Clause, Apache-2.0, GPL and vendor notices; 18 sets state no licence);
+      user-fetched, never baked (plan 6.6)
     notes: >-
-      YARA Forge core package (one .yar file in the zip). github.com unreachable from authoring
-      environment 2026-11-15; pick a release tag, verify the asset name, fill version, URL and
-      sha256.
+      YARA Forge core package, release tag 20261101 (from git ls-remote; the newest tag at least
+      two weeks old on 2026-11-15). Asset name confirmed by download. Downloaded twice and hashed
+      2026-11-15 (the release publishes no checksum file). The zip holds one file,
+      packages/core/yara-rules-core.yar (5134 rules, YARA-Forge 0.9.1), which compiled with
+      yarac 4.5.0 (noble) through airlock_hashsets.build with no skipped files.
   # Task 4B.15 (assets package): Ubuntu's signed NVIDIA 580 driver for this image's kernel ABI
   # (7.0.0-42, linux-generic-hwe-24.04 in the apt_snapshot 20261101T000000Z), staged only when a
   # profile sets nvidia_proprietary: true and installed offline by tools_ai (no DKMS, no MOK).
@@ -1229,10 +1248,16 @@ pins:
     verify: sha256
     license: "CPL-1.0 and IPL-1.0 and GPL-2.0-or-later (The Sleuth Kit; verify in task 6.6)"
     notes: >-
-      Autopsy 4.23.1 needs sleuthkit-4.15.0.jar. This asset name returned 404 on 2026-11-15 (4.14.0
-      used the same pattern and exists); the 4.15.0 release page could not be listed from the
-      authoring environment. Find the real asset name on the release page, then fill url, version
-      and sha256. Verify.
+      Needs a person (task 4.9). Autopsy 4.23.1 needs sleuthkit-4.15.0.jar. On 2026-11-15 these
+      names returned 404 on the sleuthkit-4.15.0 release: sleuthkit-java_4.15.0-1_amd64.deb,
+      sleuthkit-java_4.15.0_amd64.deb, sleuthkit-java_4.15.0-2_amd64.deb,
+      sleuthkit-java_4.15.0-1_all.deb, sleuthkit-4.15.0.jar and four other spellings, and the deb
+      is not on the autopsy-4.23.1 release either. The 4.14.0 release has
+      sleuthkit-java_4.14.0-1_amd64.deb; the 4.15.0 release does have sleuthkit-4.15.0.tar.gz (with
+      .asc) and sleuthkit-4.15.0-win32.zip. The release page could not be listed from the
+      authoring environment. A person reads the release page, then fills url, version, target and
+      sha256 (verify it against the release), or decides to build the Java bindings from the source
+      tarball.
   # SIFT (task 6.5, optional, install_sift). Cast installs teamdfir/sift-saltstack at build time.
   cast_deb:
     url: https://github.com/ekristen/cast/releases/download/v1.0.13/cast-v1.0.13-linux-amd64.deb

@@ -11,6 +11,11 @@
 #   Q_QGA_SOCKET guest agent Unix socket      Q_SERIAL_LOG  serial console log file
 #   Q_NIC        0 (no network device at all) | 1 (user-mode NIC, restricted, for the air-gap test)
 #   Q_DISKS      array of "serial=path" extra raw disks (virtio, /dev/disk/by-id/virtio-<serial>)
+#   Q_NOPROVISION 1: pass the SMBIOS OEM string "airlock.noprovision"; the image's grub hook
+#                (/etc/grub.d/06_airlock_vm_test) then puts airlock.noprovision on the kernel
+#                command line and airlock-provision.service is skipped. 0 or unset (default, so
+#                a direct caller such as the CI provisioning boot still provisions): none.
+#                tests/run-qemu-tests.sh sets 1 unless --provision.
 # Firmware files can be moved with AIRLOCK_OVMF_CODE, AIRLOCK_OVMF_VARS,
 # AIRLOCK_OVMF_SB_CODE, AIRLOCK_OVMF_SB_VARS.
 #
@@ -55,6 +60,11 @@ airlock_qemu_argv() {
     *) printf 'qemu.sh: unknown accelerator %s\n' "$Q_ACCEL" >&2; return 1 ;;
   esac
   QEMU_ARGV+=(-m "$Q_MEMORY" -smp "$Q_CPUS")
+  # Exactly one OEM string, so grub's "smbios --type 11 --get-string 4" (the count byte, 1)
+  # reads it. The image accepts no other value.
+  if [[ "${Q_NOPROVISION:-0}" == "1" ]]; then
+    QEMU_ARGV+=(-smbios "type=11,value=airlock.noprovision")
+  fi
   if [[ "$Q_FIRMWARE" == uefi* ]]; then
     [[ "$Q_FIRMWARE" == "uefi-sb" ]] && QEMU_ARGV+=(-global "driver=cfi.pflash01,property=secure,value=on")
     QEMU_ARGV+=(

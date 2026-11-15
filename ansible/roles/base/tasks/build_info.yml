@@ -1,5 +1,5 @@
 # Control 1.5: /etc/airlock/build-info.json records what was built, from which commit,
-# when (UTC), and from which apt snapshot. forensic-session-start reads it to warn about an
+# when (UTC), from which apt snapshot, and whether it is a release or a dev build. forensic-session-start reads it to warn about an
 # old image. Written in the image build only; it describes the build, not the PC.
 # Tests: tests/unit/test_base_role.py (keys), tests/goss/base.yaml (build-info).
 
@@ -29,4 +29,8 @@
       apt_snapshot: "{{ apt_snapshot }}"
       apt_snapshot_used: "{{ use_apt_snapshot | bool }}"
       kernel_package: "{{ base_kernel_package }}"
+      # release (signed manifest from the release workflow) or dev (throwaway key, scripts/build.sh
+      # --dev); none when nothing was staged (live ISO). Set by image_inputs.yml.
+      build_kind: "{{ base_build_kind | default('none') }}"
+      target: "{{ airlock_target }}"
   when: airlock_phase == 'image'

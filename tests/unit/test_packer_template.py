@@ -74,6 +74,28 @@ def test_ansible_provisioner_runs_site_yml_locally() -> None:
     assert '"${local.packer_dir}/../ansible"' in HCL
 
 
+def test_repo_copy_and_build_inputs_are_uploaded() -> None:
+    """2B.5, 2B.6, 2B.15: the repo copy has what provisioning reads; the build inputs go in."""
+    assert '"${local.packer_dir}/../profiles"' in HCL
+    assert '"${local.packer_dir}/../docs"' in HCL
+    assert 'source      = "${local.packer_dir}/../tests/goss"' in HCL
+    assert 'destination = "/var/tmp/airlock-repo/tests/"' in HCL
+    assert 'source      = "${var.image_inputs_dir}/"' in HCL
+    assert 'destination = "/var/tmp/airlock-inputs"' in HCL
+    # Uploads come before Ansible runs, and the inputs folder is removed at the end.
+    assert HCL.index("airlock-inputs") < HCL.index("scripts/run-ansible.sh")
+    boot = (REPO / "packer" / "scripts" / "bootstrap.sh").read_text()
+    assert '"$repo_stage/tests"' in boot and '"$inputs_stage"' in boot
+    fin = (REPO / "packer" / "scripts" / "finalize.sh").read_text()
+    assert 'rm -rf -- "$repo_stage" "$inputs_stage" "$vars_file"' in fin
+    base_defaults = yaml.safe_load(
+        (REPO / "ansible" / "roles" / "base" / "defaults" / "main.yml").read_text()
+    )
+    assert base_defaults["base_image_inputs_dir"] == "/var/tmp/airlock-inputs"
+    assert '"image_inputs_dir": e["AL_INPUTS"]' in BUILD_SH
+    assert 'variable "image_inputs_dir"' in VARS_HCL
+
+
 def test_build_access_removed_before_power_off() -> None:
     """1.5: finalize runs the airlock_finalize tag in its own unit, then powers off."""
     assert "systemd-run --unit=airlock-finalize" in HCL
@@ -117,6 +139,9 @@ def test_packer_fmt_and_validate(tmp_path: Path) -> None:
             ["packer", "validate", "-syntax-only", str(REPO / "packer")], check=True, env=env
         )
         return
+    inputs = tmp_path / "inputs"
+    inputs.mkdir()
+    (inputs / "build-kind.json").write_text('{"kind": "dev"}\n')
     key = tmp_path / "key"
     subprocess.run(
         ["openssl", "genpkey", "-algorithm", "ed25519", "-out", str(key)],
@@ -141,6 +166,8 @@ def test_packer_fmt_and_validate(tmp_path: Path) -> None:
             "build_ssh_public_key=ssh-ed25519 AAAA unit-test",
             "-var",
             f"build_ssh_private_key_file={key}",
+            "-var",
+            f"image_inputs_dir={inputs}",
             str(REPO / "packer"),
         ],
         capture_output=True,

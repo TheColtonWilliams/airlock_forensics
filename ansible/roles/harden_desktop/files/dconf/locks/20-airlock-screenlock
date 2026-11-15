@@ -1,5 +1,9 @@
-# AIRLOCK task 5.1: users cannot change these keys.
+# AIRLOCK task 5.1 (also 1.2): users cannot change these keys.
 /org/gnome/desktop/screensaver/lock-enabled
+/org/gnome/desktop/screensaver/idle-activation-enabled
 /org/gnome/desktop/screensaver/ubuntu-lock-on-suspend
 /org/gnome/desktop/lockdown/disable-lock-screen
 /org/gnome/desktop/session/idle-delay
+/org/gnome/settings-daemon/plugins/power/sleep-inactive-ac-type
+/org/gnome/settings-daemon/plugins/power/sleep-inactive-battery-type
+/org/gnome/settings-daemon/plugins/power/idle-dim

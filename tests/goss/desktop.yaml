@@ -175,19 +175,37 @@ command:
     stdout:
       - '!/volume-monitor/'
   'screen lock off':
-    title: '5.1: screen lock is off (the analyst password is locked, so a lock screen could not be opened)'
+    title: '5.1, 1.2: screen lock is off (the analyst password is locked, so a lock screen could not be opened)'
     exec: >-
-      dconf read /org/gnome/desktop/screensaver/lock-enabled;
-      dconf read /org/gnome/desktop/lockdown/disable-lock-screen
+      printf 'lock-enabled=%s\n' "$(dconf read /org/gnome/desktop/screensaver/lock-enabled)";
+      printf 'idle-activation-enabled=%s\n' "$(dconf read /org/gnome/desktop/screensaver/idle-activation-enabled)";
+      printf 'disable-lock-screen=%s\n' "$(dconf read /org/gnome/desktop/lockdown/disable-lock-screen)";
+      printf 'idle-delay=%s\n' "$(dconf read /org/gnome/desktop/session/idle-delay)"
     exit-status: 0
     stdout:
-      - '/^false$/'
-      - '/^true$/'
+      - '/^lock-enabled=false$/'
+      - '/^idle-activation-enabled=false$/'
+      - '/^disable-lock-screen=true$/'
+      - '/^idle-delay=uint32 0$/'
+  'no suspend on idle':
+    title: '5.1, 1.2: the PC never suspends on idle, so a long analysis is not cut short'
+    exec: >-
+      printf 'ac=%s\n' "$(dconf read /org/gnome/settings-daemon/plugins/power/sleep-inactive-ac-type)";
+      printf 'battery=%s\n' "$(dconf read /org/gnome/settings-daemon/plugins/power/sleep-inactive-battery-type)"
+    exit-status: 0
+    stdout:
+      - "/^ac='nothing'$/"
+      - "/^battery='nothing'$/"
   'screen lock locks':
-    title: '5.1: screen lock keys are locked'
-    exec: dconf list-locks /org/gnome/desktop/
+    title: '5.1, 1.2: screen lock and idle keys are locked'
+    exec: dconf list-locks /org/gnome/
     exit-status: 0
     stdout:
       - /org/gnome/desktop/screensaver/lock-enabled
+      - /org/gnome/desktop/screensaver/idle-activation-enabled
+      - /org/gnome/desktop/screensaver/ubuntu-lock-on-suspend
       - /org/gnome/desktop/lockdown/disable-lock-screen
       - /org/gnome/desktop/session/idle-delay
+      - /org/gnome/settings-daemon/plugins/power/sleep-inactive-ac-type
+      - /org/gnome/settings-daemon/plugins/power/sleep-inactive-battery-type
+      - /org/gnome/settings-daemon/plugins/power/idle-dim

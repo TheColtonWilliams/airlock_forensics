@@ -1,7 +1,13 @@
 # Control (applies 3.3, 3.4 and 3A.1; owned here because the base role owns the boot
 # loader): the kernel command line from airlock_kernel_cmdline, root by UUID, a visible
 # boot menu, and os-prober off so update-grub never opens an attached disk.
-# Tests: tests/unit/test_base_role.py (every entry rendered), tests/goss/base.yaml (kernel-cmdline).
+# Runs before harden_storage in the first play of site.yml: harden_storage's kernel_cmdline.yml
+# checks the file written here (tests/unit/test_site_order.py runs both in that order).
+# update-grub runs from the "Base update grub" handler at the end of the play.
+# Skipped for the live ISO (airlock_target=live): live/build.sh puts the same entries on the
+# live kernel command line.
+# Tests: tests/unit/test_base_role.py (every entry rendered), tests/unit/test_site_order.py,
+# tests/goss/base.yaml (kernel-cmdline).
 
 - name: Check the kernel command line entries (3A.1)
   ansible.builtin.assert:
@@ -13,16 +19,25 @@
 
 - name: Make the grub settings folder (1.9)
   ansible.builtin.file:
-    path: /etc/default/grub.d
+    path: "{{ base_grub_defaults_dir }}"
     state: directory
     owner: root
     group: root
     mode: "0755"
 
+- name: Install the VM test hook for the boot menu (1.11)
+  ansible.builtin.copy:
+    src: 06_airlock_vm_test
+    dest: "{{ base_grub_scripts_dir }}/06_airlock_vm_test"
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Base update grub
+
 - name: Write the AIRLOCK grub settings (1.9, 3A.1)
   ansible.builtin.template:
     src: 90-airlock.cfg.j2
-    dest: /etc/default/grub.d/90-airlock.cfg
+    dest: "{{ base_grub_defaults_dir }}/90-airlock.cfg"
     owner: root
     group: root
     mode: "0644"

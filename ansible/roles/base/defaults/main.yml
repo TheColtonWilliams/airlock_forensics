@@ -75,6 +75,10 @@ base_mesa_min_version: "25.2"
 base_uas_quirks: ""
 
 base_grub_timeout: 5
+# Where grub_cmdline.yml writes 90-airlock.cfg and the 06_airlock_vm_test hook. Tests point
+# these at temporary folders; harden_storage_grub_cmdline_file must name the same 90-airlock.cfg.
+base_grub_defaults_dir: /etc/default/grub.d
+base_grub_scripts_dir: /etc/grub.d
 
 # Task 1.13: lowest SBAT generations accepted for the boot chain. shim,4 and grub,5 are
 # what shim-signed 1.58+15.8 and grub-efi-amd64-signed 1.202.5+2.12-1ubuntu7.3 in the
@@ -82,6 +86,11 @@ base_grub_timeout: 5
 base_min_sbat:
   shim: 4
   grub: 5
+
+# Where Packer uploads what scripts/build.sh staged on the build host (packer variable
+# image_inputs_dir): manifest.json(.sig), manifest-signing.pub.pem, goss, build-kind.json.
+# Read by image_inputs.yml, removed by packer/scripts/finalize.sh.
+base_image_inputs_dir: /var/tmp/airlock-inputs
 
 # Helper programs installed by this role.
 base_libexec_dir: "{{ airlock_opt_dir }}/libexec"

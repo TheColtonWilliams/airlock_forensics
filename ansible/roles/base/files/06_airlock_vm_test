@@ -1,0 +1,33 @@
+#!/bin/sh
+# /etc/grub.d/06_airlock_vm_test (task 1.11, test harness support). Run by update-grub
+# (grub-mkconfig) before 10_linux; prints grub script, nothing else.
+#
+# tests/run-qemu-tests.sh boots an unprovisioned image to test the hardening. It must not run
+# offline provisioning there (airlock-provision.service would try to provision and reboot the
+# guest). The harness cannot type on the boot menu, so it passes one SMBIOS OEM string
+# (QEMU: -smbios type=11,value=airlock.noprovision). This snippet reads the first OEM string
+# with grub's smbios command and, only when it is exactly "airlock.noprovision", sets the grub
+# variable airlock_test_args to that word. 90-airlock.cfg appends $airlock_test_args to
+# GRUB_CMDLINE_LINUX_DEFAULT, so the kernel command line gets airlock.noprovision and the
+# unit's ConditionKernelCommandLine=!airlock.noprovision skips it.
+#
+# Any other OEM string (real PCs carry vendor strings here) is ignored: nothing from the
+# firmware is ever copied onto the kernel command line. If grub has no smbios command (for
+# example a signed grub built without it under Secure Boot), the variable stays empty and the
+# boot is unchanged.
+# Tests: tests/functional/test_build_grub_vm_test.sh, tests/unit/test_base_role.py
+set -eu
+
+cat <<'GRUB'
+### BEGIN AIRLOCK VM test hook (06_airlock_vm_test) ###
+set airlock_test_args=""
+set airlock_oem_string=""
+if smbios --type 11 --get-string 4 --set airlock_oem_string; then
+  if [ "${airlock_oem_string}" = "airlock.noprovision" ]; then
+    set airlock_test_args="airlock.noprovision"
+  fi
+fi
+unset airlock_oem_string
+export airlock_test_args
+### END AIRLOCK VM test hook ###
+GRUB

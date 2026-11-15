@@ -1,7 +1,11 @@
-# AIRLOCK task 5.1: no screen lock. The analyst password is locked, so a locked screen could not be opened.
-# Test: tests/goss/desktop.yaml
+# AIRLOCK task 5.1 (also covers 1.2 "no lock"): no screen lock, no blanking lock, no automatic
+# suspend. The analyst password is locked, so a locked screen could not be opened, and a
+# suspend in the middle of a long analysis would cut it short. This is the only file that sets
+# these keys (decision log 2026-11-15: one owner, the hardening role).
+# Test: tests/goss/desktop.yaml, tests/unit/test_harden_desktop.py
 [org/gnome/desktop/screensaver]
 lock-enabled=false
+idle-activation-enabled=false
 ubuntu-lock-on-suspend=false
 
 [org/gnome/desktop/lockdown]
@@ -9,3 +13,8 @@ disable-lock-screen=true
 
 [org/gnome/desktop/session]
 idle-delay=uint32 0
+
+[org/gnome/settings-daemon/plugins/power]
+sleep-inactive-ac-type='nothing'
+sleep-inactive-battery-type='nothing'
+idle-dim=false

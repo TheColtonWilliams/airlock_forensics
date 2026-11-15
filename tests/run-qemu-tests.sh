@@ -20,6 +20,10 @@
 #   --boot-bus BUS      virtio (default), usb, or sata
 #   --nic               attach a restricted user-mode network card (air-gap test)
 #   --no-extra-disks    attach no test disks
+#   --provision         let offline provisioning run at boot. Default: the guest boots with
+#                       airlock.noprovision on the kernel command line (SMBIOS OEM string read
+#                       by the image's grub hook), so an unprovisioned image is tested as built
+#                       and airlock-provision.service never reboots it under the tests
 #   --require-sig-disk  fail if the LVM/mdraid/swap disk cannot be built (CI)
 #   --ntfs-fixture FILE also attach a copy of this NTFS image (serial airlock-ntfs)
 #   --grow-gib N        overlay is N GiB larger than the image (default 4)
@@ -38,6 +42,9 @@
 # Inside the guest the tests get AIRLOCK_TEST_DIR, AIRLOCK_TEST_FIRMWARE, AIRLOCK_TEST_NIC,
 # AIRLOCK_TEST_DISK_{EXT4,SWAP,SIG,NTFS} (/dev/disk/by-id paths, or empty), and
 # AIRLOCK_SIGDISK_SHA256 (the host's hash of the sig disk before boot).
+# goss gets --vars-inline {"disks": {...}, "firmware", "nic", "provision": false}; the same
+# files run inside forensic-provision's self-test with "provision": true and no test disks, so
+# checks that need the test disks or a running desktop are skipped there.
 # Exit status: 0 all passed; 1 any failure (summary at the end); 2 bad usage.
 set -euo pipefail
 
@@ -52,6 +59,7 @@ image=""
 firmwares="uefi,bios"
 boot_bus="virtio"
 nic=0
+noprovision=1
 extra_disks=1
 require_sig=0
 ntfs_fixture=""
@@ -70,7 +78,7 @@ results_dir=""
 dry_run=0
 guest_dir="/run/airlock-tests"
 
-usage() { sed -n '2,41p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,48p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 die() {
   printf 'run-qemu-tests: %s\n' "$*" >&2
   exit 1
@@ -88,6 +96,7 @@ while (($#)); do
     --boot-bus) boot_bus="${2:-}"; shift 2 ;;
     --nic) nic=1; shift ;;
     --no-extra-disks) extra_disks=0; shift ;;
+    --provision) noprovision=0; shift ;;
     --require-sig-disk) require_sig=1; shift ;;
     --ntfs-fixture) ntfs_fixture="${2:-}"; shift 2 ;;
     --grow-gib) grow_gib="${2:-}"; shift 2 ;;
@@ -251,12 +260,14 @@ Q_BOOT_BUS="$boot_bus"
 Q_MEMORY="$memory"
 Q_CPUS="$cpus"
 Q_NIC="$nic"
+Q_NOPROVISION="$noprovision"
 
 if ((dry_run)); then
   set_disk_list
   log "dry run: nothing is booted"
   printf 'image=%s format=%s size=%s overlay_size=%s accel=%s boot_timeout=%s test_timeout=%s\n' \
     "$image" "$image_format" "$image_bytes" "$overlay_bytes" "$accel" "$boot_timeout" "$test_timeout"
+  printf 'noprovision=%s\n' "$noprovision"
   printf 'goss files: %s\n' "${goss_files[*]:-(none)}"
   printf 'vm tests: %s\n' "${vm_tests[*]:-(none)}"
   for key in ext4 swap sig ntfs; do
@@ -315,7 +326,7 @@ import sys
 
 fw, nic, ext4, swap, sig, ntfs = sys.argv[1:7]
 print(json.dumps({"disks": {"ext4": ext4, "ntfs": ntfs, "sig": sig, "swap": swap},
-                  "firmware": fw, "nic": nic == "1"}, sort_keys=True))
+                  "firmware": fw, "nic": nic == "1", "provision": False}, sort_keys=True))
 PY
 }
 
@@ -368,6 +379,16 @@ for fw in "${fw_list[@]}"; do
       record pass "[$fw] Secure Boot is on"
     else
       record fail "[$fw] Secure Boot is not on (see $results/$fw/secureboot.log)"
+    fi
+  fi
+
+  # An unprovisioned image is tested as built: airlock.noprovision must have reached the kernel.
+  if ((noprovision)); then
+    guest_exec cmdline 60 /bin/cat /proc/cmdline
+    if grep -Eq '(^| )airlock\.noprovision( |$)' "$results/$fw/cmdline.log"; then
+      record pass "[$fw] airlock.noprovision on the kernel command line (provisioning skipped)"
+    else
+      record fail "[$fw] airlock.noprovision missing from the kernel command line; the grub hook did not see the SMBIOS OEM string (see $results/$fw/cmdline.log)"
     fi
   fi
 
