@@ -193,7 +193,7 @@ def build_vars(report: assets.AssetReport) -> dict[str, Any]:
         "airlock_phase": "provision",
         "airlock_profile": assets.profile_name(report.profile) or "",
         "airlock_features": features,
-        # Same value under the name the tools_ai role reads (its profile_features.yml).
+        # Same value under the name tools_ai, tools_autopsy and tools_eztools read.
         "airlock_profile_features": features,
         "airlock_disabled_features": disabled,
         "airlock_assets": {k: dict(v) for k, v in sorted(report.verified.items())},

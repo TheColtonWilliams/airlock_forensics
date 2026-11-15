@@ -4,9 +4,16 @@ Extraction runs the stock tools in the parser sandbox (no network):
 
 * PDF: ``pdftotext -layout -enc UTF-8``; a page with almost no text is treated as scanned;
 * word-processor files: ``soffice --headless --convert-to txt:Text`` with a private profile;
-* spreadsheets: ``soffice --headless --convert-to csv``;
+* spreadsheets: ``soffice --headless --convert-to csv`` with the CSV filter's "all sheets"
+  option (LibreOffice 7.2 or later), which writes one file per sheet; the sheets are joined
+  in workbook order, each under its name (LibreOffice prints "Writing sheet NAME -> FILE" in
+  that order). An older LibreOffice writes the first sheet only, and the method says so;
 * presentations: ``soffice --headless --convert-to pdf``, then ``pdftotext``;
 * plain text: read directly (UTF-8 with replacement).
+
+Content type: :data:`DOCUMENT_MIME` lists, per extension family, the exiftool MIME types that
+are documents of that family (:func:`mime_allowed`). The ``documents`` module keeps only files
+whose type is on that list or that it screened as pictures or video; anything else is not kept.
 
 Scanned pages are rendered with ``pdftoppm``, screened like any image, and only cleared pages
 go to the model's OCR prompt. Rendered pages are deleted straight after.
@@ -18,6 +25,7 @@ a delimited data block (``airlock_ai.datablock``), never as part of an instructi
 from __future__ import annotations
 
 import shutil
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -35,6 +43,98 @@ DOCUMENT_EXTENSIONS = frozenset({".pdf"}) | WRITER | CALC | IMPRESS | PLAIN
 MAX_TEXT_BYTES = 8 * 1024 * 1024
 SCANNED_PAGE_CHARS = 20
 MAX_OCR_PAGES = 20
+# LibreOffice CSV export (filter "Text - txt - csv (StarCalc)"): comma, double quote, UTF-8,
+# first line 1, default cell formats, default language, text cells not all quoted, special
+# numbers detected, cell contents as shown (dates stay dates), values not formulas, spaces
+# kept, and token 12 = -1: every sheet, one file each (LibreOffice 7.2 or later).
+CSV_ALL_SHEETS = "csv:Text - txt - csv (StarCalc):44,34,UTF8,1,,0,false,true,true,false,false,-1"
+_WRITING_SHEET = "Writing sheet "
+
+_OOXML = "application/vnd.openxmlformats-officedocument."
+_ODF = "application/vnd.oasis.opendocument."
+_TEXTUAL = frozenset({"text/plain", "text/html", "text/xml", "application/xml"})
+# exiftool File:MIMEType values that are documents of each extension family. Cross-family
+# names that Office programs open as their own (an HTML or CSV file saved as .xls, RTF saved
+# as .doc) are listed; archives (application/zip), databases, and every picture, video, or
+# sound type are not.
+DOCUMENT_MIME: dict[str, frozenset[str]] = {
+    "pdf": frozenset({"application/pdf"}),
+    "word-processor": _TEXTUAL
+    | {
+        "application/msword",
+        _OOXML + "wordprocessingml.document",
+        _OOXML + "wordprocessingml.template",
+        "application/vnd.ms-word.document.macroenabled.12",
+        "application/vnd.ms-word.template.macroenabled.12",
+        _ODF + "text",
+        _ODF + "text-template",
+        "text/rtf",
+        "application/rtf",
+        "application/vnd.wordperfect",
+        "application/vnd.ms-works",
+        "application/x-iwork-pages-sffpages",
+    },
+    "spreadsheet": _TEXTUAL
+    | {
+        "text/csv",
+        "application/vnd.ms-excel",
+        _OOXML + "spreadsheetml.sheet",
+        _OOXML + "spreadsheetml.template",
+        "application/vnd.ms-excel.sheet.macroenabled.12",
+        "application/vnd.ms-excel.template.macroenabled.12",
+        _ODF + "spreadsheet",
+        _ODF + "spreadsheet-template",
+    },
+    "presentation": frozenset(
+        {
+            "application/vnd.ms-powerpoint",
+            _OOXML + "presentationml.presentation",
+            _OOXML + "presentationml.slideshow",
+            _OOXML + "presentationml.template",
+            "application/vnd.ms-powerpoint.presentation.macroenabled.12",
+            "application/vnd.ms-powerpoint.slideshow.macroenabled.12",
+            _ODF + "presentation",
+            _ODF + "presentation-template",
+        }
+    ),
+    "text": _TEXTUAL
+    | {
+        "text/csv",
+        "text/markdown",
+        "text/x-markdown",
+        "text/x-log",
+        "text/rtf",
+        "text/calendar",
+        "text/vcard",
+        "text/x-vcard",
+        "text/tab-separated-values",
+        "application/json",
+        "application/xhtml+xml",
+        "message/rfc822",
+    },
+}
+
+
+def family(ext: str) -> str:
+    """The extension family a document name claims (a key of :data:`DOCUMENT_MIME`)."""
+    ext = ext.lower()
+    if ext == ".pdf":
+        return "pdf"
+    if ext in WRITER:
+        return "word-processor"
+    if ext in CALC:
+        return "spreadsheet"
+    if ext in IMPRESS:
+        return "presentation"
+    if ext in PLAIN:
+        return "text"
+    return ""
+
+
+def mime_allowed(ext: str, mime: str) -> bool:
+    """Whether exiftool's MIME type ``mime`` is a document of the family ``ext`` claims."""
+    base = mime.split(";", 1)[0].strip().lower()
+    return bool(base) and base in DOCUMENT_MIME.get(family(ext), frozenset())
 
 
 @dataclass
@@ -46,9 +146,13 @@ class DocText:
     error: str = ""
 
 
-def _read_text(p: Path) -> str:
+def _read_text(p: Path, limit: int = MAX_TEXT_BYTES) -> str:
     with open(p, "rb") as fh:
-        return fh.read(MAX_TEXT_BYTES).decode("utf-8", "replace")
+        return fh.read(max(0, limit)).decode("utf-8", "replace")
+
+
+def _strip_bom(text: str) -> str:
+    return text.removeprefix("\ufeff")
 
 
 def _pdftotext(run_tool: RunTool, pdf: Path, out: Path) -> DocText:
@@ -69,7 +173,11 @@ def _pdftotext(run_tool: RunTool, pdf: Path, out: Path) -> DocText:
     return DocText(text.replace("\f", "\n"), "pdftotext", len(pages), scanned)
 
 
-def _soffice(run_tool: RunTool, src: Path, workdir: Path, fmt: str) -> Path | None:
+def _soffice_run(
+    run_tool: RunTool, src: Path, workdir: Path, fmt: str
+) -> tuple[list[Path], str, Path]:
+    """Convert ``src`` with headless LibreOffice: (files written, its stdout, output folder).
+    The file list is empty when the conversion failed."""
     outdir = workdir / "soffice-out"
     profile = workdir / "soffice-profile"
     tool_dir(outdir)
@@ -93,10 +201,64 @@ def _soffice(run_tool: RunTool, src: Path, workdir: Path, fmt: str) -> Path | No
         memory_bytes=8 * 1024**3,
         extra_ro=[str(src.parent)],
     )
-    produced = sorted(outdir.iterdir())
-    if cp.returncode != 0 or not produced:
-        return None
-    return produced[0]
+    produced = sorted(p for p in outdir.iterdir() if p.is_file())
+    if cp.returncode != 0:
+        return [], cp.stdout or "", outdir
+    return produced, cp.stdout or "", outdir
+
+
+def _soffice(run_tool: RunTool, src: Path, workdir: Path, fmt: str) -> Path | None:
+    produced, _out, _dir = _soffice_run(run_tool, src, workdir, fmt)
+    return produced[0] if produced else None
+
+
+def sheet_order(stdout: str, produced: Sequence[Path]) -> list[tuple[str, Path]]:
+    """(sheet name, CSV file) in workbook order.
+
+    LibreOffice prints ``Writing sheet NAME -> FOLDER/FILE`` for each sheet, in order; a line
+    is matched to a file it wrote by the file name, so how the folder is spelled does not
+    matter. Files that no such line names follow in name order, named after the part of the
+    file name after ``<source stem>-``. A sheet line whose file is missing is left out.
+    """
+    by_name = {p.name: p for p in produced}
+    out: list[tuple[str, Path]] = []
+    seen: set[str] = set()
+    for line in stdout.splitlines():
+        if not line.startswith(_WRITING_SHEET):
+            continue
+        fname = line.rsplit("/", 1)[-1]
+        if fname not in by_name or fname in seen:
+            continue
+        head, sep, _folder = line[: -len(fname) - 1].rpartition(" -> ")
+        if not sep:
+            continue
+        seen.add(fname)
+        out.append((head[len(_WRITING_SHEET) :], by_name[fname]))
+    for p in produced:
+        if p.name not in seen:
+            out.append((p.stem.split("-", 1)[1] if "-" in p.stem else p.stem, p))
+    return out
+
+
+def _spreadsheet(run_tool: RunTool, src: Path, workdir: Path) -> DocText:
+    produced, stdout, _outdir = _soffice_run(run_tool, src, workdir, CSV_ALL_SHEETS)
+    if not produced:
+        return DocText("", "soffice", error="LibreOffice could not convert the file")
+    if len(produced) == 1 and produced[0].name == f"{src.stem}.csv":
+        # No per-sheet file name: this LibreOffice ignored the all-sheets option.
+        text = _strip_bom(_read_text(produced[0]))
+        return DocText(text, "soffice csv (first sheet only: LibreOffice older than 7.2)")
+    sheets = sheet_order(stdout, produced)
+    parts: list[str] = []
+    left = MAX_TEXT_BYTES
+    for i, (name, path) in enumerate(sheets, 1):
+        if left <= 0:
+            break
+        body = _strip_bom(_read_text(path, left))
+        part = f"=== Sheet {i}: {name} ===\n{body.rstrip(chr(10))}\n"
+        left -= len(part.encode("utf-8"))
+        parts.append(part)
+    return DocText("\n".join(parts), f"soffice csv ({len(sheets)} sheets)", pages=len(sheets))
 
 
 def extract_text(doc: Path, run_tool: RunTool, workdir: Path) -> DocText:  # noqa: PLR0911
@@ -107,12 +269,13 @@ def extract_text(doc: Path, run_tool: RunTool, workdir: Path) -> DocText:  # noq
             return _pdftotext(run_tool, doc, workdir / "pdftotext.txt")
         if ext in PLAIN:
             return DocText(_read_text(doc), "read")
-        if ext in WRITER | CALC:
-            fmt = "csv" if ext in CALC else "txt:Text"
-            out = _soffice(run_tool, doc, workdir, fmt)
+        if ext in CALC:
+            return _spreadsheet(run_tool, doc, workdir)
+        if ext in WRITER:
+            out = _soffice(run_tool, doc, workdir, "txt:Text")
             if out is None:
                 return DocText("", "soffice", error="LibreOffice could not convert the file")
-            return DocText(_read_text(out), f"soffice {fmt}")
+            return DocText(_strip_bom(_read_text(out)), "soffice txt:Text")
         if ext in IMPRESS:
             out = _soffice(run_tool, doc, workdir, "pdf")
             if out is None:

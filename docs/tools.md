@@ -50,7 +50,7 @@ the cross-check (`xval`) compares them; a missing optional tool is named in the 
 * NudeNet and SigLIP through ONNX Runtime in `/opt/triage` (`airlock_ai/triage_runner.py`, sandboxed): screening (4B.5, 4B.6).
 * faster-whisper in `/opt/whisper` (`airlock_ai/whisper_runner.py`, sandboxed): audio transcripts (4B.7).
 * `ffmpeg` (frames every 2 s plus scene changes, audio tracks), `ffprobe`, `mediainfo`, `exiftool`: video, audio, and image metadata (4B.7, 4C.8-4C.10).
-* `pdftotext`, `pdftoppm` (`poppler-utils`), `soffice --headless --convert-to` (LibreOffice): document text and scanned pages (4B.9, 4C.11).
+* `pdftotext`, `pdftoppm` (`poppler-utils`), `soffice --headless --convert-to` (LibreOffice): document text and scanned pages (4B.9, 4C.11). LibreOffice is for headless conversion only: `harden_desktop` hides its desktop entries and removes every file association with it, so Files never offers to open a file with it (5.1).
 * `llama-server` on 127.0.0.1 (same server, `/v1/chat/completions`, `/completion` fallback, `/props` and `/v1/models` for provenance): draft results, interpretation, and conclusions in `evidence-report` (4E.2, 4E.3); the report runs without it. Standard library only otherwise (`sqlite3`, `urllib`, `html`).
 
 ## Hash sets and signatures (role `tools_hashsets`, `evidence-triage-hash`, `malware` module; Milestone 4A)
@@ -106,7 +106,7 @@ archive (from the dated snapshot, task 6.1). Runbook using them in order:
 * `regripper`, `rip.pl` (noble `regripper` 3.0): registry hive reports (4.8).
 * `regfinfo`, `regfexport` (noble `libregf-utils`): registry hive structure (4.8).
 * `hivexget`, `hivexml`, `hivexsh` (noble `libhivex-bin`): registry values; open hives without `-w` (4.8).
-* `autopsy` (optional, `install_autopsy=false`; Autopsy 4.23.1 zip and Sleuth Kit Java .deb staged on ASSETS with the profile feature `autopsy`; Java 17 and the libraries it needs from noble are on every image, so it installs offline): GUI case manager; while a case is open it runs its Solr 8 search server bound to 127.0.0.1 (set in the zip's `autopsy-solr.in.sh` and by the launcher) (4.9).
+* `autopsy` (optional, `install_autopsy=false`; Autopsy 4.23.1 zip and Sleuth Kit Java .deb staged on ASSETS with the profile feature `autopsy`; Java 17 and the libraries it needs from noble are on every image, so it installs offline): GUI case manager; while a case is open it runs its Solr 8 search server bound to 127.0.0.1 by the `-Djetty.host=127.0.0.1` line the role adds to `SOLR_OPTS` in the zip's `autopsy-solr.in.sh` (Autopsy's own `autopsy-solr` script never reads `SOLR_JETTY_HOST`, so the launcher's export of it does not bind anything) (4.9).
 * `cast` (optional, `install_sift=false`; Cast 1.0.13 .deb): installs SANS SIFT in server mode at image build only; hardening re-applies after it (6.5).
 
 ## CI, release, and repository tools (host side; never on the image)

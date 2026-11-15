@@ -40,6 +40,6 @@ tools_eztools_tools:
   - {name: SBECmd, pin: eztools_sbecmd}
   - {name: bstrings, pin: eztools_bstrings}
 
-# Which staged features to install at provisioning. forensic-provision may pass
-# airlock_profile_features; otherwise the role reads ASSETS/profile.json.
+# Which staged features to install at provisioning: only forensic-provision's schema-checked
+# airlock_profile_features (empty in the image phase). The role never reads ASSETS/profile.json.
 tools_eztools_features: "{{ airlock_profile_features | default({}) }}"

@@ -14,7 +14,10 @@ go through the same flow from the ``carve`` module, see below):
    (:meth:`MediaModule.content_route`: ffprobe streams, exiftool MIME type, magic bytes). A
    file whose content is a picture or video despite its extension goes through the same
    screening; one whose type cannot be confirmed is deleted with a "not screened (content
-   type mismatch)" row;
+   type mismatch)" row. A sound file with embedded pictures (ID3 APIC, MP4 ``covr`` cover
+   art) has those pictures screened (route ``embedded``) and is kept only if they clear;
+   if they cannot be extracted and screened the file is deleted with a "not screened
+   (embedded picture could not be screened)" row;
 4. describe what was kept with the local model (``airlock_ai.describe``), if a tier is staged;
 5. emit rows: observed metadata rows, AI-generated screening rows (score, label, threshold,
    sensitive_flag, model and prompt SHA-256), AI-generated description rows. Rows never carry
@@ -102,7 +105,8 @@ class MediaItem:
     screen: ScreenResult | None = None
     screen_note: str = ""  # extra text for the screening row (frames, covered span)
     # Content-type check of an unscreened module: "" (content matches), "image" or "video"
-    # (screen it as that), or "unknown" (not screened: deleted). ``route_reason`` says why.
+    # (screen it as that), "embedded" (a sound file with embedded pictures: screen those), or
+    # "unknown" (not screened: deleted). ``route_reason`` says why.
     route: str = ""
     route_reason: str = ""
     meta: dict[str, Any] = field(default_factory=dict)
@@ -356,7 +360,9 @@ def screening_rows(
     """Two AI-generated rows: the nudity detector and the zero-shot labels."""
     base = base_row(item, category)
     if res.verdict == "error":
-        if item.route:
+        if item.route == "embedded":
+            why = f"embedded picture could not be screened: {item.route_reason}"
+        elif item.route:
             why = f"content type mismatch: {item.route_reason}"
         elif "not fully screened" in res.error:
             why = "not every frame or page could be screened"
@@ -615,7 +621,11 @@ class MediaModule(Module):
         """Extra text for the screening row (video: frames screened, covered span, flagged
         timestamps; a routed file: why it was screened)."""
         parts = [item.screen_note]
-        if item.route:
+        if item.route == "embedded":
+            done = item.screen is not None and item.screen.verdict != "error"
+            what = "embedded picture screened" if done else "embedded picture"
+            parts.insert(0, f"{what}: {item.route_reason}")
+        elif item.route:
             parts.insert(0, f"content type mismatch: {item.route_reason}; screened as {item.route}")
         return "; ".join(x for x in parts if x)
 
@@ -750,7 +760,8 @@ class MediaModule(Module):
             self._screen(ctx, live, thr)
         routed = [i for i in live if i.route]
         if routed:
-            counts["content_mismatch"] += len(routed)
+            counts["embedded_pictures"] += sum(1 for i in routed if i.route == "embedded")
+            counts["content_mismatch"] += sum(1 for i in routed if i.route != "embedded")
             screen_routed(ctx, routed, thr)
         for item in live:
             check_escalated(ctx)
@@ -834,13 +845,15 @@ def _not_screened(item: MediaItem, why: str) -> ScreenResult:
 def screen_routed(ctx: ModuleContext, items: Sequence[MediaItem], thr: aicfg.Thresholds) -> None:
     """Screen files an unscreened module found to hold pictures or video (``item.route``).
 
-    Sets ``item.screen`` on each. Fails closed: a file that could not be screened gets an
-    ``error`` verdict, so it is deleted like any unscreened picture."""
+    ``embedded`` (cover art in a sound file) goes through the video screening, which extracts
+    each attached picture with ffmpeg and scores it; a picture that cannot be extracted or
+    scored gives an ``error`` verdict. Sets ``item.screen`` on each. Fails closed: a file
+    that could not be screened is deleted like any unscreened picture."""
     run_tool = ctx_runner(ctx)
     work = ctx.workdir / "screen"
     imgs = [i for i in items if i.route == "image" and i.path is not None]
     for item in items:
-        if item.route not in {"image", "video"} or item.path is None:
+        if item.route not in {"image", "video", "embedded"} or item.path is None:
             item.screen = _not_screened(item, item.route_reason or "content type unknown")
     if imgs:
         check_escalated(ctx)
@@ -859,7 +872,7 @@ def screen_routed(ctx: ModuleContext, items: Sequence[MediaItem], thr: aicfg.Thr
             for item in imgs:
                 item.screen = _not_screened(item, f"{type(exc).__name__}: {exc}"[:300])
     for item in items:
-        if item.route != "video" or item.path is None:
+        if item.route not in {"video", "embedded"} or item.path is None:
             continue
         check_escalated(ctx)
         try:
@@ -945,7 +958,9 @@ def _looks_like_text(head: bytes) -> bool:
 
 
 def av_route(fp: Any) -> tuple[str, str]:
-    """Route for a file ffprobe read: ``video`` when it holds any video or picture stream."""
+    """Route for a file ffprobe read: ``image`` for a still picture, ``video`` when it holds a
+    moving-picture stream, ``embedded`` when its only pictures are attached ones (cover
+    art), ``""`` for sound only."""
     if not isinstance(fp, dict):
         return "unknown", "ffprobe could not read it"
     pics = moving = 0
@@ -964,7 +979,7 @@ def av_route(fp: Any) -> tuple[str, str]:
     if moving:
         return "video", f"ffprobe found {moving} picture or video stream(s) ({name})"
     if pics:
-        return "video", f"ffprobe found {pics} attached picture(s) ({name})"
+        return "embedded", f"ffprobe found {pics} embedded picture(s) (cover art, {name})"
     return "", ""
 
 

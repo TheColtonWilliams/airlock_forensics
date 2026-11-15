@@ -7,6 +7,10 @@ sexual or violent, and no EICAR file (decision log 2026-11-15).
   shapes, a text render, a procedural landscape, two text PDFs (one with a planted instruction
   for the data-not-instructions tests), a "scanned" PDF page (a picture of text), a sine tone.
   `tests/functional/test_ai_neutral.sh` checks the committed files equal a fresh run.
+* `make-document-fixtures.py OUTDIR` (standard library only, deterministic, nothing committed):
+  a hand-built minimal `.docx`, two-sheet `.xlsx` and `.ods` workbooks, a ZIP archive, a flat
+  colour Y4M video and Photoshop picture, for the documents tests
+  (`tests/unit/test_module_documents.py`, `tests/functional/test_documents_sandbox.sh`).
 * `stub-scores.json`: fixed scores for `AIRLOCK_SCREEN_BACKEND=stub:<file>`. The flagged and
   error entries point at the neutral shapes by SHA-256; the "flag" is a test value, not a
   property of the picture.

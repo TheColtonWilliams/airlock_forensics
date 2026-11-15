@@ -1,24 +1,14 @@
-# Control 4B.5, 4B.7, 4B.15 (support): at first boot, read which features were staged
-# (ASSETS/profile.json, contract section 6) unless forensic-provision passed them.
-# Test: tests/unit/test_screen_role.py (feature gating).
-- name: Profile | Look for profile.json on ASSETS
-  ansible.builtin.stat:
-    path: "{{ airlock_assets_mount }}/profile.json"
-  register: tools_ai_profile_stat
-  when: airlock_phase == 'provision'
-
-- name: Profile | Read profile.json
-  ansible.builtin.slurp:
-    src: "{{ airlock_assets_mount }}/profile.json"
-  register: tools_ai_profile_raw
-  when:
-    - airlock_phase == 'provision'
-    - tools_ai_features | length == 0
-    - tools_ai_profile_stat.stat.exists | default(false)
-
-- name: Profile | Set the staged features
+# Control 4B.5, 4B.7, 4B.15 (support): which features were staged comes only from
+# forensic-provision (airlock_profile_features), which first checks ASSETS/profile.json against
+# a fixed schema: real booleans, known AI tiers, unknown keys dropped, and any template text
+# refused. The role never reads profile.json itself: ASSETS is writable from any computer and
+# profile.json is not signed, so its text must never reach Ansible's templating. Only a real
+# true turns a feature on.
+# Test: tests/unit/test_screen_role.py (feature gating); tests/unit/test_offline_phase.py (no
+# role reads profile.json); tests/unit/test_provision.py (templated profile values refused).
+- name: Profile | Take the staged features from forensic-provision
   ansible.builtin.set_fact:
-    tools_ai_staged: >-
-      {{ tools_ai_features if tools_ai_features | length > 0 else
-         ((tools_ai_profile_raw.content | b64decode | from_json).features
-          if tools_ai_profile_raw.content is defined else {}) }}
+    tools_ai_staged:
+      classifiers: "{{ (tools_ai_features.classifiers | default(false)) is sameas true }}"
+      whisper: "{{ (tools_ai_features.whisper | default(false)) is sameas true }}"
+      nvidia_proprietary: "{{ (tools_ai_features.nvidia_proprietary | default(false)) is sameas true }}"

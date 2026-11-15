@@ -14,3 +14,6 @@
 
 - name: Screen lock | Off
   ansible.builtin.import_tasks: screen_lock_off.yml
+
+- name: LibreOffice | Not offered on the desktop
+  ansible.builtin.import_tasks: libreoffice_hidden.yml

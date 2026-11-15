@@ -62,14 +62,36 @@ inventory -> export (read-only, icat) -> hash -> metadata -> SCREEN -> cleared? 
    covering 0.0 to 7196.4 s of 7200.0 s"). A video is **not cleared** (verdict *error*) when the
    frames do not reach its end: ffmpeg stopped with an error, the video runs past the length its
    header records, the length is unknown and the frame limit ran out, or it has more than one
-   video stream. Frames are deleted as soon as they are scored.
+   video stream. Frames are deleted as soon as they are scored. A clip shorter than about half
+   the frame interval (under 1 s at the shipped 2 s) can yield no frame at all; it is then not
+   cleared and not kept.
    Audio and documents are not screened, but their real content type is checked first
-   (ffprobe streams, exiftool MIME type, magic bytes). A picture or video under an audio or
-   document name (a video renamed `.m4a`, a photo renamed `.txt`, an MP3 with cover art) is
-   screened like an image or a video and kept only if cleared; it gets no text extraction. A
-   file whose type cannot be confirmed (ffprobe cannot read an "audio" file; exiftool cannot
-   name a "document" that does not look like a document or text) is deleted like an unscreened
-   picture, with a `screen_error` row "Not screened (content type mismatch: ...)".
+   (ffprobe streams, exiftool MIME type, magic bytes):
+   * **Audio.** Sound only: kept and transcribed. Sound with embedded pictures (ID3 cover art
+     in an MP3, a `covr` picture in an M4A): each picture is extracted with ffmpeg and screened;
+     the file is kept, and transcribed, only if every picture clears (screening row text
+     "embedded picture screened: ..."). If a picture cannot be extracted or scored, the whole
+     file is not kept, because the sound cannot be kept apart from the unscreened picture
+     without changing the file: `screen_error` row "Not screened (embedded picture could not
+     be screened: ...)". A video under an audio name (a clip renamed `.m4a`) is screened like
+     any video, frames over its whole length, and kept only if cleared; a cleared one is then
+     transcribed and the transcript summarised like any cleared sound file (as the video
+     module does for a cleared video), but its pictures are never described. A still picture
+     under an audio name is screened like an image and is neither transcribed nor described.
+     A file ffprobe cannot read is not kept.
+   * **Documents.** A file is kept only if exiftool's MIME type is a document of the family its
+     extension claims (PDF; Word, OpenDocument text, RTF, WordPerfect, Works; Excel,
+     OpenDocument spreadsheet, CSV; PowerPoint, OpenDocument presentation; plain text, HTML,
+     XML, JSON, e-mail; the list is `DOCUMENT_MIME` in `airlock_ai/documents.py`), and ffprobe
+     cannot read a picture or video stream from it. A picture or video under a document name
+     (a photo renamed `.txt`; a Y4M video, which exiftool calls `text/plain`; MXF or SWF video
+     or a Photoshop file renamed `.doc`, `.xls` or `.ppt`) is screened like an image or a video,
+     kept only if cleared, and never read as a document (no text, no summary). Anything else
+     under a document name (an archive, a database, sound, a type nobody can name that does
+     not look like a document or text) is not kept.
+   Files whose type cannot be confirmed are deleted like unscreened pictures, with a
+   `screen_error` row "Not screened (content type mismatch: ...)" that names what exiftool and
+   ffprobe reported.
 3. **Verdict.**
    * *flagged*: the nudity score, or any label score other than neutral, is at or above its
      threshold;
@@ -157,8 +179,13 @@ a fixed prompt that says the block is data and never instructions.
 * Pictures inside documents are not screened. A PDF page that has text, or a word-processor,
   spreadsheet or presentation file with pictures in it, is kept unscreened; only near-empty
   ("scanned") PDF pages are rendered and screened before OCR. The same holds for pictures inside
-  archives, e-mails (`.eml` attachments) and HTML (`data:` images). Treat kept documents with
-  the same care as unscreened media. See docs/known-limitations.md.
+  archives, e-mails (`.eml` attachments) and HTML (`data:` images). The content-type check
+  only decides whether the file as a whole is a document; it does not look inside one. Treat
+  kept documents with the same care as unscreened media. See docs/known-limitations.md.
+* Spreadsheet text comes from LibreOffice's CSV export of every sheet, joined in workbook order
+  under "=== Sheet N: NAME ===" headings. Charts, pictures and comments are not exported. A
+  LibreOffice older than 7.2 exports the first sheet only; the `document_text` row's method
+  then says "first sheet only" (the image ships a newer one).
 * `v_flags` in `case.sqlite` and the report's media screening table hold media screening rows
   only (`screen_*` and `carved_media_removed` rows of the images, video, audio and documents
   categories). Hash and malware similarity hits are in `v_hash_hits`.

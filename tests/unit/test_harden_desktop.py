@@ -8,7 +8,9 @@ database), so the values and the locks are checked as GNOME would see them.
 from __future__ import annotations
 
 import configparser
+import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -192,3 +194,176 @@ def test_screen_lock_has_one_owner() -> None:
     assert owners == ["harden_desktop/files/dconf/20-airlock-screenlock"]
     base_tasks = (ROLES / "base" / "tasks").glob("*.yml")
     assert not any("screensaver" in p.read_text(encoding="utf-8") for p in base_tasks)
+
+
+# ----------------------------------------------------------------- LibreOffice hidden (5.1)
+
+DESKTOP_DEFAULTS = yaml.safe_load(
+    (ROLES / "harden_desktop" / "defaults" / "main.yml").read_text(encoding="utf-8")
+)
+MIMEAPPS = ROLES / "harden_desktop" / "files" / "mimeapps.list"
+OFFICE_TYPES = (
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/msword",
+    "application/vnd.ms-excel",
+    "application/vnd.ms-powerpoint",
+    "application/vnd.oasis.opendocument.text",
+    "application/vnd.oasis.opendocument.spreadsheet",
+    "application/vnd.oasis.opendocument.presentation",
+    "application/rtf",
+    "text/csv",
+    "x-scheme-handler/ms-word",
+)
+
+
+def _mimeapps() -> configparser.ConfigParser:
+    parser = configparser.ConfigParser(interpolation=None, delimiters=("=",))
+    parser.optionxform = str  # type: ignore[assignment,method-assign]
+    parser.read_string(MIMEAPPS.read_text(encoding="utf-8"))
+    return parser
+
+
+def test_libreoffice_lists_agree() -> None:
+    ids = DESKTOP_DEFAULTS["harden_desktop_libreoffice_desktop_ids"]
+    files = DESKTOP_DEFAULTS["harden_desktop_libreoffice_desktop_files_absent"]
+    assert [Path(f).name for f in files] == ids
+    assert all(f.startswith("/usr/share/applications/") for f in files)
+    # Both the -nogui names the image installs and the full package names.
+    mailcap = {
+        Path(f).name for f in DESKTOP_DEFAULTS["harden_desktop_libreoffice_mailcap_files_absent"]
+    }
+    for app in ("writer", "calc", "impress", "draw"):
+        assert {f"libreoffice-{app}", f"libreoffice-{app}-nogui"} <= mailcap
+
+
+def test_mimeapps_removes_every_libreoffice_association() -> None:
+    parser = _mimeapps()
+    assert parser.sections() == ["Removed Associations"]
+    removed = parser["Removed Associations"]
+    expected = ";".join(DESKTOP_DEFAULTS["harden_desktop_libreoffice_desktop_ids"]) + ";"
+    assert dict(removed) and all(v == expected for v in removed.values())
+    for mime in OFFICE_TYPES:
+        assert mime in removed, mime
+
+
+def test_mimeapps_covers_the_types_installed_libreoffice_claims() -> None:
+    """Where LibreOffice is installed (as in the authoring container), every type it claims."""
+    entries = sorted(Path("/usr/share/applications").glob("libreoffice*.desktop"))
+    if not entries:
+        pytest.skip("no LibreOffice desktop entries on this host")
+    removed = _mimeapps()["Removed Associations"]
+    for entry in entries:
+        parser = configparser.ConfigParser(interpolation=None, strict=False)
+        parser.optionxform = str  # type: ignore[assignment,method-assign]
+        parser.read_string(entry.read_text(encoding="utf-8"))
+        claimed = parser["Desktop Entry"].get("MimeType", "")
+        for mime in filter(None, claimed.split(";")):
+            assert mime in removed, f"{entry.name}: {mime}"
+        assert entry.name in DESKTOP_DEFAULTS["harden_desktop_libreoffice_desktop_ids"]
+
+
+DPKG_DIVERT_STUB = """#!/usr/bin/env python3
+import json, os, sys
+db = os.environ["DIVERT_DB"]
+state = json.load(open(db)) if os.path.exists(db) else {}
+args = sys.argv[1:]
+to, path = args[args.index("--divert") + 1], args[args.index("--add") + 1]
+assert "--rename" in args and "--local" in args
+if path in state:
+    print(f"Leaving 'local diversion of {path} to {to}'")
+    sys.exit(0)
+state[path] = to
+if os.path.exists(path):
+    os.rename(path, to)
+json.dump(state, open(db, "w"))
+print(f"Adding 'local diversion of {path} to {to}'")
+"""
+
+
+def _run_libreoffice_tasks(tmp: Path, extra: dict[str, object]) -> str:
+    play = tmp / "play.yml"
+    play.write_text(
+        "- hosts: localhost\n  connection: local\n  gather_facts: false\n  tasks:\n"
+        "    - ansible.builtin.import_role:\n        name: harden_desktop\n"
+        "        tasks_from: libreoffice_hidden.yml\n",
+        encoding="utf-8",
+    )
+    (tmp / "vars.json").write_text(json.dumps(extra), encoding="utf-8")
+    env = {
+        **os.environ,
+        "PATH": f"{tmp / 'bin'}:{os.environ['PATH']}",
+        "DIVERT_DB": str(tmp / "divert.json"),
+        "ANSIBLE_ROLES_PATH": str(ROLES),
+        "ANSIBLE_LOCALHOST_WARNING": "false",
+        "ANSIBLE_INVENTORY_UNPARSED_WARNING": "false",
+        "ANSIBLE_NOCOLOR": "1",
+    }
+    res = subprocess.run(
+        ["ansible-playbook", "-i", "localhost,", "-e", f"@{tmp / 'vars.json'}", str(play)],
+        capture_output=True, text=True, env=env, cwd=tmp, check=False, timeout=300,
+    )  # fmt: skip
+    assert res.returncode == 0, res.stdout + res.stderr
+    return res.stdout
+
+
+def test_libreoffice_tasks_hide_every_entry_and_keep_others(tmp_path: Path) -> None:
+    """Runs libreoffice_hidden.yml against a stand-in tree with a stub dpkg-divert."""
+    if shutil.which("ansible-playbook") is None:
+        pytest.skip("needs ansible-playbook")
+    if os.geteuid() != 0:
+        pytest.skip("the role sets root ownership")
+    root = tmp_path / "root"
+    apps, local, mime = root / "apps", root / "local-apps", root / "mime"
+    for d in (apps, mime, tmp_path / "bin"):
+        d.mkdir(parents=True)
+    (apps / "libreoffice-startcenter.desktop").write_text("[Desktop Entry]\nName=LO\n")
+    (apps / "libreoffice-xsltfilter.desktop").write_text("[Desktop Entry]\nName=LO\n")
+    (apps / "libreoffice-future.desktop").write_text("[Desktop Entry]\nName=LO\n")  # unknown name
+    (apps / "org.gnome.TextEditor.desktop").write_text("[Desktop Entry]\nName=Editor\n")
+    (mime / "libreoffice-writer-nogui").write_text("application/msword; soffice %s\n")
+    (mime / "evince").write_text("application/pdf; evince %s\n")
+    stub = tmp_path / "bin" / "dpkg-divert"
+    stub.write_text(DPKG_DIVERT_STUB)
+    stub.chmod(0o755)
+    calls = tmp_path / "calls"
+    tool = tmp_path / "bin" / "refresh"
+    tool.write_text(f'#!/bin/sh\necho "$0 $*" >> {calls}\n')
+    tool.chmod(0o755)
+    disabled = root / "disabled"
+    d = DESKTOP_DEFAULTS
+    extra: dict[str, object] = {
+        "harden_desktop_libreoffice_disabled_dir": str(disabled),
+        "harden_desktop_applications_dirs": [str(apps), str(local)],
+        "harden_desktop_mailcap_packages_dir": str(mime),
+        "harden_desktop_libreoffice_desktop_files_absent": [
+            str(apps / Path(p).name) for p in d["harden_desktop_libreoffice_desktop_files_absent"]
+        ],
+        "harden_desktop_libreoffice_mailcap_files_absent": [
+            str(mime / Path(p).name) for p in d["harden_desktop_libreoffice_mailcap_files_absent"]
+        ],
+        "harden_desktop_mimeapps_list": str(root / "xdg" / "mimeapps.list"),
+        "harden_desktop_update_desktop_database": str(tool),
+        "harden_desktop_update_mime": str(tool),
+    }
+    _run_libreoffice_tasks(tmp_path, extra)
+
+    assert sorted(p.name for p in apps.iterdir()) == ["org.gnome.TextEditor.desktop"]
+    assert sorted(p.name for p in mime.iterdir()) == ["evince"]
+    assert sorted(p.name for p in (disabled / "applications").iterdir()) == [
+        "libreoffice-future.desktop",
+        "libreoffice-startcenter.desktop",
+        "libreoffice-xsltfilter.desktop",
+    ]
+    assert [p.name for p in (disabled / "mime-packages").iterdir()] == ["libreoffice-writer-nogui"]
+    for desktop_id in d["harden_desktop_libreoffice_desktop_ids"]:
+        override = (local / desktop_id).read_text()
+        assert "\nHidden=true\n" in override and "\nNoDisplay=true\n" in override
+    assert (root / "xdg" / "mimeapps.list").read_bytes() == MIMEAPPS.read_bytes()
+    assert len(calls.read_text().splitlines()) == 3  # both application dirs and mailcap
+
+    # Idempotent: nothing left to divert, nothing changes, the caches are not rebuilt again.
+    second = _run_libreoffice_tasks(tmp_path, extra)
+    assert re.search(r"changed=0\b", second), second
+    assert len(calls.read_text().splitlines()) == 3

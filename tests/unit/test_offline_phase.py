@@ -484,3 +484,105 @@ def test_checker_follows_blocks_and_imports(tmp_path: Path) -> None:
     _walk_list("r", tmp_path, "main.yml", entries, (), out)
     assert [t.can_run_at_provision for t in out] == [False, True]
     assert len(offline_problems(out)) == 1
+
+
+# ------------------------------------------------------------------ profile.json (finding 11)
+# ASSETS is writable from any computer and profile.json is not signed, so no role may read it:
+# features reach the roles only as forensic-provision's schema-checked airlock_profile_features.
+
+PROFILE_JSON = "profile.json"
+JINJA_BLOCK = re.compile(r"\{\{.*?\}\}|\{%.*?%\}", re.S)
+FEATURE_ROLES = {
+    "tools_ai": "tools_ai_staged",
+    "tools_autopsy": "tools_autopsy_staged",
+    "tools_eztools": "tools_eztools_staged",
+}
+
+
+def _strings(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        return [s for k, v in value.items() for s in _strings(k) + _strings(v)]
+    if isinstance(value, list | tuple):
+        return [s for v in value for s in _strings(v)]
+    return []
+
+
+def profile_json_problems(tasks: list[Task], extra_roots: list[Path] | None = None) -> list[str]:
+    """Every task, role variable or template expression that names profile.json."""
+    problems = [
+        f"{t.where}: names {PROFILE_JSON}"
+        for t in tasks
+        if any(PROFILE_JSON in s for s in _strings(t.body))
+    ]
+    roots = extra_roots if extra_roots is not None else [ROLES]
+    for root in roots:
+        for sub in ("defaults", "vars"):
+            for path in sorted(root.glob(f"*/{sub}/*.yml")):
+                data = yaml.safe_load(path.read_text(encoding="utf-8"))
+                if any(PROFILE_JSON in s for s in _strings(data)):
+                    problems.append(f"{path.relative_to(root)}: names {PROFILE_JSON}")
+        for path in sorted(root.glob("*/templates/**/*.j2")):
+            for block in JINJA_BLOCK.findall(path.read_text(encoding="utf-8")):
+                if PROFILE_JSON in block:
+                    problems.append(f"{path.relative_to(root)}: reads {PROFILE_JSON}")
+    if extra_roots is None:
+        for path in [ANSIBLE / "site.yml", *sorted((ANSIBLE / "group_vars").rglob("*.yml"))]:
+            data = yaml.safe_load(path.read_text(encoding="utf-8"))
+            for s in _strings(data):
+                if PROFILE_JSON in s and any(m in s for m in ("{{", "{%")):
+                    problems.append(f"{path.relative_to(ANSIBLE)}: templates {PROFILE_JSON}")
+    return problems
+
+
+def test_no_role_reads_profile_json() -> None:
+    problems = profile_json_problems(TASKS)
+    assert problems == [], "\n".join(problems)
+
+
+@pytest.mark.parametrize("role", sorted(FEATURE_ROLES))
+def test_features_come_only_from_forensic_provision(role: str) -> None:
+    """Each staged feature is on only for a real true from airlock_profile_features."""
+    defaults = _yaml_vars(ROLES / role / "defaults" / "main.yml")
+    assert defaults[f"{role}_features"] == "{{ airlock_profile_features | default({}) }}"
+    body = _load(ROLES / role / "tasks" / "profile_features.yml")
+    assert len(body) == 1, f"{role}: profile_features.yml must only set the staged features"
+    staged = body[0]["ansible.builtin.set_fact"][FEATURE_ROLES[role]]
+    assert staged, role
+    for name, expr in staged.items():
+        assert expr == f"{{{{ ({role}_features.{name} | default(false)) is sameas true }}}}", (
+            f"{role}: {name}"
+        )
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"name": "read", "ansible.builtin.slurp": {"src": "/media/ASSETS/profile.json"}},
+        {"name": "look", "ansible.builtin.stat": {"path": "{{ mnt }}/profile.json"}},
+        {"name": "vars", "ansible.builtin.include_vars": {"file": "/a/profile.json"}},
+        {
+            "name": "fact",
+            "ansible.builtin.set_fact": {"x": "{{ lookup('file', '/p/profile.json') }}"},
+        },
+        {"name": "cat", "ansible.builtin.command": {"argv": ["cat", "/a/profile.json"]}},
+    ],
+    ids=lambda b: b["name"],
+)
+def test_profile_json_checker_catches_reads(body: dict[str, Any]) -> None:
+    assert profile_json_problems([_fake(body, role="tools_ai")], extra_roots=[])
+
+
+def test_profile_json_checker_reads_defaults_and_templates(tmp_path: Path) -> None:
+    (tmp_path / "r" / "defaults").mkdir(parents=True)
+    (tmp_path / "r" / "templates").mkdir()
+    (tmp_path / "r" / "defaults" / "main.yml").write_text(
+        "r_features: \"{{ lookup('file', '/a/profile.json') | from_json }}\"\n", encoding="utf-8"
+    )
+    (tmp_path / "r" / "templates" / "x.j2").write_text(
+        "# profile.json is read by forensic-provision only\n"
+        "{{ lookup('file', '/a/profile.json') }}\n",
+        encoding="utf-8",
+    )
+    assert len(profile_json_problems([], extra_roots=[tmp_path])) == 2

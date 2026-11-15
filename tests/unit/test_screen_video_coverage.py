@@ -190,3 +190,20 @@ def test_cover_art_is_screened(tmp_path: Path, monkeypatch):
     assert info.attached_pics and not info.video_streams
     vs = video.screen_video(m4a, "c" * 64, _runner, tmp_path / "w", _thr())
     assert vs.frames_screened == 1 and vs.result.cleared, vs.result
+
+
+@NEEDS_FFMPEG
+def test_clip_shorter_than_the_interval_is_still_screened(tmp_path: Path, monkeypatch):
+    """A 0.5 s clip gets no frame from fps=1/2; its first frame is screened instead."""
+    pytest.importorskip("PIL")
+    monkeypatch.setattr(video, "screen_paths", _red_screener)
+    thr = _thr(scene_threshold=1.0)
+    red = video.screen_video(
+        _colour_video(tmp_path / "red.mp4", ("red", 0.5)), "b" * 64, _runner, tmp_path / "w", thr
+    )
+    assert red.result.verdict == "flagged", red.result
+    blue = video.screen_video(
+        _colour_video(tmp_path / "blue.mp4", ("blue", 0.5)), "c" * 64, _runner, tmp_path / "w", thr
+    )
+    assert blue.result.cleared, blue.result
+    assert blue.coverage is not None and blue.coverage.complete

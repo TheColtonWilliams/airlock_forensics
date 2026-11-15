@@ -46,10 +46,13 @@ what the validation suite (`docs/validation.md`) measured.
 * **Media screening samples video and skips pictures inside documents.** A video is screened
   from start to end, but only at sampled frames: one every 2 seconds, further apart for videos
   longer than 30 minutes (about 8 seconds at two hours), so a short scene between two frames can
-  be missed. Videos whose frames do not reach the end, images with more than 64 frames or pages,
-  and audio or document files whose content type cannot be confirmed are not cleared and not
-  kept. Pictures embedded in documents (PDF pages with text, Office files, e-mail attachments,
-  HTML) are not screened, and those documents are kept (docs/workflows/media-screening.md).
+  be missed. Videos whose frames do not reach the end, clips under about 1 second (no frame is
+  sampled), images with more than 64 frames or pages, and audio or document files whose content
+  type cannot be confirmed (a document must have a document MIME type of its extension's
+  family) are not cleared and not kept. An audio file whose cover art cannot be extracted and
+  screened is not kept either, sound included. Pictures embedded in documents (PDF pages with
+  text, Office files, e-mail attachments, HTML) are not screened, and those documents are kept
+  (docs/workflows/media-screening.md).
 * **No one views flagged media, and AIRLOCK never estimates age.** Nothing in the pipeline would
   recognise child sexual abuse material unless the operator sees a sign elsewhere (risks 11
   and 31). If you suspect it: stop, do not open or copy the file, preserve the drive, and contact
@@ -111,7 +114,9 @@ what the validation suite (`docs/validation.md`) measured.
   journal parser is checked by unit tests only; carved USN records are checked.
 * EZ Tools and the AI models could not be obtained in the authoring environment; their rows
   were validated with stand-ins only.
-* Autopsy's search server (Solr 8) is bound to 127.0.0.1 through the zip's
-  `autopsy-solr.in.sh` and the launcher's `SOLR_JETTY_HOST`. This is checked against a stand-in
-  zip only; no VM test yet opens a case and checks that nothing listens off loopback (the goss
-  listener check runs with no case open).
+* Autopsy's search server (Solr 8) is bound to 127.0.0.1 only by the
+  `SOLR_OPTS="$SOLR_OPTS -Djetty.host=127.0.0.1"` line the role adds to the zip's
+  `autopsy-solr.in.sh`; Autopsy's `autopsy-solr` script never reads `SOLR_JETTY_HOST`, so the
+  launcher's export of it does not bind anything. goss checks that the line is in the file;
+  this is checked against a stand-in zip only, and no VM test yet opens a case and checks that
+  nothing listens off loopback (the goss listener check runs with no case open).

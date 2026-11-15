@@ -175,6 +175,30 @@ def test_solr_settings_block_wins_over_the_zip_settings(tmp_path: Path) -> None:
     assert DEFAULTS["tools_autopsy_solr_include_names"][0] == "autopsy-solr.in.sh"
 
 
+def _goss_solr_grep(root: Path) -> str:
+    """The goss autopsy-installed check's grep for the Solr bind line, pointed at ``root``."""
+    goss = yaml.safe_load((REPO / "tests" / "goss" / "tools.yaml").read_text())
+    exec_ = goss["command"]["autopsy-installed"]["exec"]
+    grep = next(p.strip() for p in exec_.split(";") if "jetty.host" in p)
+    assert grep.endswith(" /opt/autopsy-*/"), grep
+    return grep[: -len("/opt/autopsy-*/")] + shlex.quote(str(root))
+
+
+def test_goss_checks_the_solr_bind_line_the_role_adds(tmp_path: Path) -> None:
+    """Only SOLR_OPTS -Djetty.host binds Solr (Autopsy's script ignores SOLR_JETTY_HOST)."""
+    block = jinja2.Template(DEFAULTS["tools_autopsy_solr_bind"]).render(
+        tools_autopsy_solr_host=DEFAULTS["tools_autopsy_solr_host"]
+    )
+    assert 'SOLR_OPTS="$SOLR_OPTS -Djetty.host=127.0.0.1"' in block.splitlines()
+    conf = tmp_path / "autopsy-4.23.1" / "autopsy" / "solr" / "bin" / "autopsy-solr.in.sh"
+    conf.parent.mkdir(parents=True)
+    grep = _goss_solr_grep(tmp_path / "autopsy-4.23.1")
+    conf.write_text('SOLR_JETTY_HOST="127.0.0.1"\n')  # read by nothing Autopsy ships
+    assert subprocess.run(["bash", "-c", grep], check=False).returncode != 0
+    conf.write_text(f"# BEGIN AIRLOCK\n{block}# END AIRLOCK\n")
+    assert subprocess.run(["bash", "-c", grep], check=False).returncode == 0
+
+
 def _fake_zip(tmp_path: Path, *, with_include: bool) -> Path:
     version = PINS[DEFAULTS["tools_autopsy_zip_pin"]]["version"]
     top = f"autopsy-{version}"

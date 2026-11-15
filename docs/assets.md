@@ -151,18 +151,28 @@ computer. With `--if-changed` it does nothing unless the drive was never provisi
 cut short, `profile.json` changed since it was applied, or a newer signed manifest is on
 ASSETS; a changed set is applied without a reboot (task 2B.7).
 
-Provisioning variables passed to the roles:
+Provisioning variables passed to the roles (`runner.build_vars`, as `-e @vars.json`):
 
 | Variable | Meaning |
 |---|---|
 | `airlock_phase` | `provision` |
-| `airlock_profile` | profile name from `profile.json` |
-| `airlock_features`, `airlock_profile_features` | the profile's features with every disabled one turned off (two names, one value; `tools_ai` reads the second) |
+| `airlock_profile` | profile name from `profile.json` when it is a plain name (letters, digits, `_.-`, at most 64 characters), otherwise empty |
+| `airlock_features`, `airlock_profile_features` | the profile's features after the schema check below, with every disabled one turned off (two names, one value; the tool roles read the second) |
 | `airlock_disabled_features` | e.g. `[ai_tier1, clamav]` |
 | `airlock_assets` | `{id: {path, sha256, size, target, verify, version}}`, verified files only |
-| `airlock_asset_problems` | `[[id, reason], ...]` |
-| `airlock_case_defaults` | `case_defaults` from `profile.json` |
-| `install_autopsy` | `airlock_features.autopsy` |
+| `install_autopsy` | true only when `airlock_features.autopsy` is true |
+
+`profile.json` is not signed and ASSETS can be written from any computer, while Ansible
+templates every string it is given. So the features are rebuilt from a fixed schema before
+they are passed: each feature (`autopsy`, `classifiers`, `clamav`, `eztools`, `malwarebazaar`,
+`nsrl`, `nvidia_proprietary`, `sift`, `whisper`, `yara`) must be JSON `true` or `false`, and any
+other value turns it off and is reported; `ai_tiers` keeps only known tier names (`tier0` to
+`tier4`); keys outside the schema are dropped. A `profile.json` holding template markup
+(`{{`, `{%` or `{#`, in any key or value) refuses provisioning, and `build_vars` refuses
+again if any string it would pass holds one. Free text is not passed: forensic-analyze reads
+`case_defaults` from `profile.json` as data, and the asset problems are in the step results
+and the provisioning report. No role reads `profile.json` itself
+(`tests/unit/test_offline_phase.py`), and a feature turns on only for a real `true`.
 
 ### `forensic-import`
 

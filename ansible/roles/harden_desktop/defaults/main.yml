@@ -49,3 +49,48 @@ harden_desktop_indexer_masked_user_units:
 harden_desktop_indexer_autostart_absent:
   - /etc/xdg/autostart/tracker-miner-fs-3.desktop
   - /etc/xdg/autostart/localsearch-3.desktop
+
+# Task 5.1: LibreOffice is installed headless in every image (tools_ai; the documents module runs
+# `soffice --headless --convert-to`), but the desktop must never offer to open a file with it:
+# a double-click on an evidence Office file in Files would otherwise start it. Its desktop
+# entries and mailcap entries (full and -nogui package names) are diverted out of use, hidden
+# by Hidden=true overrides, and /etc/xdg/mimeapps.list removes every association with them.
+# The packages stay installed.
+harden_desktop_libreoffice_disabled_dir: /usr/lib/airlock/libreoffice-disabled
+harden_desktop_libreoffice_desktop_ids:
+  - libreoffice-startcenter.desktop
+  - libreoffice-xsltfilter.desktop
+  - libreoffice-writer.desktop
+  - libreoffice-calc.desktop
+  - libreoffice-impress.desktop
+  - libreoffice-draw.desktop
+  - libreoffice-math.desktop
+  - libreoffice-base.desktop
+harden_desktop_libreoffice_desktop_files_absent:
+  - /usr/share/applications/libreoffice-startcenter.desktop
+  - /usr/share/applications/libreoffice-xsltfilter.desktop
+  - /usr/share/applications/libreoffice-writer.desktop
+  - /usr/share/applications/libreoffice-calc.desktop
+  - /usr/share/applications/libreoffice-impress.desktop
+  - /usr/share/applications/libreoffice-draw.desktop
+  - /usr/share/applications/libreoffice-math.desktop
+  - /usr/share/applications/libreoffice-base.desktop
+harden_desktop_libreoffice_mailcap_files_absent:
+  - /usr/lib/mime/packages/libreoffice-writer-nogui
+  - /usr/lib/mime/packages/libreoffice-calc-nogui
+  - /usr/lib/mime/packages/libreoffice-impress-nogui
+  - /usr/lib/mime/packages/libreoffice-draw-nogui
+  - /usr/lib/mime/packages/libreoffice-writer
+  - /usr/lib/mime/packages/libreoffice-calc
+  - /usr/lib/mime/packages/libreoffice-impress
+  - /usr/lib/mime/packages/libreoffice-draw
+# Where desktop entries and mailcap entries are looked for (any other libreoffice* name found
+# there is diverted too). Overrides go in the second applications directory.
+harden_desktop_applications_dirs:
+  - /usr/share/applications
+  - /usr/local/share/applications
+harden_desktop_mailcap_packages_dir: /usr/lib/mime/packages
+harden_desktop_mimeapps_list: /etc/xdg/mimeapps.list
+# Rebuild the MIME caches after a change (each runs only when the tool is installed).
+harden_desktop_update_desktop_database: /usr/bin/update-desktop-database
+harden_desktop_update_mime: /usr/sbin/update-mime

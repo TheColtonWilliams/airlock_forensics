@@ -413,12 +413,16 @@ command:
     timeout: 20000
   # ------------------------------------------------------------------ 4.9 tools_autopsy
   autopsy-installed:
-    title: '4.9: when Autopsy is installed, it has Java 17 and the Sleuth Kit Java jar'
+    title: >-
+      4.9: when Autopsy is installed, it has Java 17 and the Sleuth Kit Java jar, and its Solr
+      settings file binds the search server to 127.0.0.1 (SOLR_OPTS -Djetty.host)
     exec: >-
       if [ ! -e /usr/local/bin/autopsy ]; then echo 'autopsy-ok (optional, not installed)'; exit
       0; fi; set -e; ls /opt/autopsy-*/bin/autopsy >/dev/null; test -x /opt/autopsy-*/bin/autopsy;
       java -version 2>&1 | grep -q 'version "17'; ls /usr/share/java/sleuthkit-*.jar >/dev/null;
-      test -f /usr/share/applications/airlock-autopsy.desktop; echo autopsy-ok
+      test -f /usr/share/applications/airlock-autopsy.desktop;
+      grep -rqsxF --include=autopsy-solr.in.sh -e 'SOLR_OPTS="$SOLR_OPTS -Djetty.host=127.0.0.1"'
+      /opt/autopsy-*/; echo autopsy-ok
     exit-status: 0
     stdout:
       - autopsy-ok

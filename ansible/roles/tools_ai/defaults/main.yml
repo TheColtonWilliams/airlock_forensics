@@ -51,11 +51,15 @@ tools_ai_vulkan_packages:
 # python3-venv (the two venvs), and LibreOffice without a GUI for Office documents (4B.9:
 # airlock_ai/documents.py runs `soffice --headless --convert-to`; libreoffice-common, a
 # dependency of all three, provides /usr/bin/soffice). The -nogui variants leave out the
-# desktop front end; about 340 MB installed (decision log 2026-11-15).
+# desktop front end. libreoffice-core-nogui is named on purpose: the three accept
+# "libreoffice-core-nogui | libreoffice-core", and on top of ubuntu-desktop-minimal apt picks
+# the GUI libreoffice-core unless told (apt-get -s, 2026-11-15). About 330 MB installed
+# (decision log 2026-11-15). harden_desktop hides LibreOffice from the desktop (5.1).
 tools_ai_runtime_packages:
   - ffmpeg
   - poppler-utils
   - python3-venv
+  - libreoffice-core-nogui
   - libreoffice-writer-nogui
   - libreoffice-calc-nogui
   - libreoffice-impress-nogui
@@ -119,8 +123,8 @@ tools_ai_whisper_wheel_pins:
 tools_ai_whisper_model_pin: faster_whisper_small_model
 tools_ai_whisper_model_dir_target: models/faster-whisper-small
 
-# Which staged features to install at provisioning. forensic-provision may pass
-# airlock_profile_features; otherwise the role reads ASSETS/profile.json.
+# Which staged features to install at provisioning: only forensic-provision's schema-checked
+# airlock_profile_features (empty in the image phase). The role never reads ASSETS/profile.json.
 tools_ai_features: "{{ airlock_profile_features | default({}) }}"
 
 # Task 4B.15: Ubuntu's signed NVIDIA kernel modules (linux-modules-nvidia-*), staged on ASSETS

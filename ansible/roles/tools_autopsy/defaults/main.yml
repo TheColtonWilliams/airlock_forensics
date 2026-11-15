@@ -44,8 +44,9 @@ tools_autopsy_packages:
 tools_autopsy_features: "{{ airlock_profile_features | default({}) }}"
 
 # Autopsy starts Solr 8 itself while a case is open (standalone mode, no ZooKeeper). Solr 8 binds
-# every interface unless SOLR_JETTY_HOST or jetty.host says otherwise; these lines are added to
-# its settings file in the zip (the first name must exist) so it listens on 127.0.0.1 only.
+# every interface by default. Autopsy's launcher reads only SOLR_OPTS from these settings files,
+# so the -Djetty.host line is what binds it to 127.0.0.1; SOLR_JETTY_HOST is kept for the stock
+# solr script. The first file name must exist in the zip.
 tools_autopsy_solr_include_names:
   - autopsy-solr.in.sh
   - solr.in.sh

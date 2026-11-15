@@ -332,6 +332,11 @@ def sample_frames(
         vf = f"fps=1/{interval:.6g},showinfo"
         # Ask for one frame more than the limit: getting it proves the video goes on.
         every, err = _ffmpeg_frames(run_tool, video, out_dir, vf, "i", limit + 1, stream)
+        if not every and not err:
+            # A clip shorter than about half the interval gives the fps filter no frame at all;
+            # take its first frame instead, so a short clip is screened rather than dropped.
+            vf0 = "select=eq(n\\,0),showinfo"
+            every, err = _ffmpeg_frames(run_tool, video, out_dir, vf0, "f", 1, stream)
         overflow = len(every) > limit
         for extra, _t in every[limit:]:
             extra.unlink(missing_ok=True)

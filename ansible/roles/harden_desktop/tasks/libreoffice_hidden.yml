@@ -1,0 +1,75 @@
+# Control 5.1: the desktop never offers to open a file with LibreOffice. LibreOffice stays
+# installed headless for the documents module (`soffice --headless --convert-to`), but its
+# desktop entries and mailcap entries are diverted out of use with dpkg-divert (a later install
+# or upgrade writes to the diverted name too), Hidden=true overrides with the same desktop IDs
+# go in /usr/local/share/applications, and /etc/xdg/mimeapps.list removes every association with
+# them. A double-click on an evidence Office file in Files then opens nothing.
+# Test: tests/goss/desktop.yaml (entries gone, overrides hidden, no association, no mailcap
+# entry, soffice still present); tests/unit/test_harden_desktop.py (the lists agree and cover
+# every type the LibreOffice entries claim).
+- name: LibreOffice | Directory for the diverted entries
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ harden_desktop_libreoffice_disabled_dir }}"
+    - "{{ harden_desktop_libreoffice_disabled_dir }}/applications"
+    - "{{ harden_desktop_libreoffice_disabled_dir }}/mime-packages"
+    - "{{ harden_desktop_applications_dirs[1] }}"
+    - "{{ harden_desktop_mimeapps_list | dirname }}"
+
+- name: LibreOffice | Find any other LibreOffice desktop or mailcap entry
+  ansible.builtin.find:
+    paths: "{{ harden_desktop_applications_dirs[:1] + [harden_desktop_mailcap_packages_dir] }}"
+    patterns: ["libreoffice*.desktop", "libreoffice*"]
+    excludes: ["*.airlock-disabled", "*.dpkg-*"]
+    file_type: any
+  register: harden_desktop_libreoffice_found
+
+- name: LibreOffice | Divert the desktop and mailcap entries out of use
+  ansible.builtin.command:
+    argv:
+      - dpkg-divert
+      - --local
+      - --rename
+      - --divert
+      - >-
+        {{ harden_desktop_libreoffice_disabled_dir }}/{{ 'mime-packages'
+        if item.startswith(harden_desktop_mailcap_packages_dir ~ '/') else 'applications' }}/{{ item | basename }}
+      - --add
+      - "{{ item }}"
+  loop: >-
+    {{ (harden_desktop_libreoffice_desktop_files_absent
+        + harden_desktop_libreoffice_mailcap_files_absent
+        + harden_desktop_libreoffice_found.files | map(attribute='path') | list) | unique }}
+  register: harden_desktop_libreoffice_divert
+  changed_when: "'Adding' in harden_desktop_libreoffice_divert.stdout"
+  notify: Harden desktop | Refresh the desktop and mailcap databases
+
+- name: LibreOffice | Hidden overrides for the LibreOffice desktop IDs
+  ansible.builtin.copy:
+    dest: "{{ harden_desktop_applications_dirs[1] }}/{{ item }}"
+    content: |
+      # Written by the harden_desktop role (control 5.1): LibreOffice is not offered on the desktop.
+      [Desktop Entry]
+      Type=Application
+      Name=LibreOffice (not available on the desktop)
+      Exec=/bin/false
+      NoDisplay=true
+      Hidden=true
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ harden_desktop_libreoffice_desktop_ids }}"
+  notify: Harden desktop | Refresh the desktop and mailcap databases
+
+- name: LibreOffice | No file type or URL scheme associated with LibreOffice
+  ansible.builtin.copy:
+    src: mimeapps.list
+    dest: "{{ harden_desktop_mimeapps_list }}"
+    owner: root
+    group: root
+    mode: "0644"

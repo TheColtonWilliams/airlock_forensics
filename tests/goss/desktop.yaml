@@ -89,6 +89,66 @@ file:
     exists: true
     filetype: file
 
+  /usr/share/applications/libreoffice-startcenter.desktop:
+    title: '5.1: LibreOffice desktop entry libreoffice-startcenter.desktop diverted out of use (never offered on the desktop)'
+    exists: false
+  /usr/share/applications/libreoffice-xsltfilter.desktop:
+    title: '5.1: LibreOffice desktop entry libreoffice-xsltfilter.desktop diverted out of use (never offered on the desktop)'
+    exists: false
+  /usr/share/applications/libreoffice-writer.desktop:
+    title: '5.1: LibreOffice desktop entry libreoffice-writer.desktop diverted out of use (never offered on the desktop)'
+    exists: false
+  /usr/share/applications/libreoffice-calc.desktop:
+    title: '5.1: LibreOffice desktop entry libreoffice-calc.desktop diverted out of use (never offered on the desktop)'
+    exists: false
+  /usr/share/applications/libreoffice-impress.desktop:
+    title: '5.1: LibreOffice desktop entry libreoffice-impress.desktop diverted out of use (never offered on the desktop)'
+    exists: false
+  /usr/share/applications/libreoffice-draw.desktop:
+    title: '5.1: LibreOffice desktop entry libreoffice-draw.desktop diverted out of use (never offered on the desktop)'
+    exists: false
+  /usr/share/applications/libreoffice-math.desktop:
+    title: '5.1: LibreOffice desktop entry libreoffice-math.desktop diverted out of use (never offered on the desktop)'
+    exists: false
+  /usr/share/applications/libreoffice-base.desktop:
+    title: '5.1: LibreOffice desktop entry libreoffice-base.desktop diverted out of use (never offered on the desktop)'
+    exists: false
+  /usr/lib/mime/packages/libreoffice-writer-nogui:
+    title: '5.1: LibreOffice mailcap entry libreoffice-writer-nogui diverted out of use'
+    exists: false
+  /usr/lib/mime/packages/libreoffice-calc-nogui:
+    title: '5.1: LibreOffice mailcap entry libreoffice-calc-nogui diverted out of use'
+    exists: false
+  /usr/lib/mime/packages/libreoffice-impress-nogui:
+    title: '5.1: LibreOffice mailcap entry libreoffice-impress-nogui diverted out of use'
+    exists: false
+  /usr/lib/mime/packages/libreoffice-draw-nogui:
+    title: '5.1: LibreOffice mailcap entry libreoffice-draw-nogui diverted out of use'
+    exists: false
+  /usr/lib/mime/packages/libreoffice-writer:
+    title: '5.1: LibreOffice mailcap entry libreoffice-writer diverted out of use'
+    exists: false
+  /usr/lib/mime/packages/libreoffice-calc:
+    title: '5.1: LibreOffice mailcap entry libreoffice-calc diverted out of use'
+    exists: false
+  /usr/lib/mime/packages/libreoffice-impress:
+    title: '5.1: LibreOffice mailcap entry libreoffice-impress diverted out of use'
+    exists: false
+  /usr/lib/mime/packages/libreoffice-draw:
+    title: '5.1: LibreOffice mailcap entry libreoffice-draw diverted out of use'
+    exists: false
+  /etc/xdg/mimeapps.list:
+    title: '5.1: no file type or URL scheme is associated with LibreOffice'
+    exists: true
+    owner: root
+    mode: '0644'
+    contents:
+      - '/^\[Removed Associations\]$/'
+      - '/^application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document=.*libreoffice-writer\.desktop;/'
+      - '/^application\/msword=.*libreoffice-writer\.desktop;/'
+      - '/^application\/vnd\.ms-excel=.*libreoffice-calc\.desktop;/'
+      - '!/^\[Default Applications\]/'
+      - '!/^\[Added Associations\]/'
 package:
   ffmpegthumbnailer:
     title: '5.1: package ffmpegthumbnailer not installed'
@@ -121,6 +181,41 @@ package:
     title: '5.1: package gnome-nds-thumbnailer not installed'
     installed: false
 command:
+  'no LibreOffice desktop entry':
+    title: '5.1: no LibreOffice desktop entry is left in /usr/share/applications'
+    exec: "find /usr/share/applications -name 'libreoffice*.desktop' 2>/dev/null; true"
+    exit-status: 0
+    stdout:
+      - '!/libreoffice/'
+  'LibreOffice desktop IDs hidden':
+    title: '5.1: every LibreOffice desktop ID has a Hidden=true override in /usr/local/share/applications'
+    exec: >-
+      set -e; for id in startcenter xsltfilter writer calc impress draw math base; do
+      grep -qx 'Hidden=true' "/usr/local/share/applications/libreoffice-$id.desktop"; done; echo hidden
+    exit-status: 0
+    stdout: ['/^hidden$/']
+  'no LibreOffice association':
+    title: '5.1: Files offers no LibreOffice application for Office and OpenDocument files'
+    exec: >-
+      set -e; command -v gio >/dev/null; out=$(for t in
+      application/vnd.openxmlformats-officedocument.wordprocessingml.document
+      application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+      application/vnd.openxmlformats-officedocument.presentationml.presentation
+      application/msword application/vnd.ms-excel application/vnd.ms-powerpoint
+      application/vnd.oasis.opendocument.text application/rtf text/csv; do gio mime "$t" 2>&1; done);
+      if printf '%s' "$out" | grep -qi libreoffice; then printf '%s\n' "$out"; exit 1; fi; echo none
+    exit-status: 0
+    stdout: ['/^none$/']
+  'no LibreOffice mailcap entry':
+    title: '5.1: /etc/mailcap names no LibreOffice command'
+    exec: "if grep -qsE 'soffice|libreoffice' /etc/mailcap; then grep -E 'soffice|libreoffice' /etc/mailcap; exit 1; fi; echo none"
+    exit-status: 0
+    stdout: ['/^none$/']
+  'soffice still installed':
+    title: '5.1: LibreOffice stays installed for headless conversion (only hidden from the desktop)'
+    exec: "test -x /usr/bin/soffice && echo present"
+    exit-status: 0
+    stdout: ['/^present$/']
   'no thumbnailer registered':
     title: '5.1: no *.thumbnailer file is left where the GNOME thumbnail factory looks'
     exec: "find /usr/share/thumbnailers /usr/local/share/thumbnailers -name '*.thumbnailer' 2>/dev/null; true"

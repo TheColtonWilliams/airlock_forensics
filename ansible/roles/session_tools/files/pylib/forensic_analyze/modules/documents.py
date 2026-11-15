@@ -1,11 +1,14 @@
 """Module ``documents`` (task 4C.11): export, metadata, text extraction, summary.
 
 Each document is exported read-only and read by exiftool for its metadata (author fields are
-kept in the raw record only; rows never name a person). A file whose content is a picture,
-video, or sound despite its document extension (exiftool MIME type, or magic bytes when
-exiftool cannot name it) is screened like an image or a video and kept only if cleared; it gets
-no text extraction or summary. A file whose type nobody can name, and that does not look like a
-document or text, is not kept. Pictures embedded in a document are not screened (see
+kept in the raw record only; rows never name a person). Its content type is then checked
+against an allowlist (:meth:`DocumentsModule.content_route`): a picture or video under a
+document name (exiftool MIME type, any picture or video stream ffprobe can read, or magic
+bytes when exiftool cannot name it) is screened like an image or a video and kept only if
+cleared; it gets no text extraction, transcript, or summary. A file that is neither a document
+of the family its extension claims (``airlock_ai.documents.DOCUMENT_MIME``) nor screenable
+(sound, an archive, a database, an unknown type) is not kept, with a "Not screened (content
+type mismatch: ...)" row. Pictures embedded in a document are not screened (see
 docs/known-limitations.md). Text comes from ``pdftotext`` or a
 headless LibreOffice conversion in the sandbox (``airlock_ai.documents``). Scanned PDF pages
 are rendered, screened like images, and only cleared pages are read by the model's OCR
@@ -46,32 +49,58 @@ class DocumentsModule(media.MediaModule):
             item.meta = data[0]
             item.meta_record = f"modules/{ctx.module}/metadata/{stem}.exiftool.json#0"
 
-    def content_route(self, ctx: ModuleContext, item: media.MediaItem) -> tuple[str, str]:
-        mime = str(item.meta.get("File:MIMEType") or "") if item.meta else ""
+    def content_route(  # noqa: PLR0911 - one return per outcome, in order
+        self, ctx: ModuleContext, item: media.MediaItem
+    ) -> tuple[str, str]:
+        """Keep a file only when it is a document of the family its extension claims.
+
+        1. exiftool says ``image/*``: screen it as an image.
+        2. ffprobe reads a picture or video stream from it (whatever exiftool said: a Y4M
+           video is "text/plain" to exiftool, MXF and SWF are "application/*"): screen it as
+           an image or video.
+        3. Sound, or sound with cover art: not a document, not kept here.
+        4. exiftool's MIME type is on the family's list (``airlock_ai.documents``): keep it.
+        5. exiftool could not name it: keep it only if its first bytes look like a document
+           or text.
+        6. Anything else (an archive, a database, an unknown type): not kept.
+        """
+        path = media.need_path(item)
+        mime = str(item.meta.get("File:MIMEType") or "").strip() if item.meta else ""
         major = mime.split("/", 1)[0].lower()
-        kind = {"image": "image", "video": "av", "audio": "av"}.get(major, "")
-        source = f"exiftool reports {mime}"
-        if not mime:
-            kind = media.sniff(media.need_path(item))
-            source = "exiftool could not name the type and its first bytes are "
-            source += {"image": "a picture format", "av": "an audio or video container"}.get(
-                kind, ""
-            )
-            if kind in {"document", "text"}:
-                return "", ""
-            if kind not in {"image", "av"}:
-                return "unknown", (
-                    "exiftool could not name the type and it does not look like a document or text"
+        if major == "image":
+            return "image", f"exiftool reports {mime}"
+        sniffed = ""
+        if mime:
+            source = f"exiftool reports {mime}"
+        else:
+            sniffed = media.sniff(path)
+            if sniffed == "image":
+                return "image", (
+                    "exiftool could not name the type and its first bytes are a picture format"
                 )
-        if kind == "image":
-            return "image", source
-        if kind == "av":
-            fp = media.ffprobe_json(ctx, item)
+            source = "exiftool could not name the type"
+        fp = media.ffprobe_json(ctx, item)
+        route, why = media.av_route(fp) if fp is not None else ("", "")
+        if route in {"image", "video"}:
+            return route, f"{source}; {why}"
+        if route == "embedded" or major in {"audio", "video"} or sniffed == "av":
+            what = "sound with embedded pictures" if route == "embedded" else "sound or video"
             if fp is None:
-                return "unknown", f"{source}, and ffprobe could not read it"
-            route, why = media.av_route(fp)
-            return (route, f"{source}; {why}") if route else ("", "")
-        return "", ""
+                what += ", and ffprobe could not read it"
+            return "unknown", f"{source}: {what}, not a document"
+        if mime:
+            if aidocs.mime_allowed(item.ext, mime):
+                return "", ""
+            fam = aidocs.family(item.ext) or "document"
+            return "unknown", (
+                f"{source}, which is not a {fam} document type, and no picture or video "
+                "stream could be read from it"
+            )
+        if sniffed in {"document", "text"}:
+            return "", ""
+        return "unknown", (
+            "exiftool could not name the type and it does not look like a document or text"
+        )
 
     def metadata_rows(self, ctx: ModuleContext, item: media.MediaItem) -> list[dict[str, Any]]:
         if not item.meta:
