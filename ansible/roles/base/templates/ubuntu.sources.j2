@@ -1,0 +1,7 @@
+# Managed by the AIRLOCK base role (task 6.1). Dated snapshot {{ apt_snapshot }}.
+# Used during the image build only; the running AIRLOCK system has no network.
+Types: deb
+URIs: https://snapshot.ubuntu.com/ubuntu/{{ apt_snapshot }}
+Suites: {{ ubuntu_release }} {{ ubuntu_release }}-updates {{ ubuntu_release }}-security
+Components: main restricted universe multiverse
+Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg

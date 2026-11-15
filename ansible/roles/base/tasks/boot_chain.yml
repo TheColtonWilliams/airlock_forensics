@@ -1,0 +1,43 @@
+# Control 1.13: only Ubuntu's signed shim and grub, at or above the SBAT generations in
+# base_min_sbat; the build fails otherwise. The signer names (Microsoft UEFI CA 2011 or
+# 2023) are recorded in /etc/airlock/boot-chain.json; docs/hardware-matrix.md says what
+# that means for PCs that trust only the 2023 CA. Image phase only (needs the ESP files).
+# Tests: tests/unit/test_base_boot_chain.py, tests/goss/base.yaml (boot-chain).
+
+- name: Install the boot chain checker (1.13)
+  ansible.builtin.copy:
+    src: airlock_check_boot_chain.py
+    dest: "{{ base_libexec_dir }}/airlock-check-boot-chain"
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Read SBAT levels and signers of the installed shim and grub (1.13)
+  ansible.builtin.command:
+    argv: >-
+      {{ [base_libexec_dir ~ '/airlock-check-boot-chain']
+         + (base_min_sbat | dictsort | map('join', '=') | map('regex_replace', '^', '--min-sbat=') | list)
+         + ['/boot/efi/EFI/BOOT/BOOTX64.EFI', '/boot/efi/EFI/BOOT/grubx64.efi'] }}
+  register: base_boot_chain
+  changed_when: false
+  failed_when: base_boot_chain.rc not in [0, 1]
+  when: airlock_phase == 'image'
+
+- name: Record the boot chain report (1.13)
+  ansible.builtin.copy:
+    content: "{{ base_boot_chain.stdout | from_json | to_nice_json(sort_keys=true) }}\n"
+    dest: "{{ airlock_etc_dir }}/boot-chain.json"
+    owner: root
+    group: root
+    mode: "0644"
+  when: airlock_phase == 'image'
+
+- name: Check the SBAT levels (1.13)
+  ansible.builtin.assert:
+    that:
+      - (base_boot_chain.stdout | from_json).sbat_ok
+    fail_msg: >-
+      The boot chain is below the SBAT minimum: {{ (base_boot_chain.stdout | from_json).problems | join('; ') }}.
+      Move apt_snapshot to a date with newer shim-signed and grub-efi-amd64-signed packages, then rebuild.
+    quiet: true
+  when: airlock_phase == 'image'

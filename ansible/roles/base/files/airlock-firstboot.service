@@ -1,0 +1,15 @@
+# Managed by the AIRLOCK base role (task 1.10). Runs once on the first boot of a flashed
+# drive: commits a new machine ID and grows the root filesystem to fill the drive.
+[Unit]
+Description=AIRLOCK first boot: machine ID and root filesystem size
+ConditionPathExists=!/var/lib/airlock/firstboot.done
+After=local-fs.target systemd-machine-id-commit.service
+Before=display-manager.service forensic-provision.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/airlock/libexec/airlock-firstboot
+StandardOutput=journal+console
+
+[Install]
+WantedBy=multi-user.target

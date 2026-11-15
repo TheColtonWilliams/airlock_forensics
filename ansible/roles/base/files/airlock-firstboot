@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+# airlock-firstboot (task 1.10): runs once, on the first boot of a freshly flashed drive.
+#
+#  1. Machine ID: the image ships with an empty /etc/machine-id, so every drive gets its
+#     own. systemd makes one at boot; this commits it if it is still only in memory.
+#  2. Root filesystem: moves the backup GPT to the real end of the drive, grows the last
+#     partition (AIRLOCK_ROOT) to fill it, and grows the ext4 filesystem online.
+#  3. Marks itself done and disables its unit.
+# There are no SSH host keys to make: the image has no SSH server.
+#
+# Usage: airlock-firstboot [--root-source DEV] [--no-disable] [--skip-machine-id] [--skip-grow]
+# Environment (tests): AIRLOCK_SYSROOT (prefix for /etc/machine-id), AIRLOCK_STATE_DIR.
+# Exit status: 0 done; 1 failed (one line says what and what to do next).
+# Tests: tests/functional/test_build_firstboot.sh, tests/goss/base.yaml (firstboot).
+set -euo pipefail
+
+sysroot="${AIRLOCK_SYSROOT:-}"
+state_dir="${AIRLOCK_STATE_DIR:-/var/lib/airlock}"
+root_source=""
+disable=1
+do_machine_id=1
+do_grow=1
+
+log() { printf 'airlock-firstboot: %s\n' "$*"; }
+die() {
+  printf 'airlock-firstboot: %s\n' "$*" >&2
+  exit 1
+}
+
+while (($#)); do
+  case "$1" in
+    --root-source) root_source="${2:?--root-source needs a device}"; shift 2 ;;
+    --no-disable) disable=0; shift ;;
+    --skip-machine-id) do_machine_id=0; shift ;;
+    --skip-grow) do_grow=0; shift ;;
+    -h | --help) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) die "unknown option '$1'. Run with --help." ;;
+  esac
+done
+
+machine_id() {
+  local f="$sysroot/etc/machine-id"
+  if [[ -s "$f" ]] && ! mountpoint -q -- "$f" 2>/dev/null; then
+    log "machine ID already set"
+    return 0
+  fi
+  if mountpoint -q -- "$f" 2>/dev/null; then
+    # systemd made an ID at boot and bind-mounted it; write it to disk.
+    systemd-machine-id-setup --commit || die "could not commit the machine ID. Run 'systemd-machine-id-setup --commit' by hand."
+  elif [[ -n "$sysroot" ]]; then
+    systemd-machine-id-setup --root="$sysroot" || die "could not create a machine ID under $sysroot."
+  else
+    systemd-machine-id-setup || die "could not create a machine ID. Run 'systemd-machine-id-setup' by hand."
+  fi
+  log "machine ID: $(cat -- "$f")"
+}
+
+grow_root() {
+  local src disk part_name part_num rc
+  src="${root_source:-$(findmnt -n -o SOURCE --target /)}"
+  [[ -b "$src" ]] || die "the root device '$src' is not a block device; cannot grow it."
+  part_name="$(basename -- "$(realpath -- "$src")")"
+  [[ -r "/sys/class/block/$part_name/partition" ]] || die "$src is not a partition; cannot grow it."
+  part_num="$(cat -- "/sys/class/block/$part_name/partition")"
+  disk="/dev/$(lsblk -n -d -o PKNAME -- "$src")"
+  [[ -b "$disk" ]] || die "could not find the disk that holds $src."
+
+  # A drive larger than the image: the backup GPT sits mid-disk. Move it to the end first.
+  sgdisk -e -- "$disk" >/dev/null 2>&1 || log "sgdisk -e reported a problem; continuing with growpart"
+  rc=0
+  growpart "$disk" "$part_num" || rc=$?
+  case "$rc" in
+    0) log "grew partition $part_num of $disk" ;;
+    1) log "partition $part_num of $disk already fills the drive" ;;
+    *) die "growpart $disk $part_num failed (exit $rc). The drive still works at its old size." ;;
+  esac
+  # The kernel may need to see the new partition size before resize2fs can use it.
+  partx -u --nr "$part_num" -- "$disk" >/dev/null 2>&1 || true
+  if findmnt -n --source "$src" >/dev/null 2>&1; then
+    resize2fs -- "$src" || die "resize2fs $src failed. The drive still works at its old size."
+  else
+    # Not mounted (tests, or a repair from another system): offline resize needs a check first.
+    e2fsck -f -p -- "$src" || die "e2fsck $src found problems. Run 'e2fsck -f $src' by hand."
+    resize2fs -- "$src" || die "resize2fs $src failed. The drive still works at its old size."
+  fi
+  log "root filesystem: $(dumpe2fs -h -- "$src" 2>/dev/null | awk -F: '/^Block count/ {c=$2} /^Block size/ {s=$2} END {printf "%d MiB", c*s/1048576}')"
+}
+
+((do_machine_id)) && machine_id
+((do_grow)) && grow_root
+
+mkdir -p -- "$state_dir"
+date -u +%Y-%m-%dT%H:%M:%SZ >"$state_dir/firstboot.done"
+if ((disable)); then
+  systemctl disable airlock-firstboot.service >/dev/null 2>&1 || log "could not disable the unit; the done-marker still stops it"
+fi
+log "done"

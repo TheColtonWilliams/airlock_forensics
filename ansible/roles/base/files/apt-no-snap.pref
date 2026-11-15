@@ -1,0 +1,5 @@
+# Managed by the AIRLOCK base role (decision 5.4: snapd is removed). These packages are
+# snap wrappers or need the snap store, which an air-gapped drive can never reach.
+Package: snapd firefox thunderbird chromium-browser
+Pin: release a=*
+Pin-Priority: -1

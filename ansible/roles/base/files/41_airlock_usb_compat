@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# /etc/grub.d/41_airlock_usb_compat (task 1.12). Run by update-grub (grub-mkconfig), which
+# exports GRUB_DEVICE_UUID, GRUB_DEVICE_BOOT, GRUB_CMDLINE_LINUX(_DEFAULT) and pkgdatadir.
+#
+# Prints one extra boot-menu entry, "USB compatibility mode (UAS off)", that boots the
+# current kernel with modprobe.blacklist=uas so every USB disk uses the older usb-storage
+# driver. That works around USB-SATA bridges whose UAS mode hangs or drops out, without
+# naming any vendor. A site can add a quirk for one bridge in /etc/airlock/usb-storage-quirks
+# (VID:PID:FLAGS from lsusb); it is added as usb-storage.quirks=... to this entry only.
+#
+# Test: tests/functional/test_build_grub_usb_compat.sh
+set -euo pipefail
+
+pkgdatadir="${pkgdatadir:-/usr/share/grub}"
+quirks_file="${AIRLOCK_USB_QUIRKS_FILE:-/etc/airlock/usb-storage-quirks}"
+sysroot="${AIRLOCK_GRUB_SYSROOT:-}"
+kernel="/boot/vmlinuz"
+initrd="/boot/initrd.img"
+
+warn() { printf '41_airlock_usb_compat: %s\n' "$*" >&2; }
+
+# grub-mkconfig_lib is not written for 'set -u'.
+set +u
+# shellcheck source=/dev/null
+. "$pkgdatadir/grub-mkconfig_lib"
+set -u
+
+if [[ -z "${GRUB_DEVICE_UUID:-}" ]]; then
+  warn "no root filesystem UUID; skipping the USB compatibility entry"
+  exit 0
+fi
+if [[ ! -e "$sysroot$kernel" || ! -e "$sysroot$initrd" ]]; then
+  warn "$kernel or $initrd is missing; skipping the USB compatibility entry"
+  exit 0
+fi
+
+quirks=""
+if [[ -r "$quirks_file" ]]; then
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%%#*}"
+    line="${line//[[:space:]]/}"
+    [[ -n "$line" ]] || continue
+    if [[ "$line" =~ ^[0-9a-f]{4}:[0-9a-f]{4}:[a-z]+(,[0-9a-f]{4}:[0-9a-f]{4}:[a-z]+)*$ ]]; then
+      quirks="$line"
+    else
+      warn "ignoring '$line' in $quirks_file: expected VID:PID:FLAGS in lower-case hex"
+    fi
+    break
+  done <"$quirks_file"
+fi
+
+args="root=UUID=${GRUB_DEVICE_UUID} ro ${GRUB_CMDLINE_LINUX:-} ${GRUB_CMDLINE_LINUX_DEFAULT:-} modprobe.blacklist=uas"
+if [[ -n "$quirks" ]]; then
+  args="$args usb-storage.quirks=$quirks"
+fi
+# Collapse repeated spaces left by empty variables.
+read -r -a words <<<"$args"
+args="${words[*]}"
+
+rel_kernel="$(make_system_path_relative_to_its_root "$kernel")"
+rel_initrd="$(make_system_path_relative_to_its_root "$initrd")"
+access="$(prepare_grub_to_access_device "${GRUB_DEVICE_BOOT:-${GRUB_DEVICE:-}}" | sed -e 's/^/\t/')"
+
+printf "menuentry 'Ubuntu, AIRLOCK USB compatibility mode (UAS off)' --class ubuntu --class gnu-linux --class os \$menuentry_id_option 'airlock-usb-compat' {\n"
+printf '\tload_video\n'
+printf '\tinsmod gzio\n'
+printf '%s\n' "$access"
+printf "\techo 'Loading Linux with UAS off (USB compatibility mode) ...'\n"
+printf '\tlinux\t%s %s\n' "$rel_kernel" "$args"
+printf '\tinitrd\t%s\n' "$rel_initrd"
+printf '}\n'

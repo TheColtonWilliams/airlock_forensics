@@ -1,0 +1,14 @@
+# Managed by the AIRLOCK base role (tasks 1.9 and 1.12). Read by update-grub after
+# /etc/default/grub, so these values win.
+# The kernel command line is airlock_kernel_cmdline from ansible/group_vars/all/main.yml
+# (tasks 3.3, 3.4, 3A.1); the harden_storage role asserts it.
+# Tests: tests/unit/test_base_role.py, tests/goss/base.yaml (kernel-cmdline).
+GRUB_CMDLINE_LINUX="{{ airlock_kernel_cmdline | join(' ') }}"
+GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"
+GRUB_TIMEOUT_STYLE=menu
+GRUB_TIMEOUT={{ base_grub_timeout }}
+GRUB_RECORDFAIL_TIMEOUT={{ base_grub_timeout }}
+# Root by UUID, never by device name (task 1.9).
+GRUB_DISABLE_LINUX_UUID=false
+# os-prober opens every attached disk to look for other systems. Never on this drive.
+GRUB_DISABLE_OS_PROBER=true

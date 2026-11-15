@@ -1,0 +1,90 @@
+# Base role: Ubuntu packages, users, clock, locale, kernel and initramfs, desktop, drive
+# layout and mounts, portable boot, first-boot unit, build metadata, and removal of build
+# access. One control per file; each file names its test.
+# Runs twice: during the Packer build (airlock_phase=image) and offline on first boot by
+# forensic-provision (airlock_phase=provision). Steps that need the network or that change
+# the boot loader run in the image phase only.
+
+- name: Boot disk facts
+  ansible.builtin.import_tasks: boot_disk_facts.yml
+
+- name: Apt snapshot (6.1)
+  ansible.builtin.import_tasks: apt_snapshot.yml
+
+- name: No snap packages (5.4 policy)
+  ansible.builtin.import_tasks: apt_no_snap.yml
+
+- name: Base packages (1.5)
+  ansible.builtin.import_tasks: packages.yml
+
+- name: UTC clock (1.5)
+  ansible.builtin.import_tasks: timezone.yml
+
+- name: Locale (1.5)
+  ansible.builtin.import_tasks: locale.yml
+
+- name: Generic kernel (1.3, 1.12)
+  ansible.builtin.import_tasks: kernel.yml
+
+- name: Initramfs modules (1.3, 1.12)
+  ansible.builtin.import_tasks: initramfs.yml
+
+- name: Mesa graphics stack (1.12)
+  ansible.builtin.import_tasks: mesa.yml
+
+- name: Analyst account (1.2)
+  ansible.builtin.import_tasks: analyst_user.yml
+
+- name: Analyst sudo (1.2)
+  ansible.builtin.import_tasks: analyst_sudo.yml
+
+- name: Desktop (1.8)
+  ansible.builtin.import_tasks: desktop.yml
+
+- name: Desktop autologin (1.2)
+  ansible.builtin.import_tasks: gdm_autologin.yml
+
+- name: Screen lock off (1.2)
+  ansible.builtin.import_tasks: screen_lock.yml
+
+- name: Drive layout (2B.9, 2B.17)
+  ansible.builtin.import_tasks: partition_layout.yml
+
+- name: ASSETS and OUTPUT mounts (2B.13, 2B.17)
+  ansible.builtin.import_tasks: data_mounts.yml
+
+- name: Kernel command line (3.3, 3.4, 3A.1 applied)
+  ansible.builtin.import_tasks: grub_cmdline.yml
+
+- name: USB compatibility boot entry (1.12)
+  ansible.builtin.import_tasks: grub_usb_compat.yml
+
+- name: Portable boot loader (1.9)
+  ansible.builtin.import_tasks: bootloader.yml
+
+- name: Secure Boot chain check (1.13)
+  ansible.builtin.import_tasks: boot_chain.yml
+
+- name: QEMU guest agent for the VM tests (1.11)
+  ansible.builtin.import_tasks: guest_agent.yml
+
+- name: First-boot unit (1.10)
+  ansible.builtin.import_tasks: firstboot.yml
+
+- name: Build information (1.5)
+  ansible.builtin.import_tasks: build_info.yml
+
+# The three files below also run alone, at the very end of the build:
+#   ansible-playbook site.yml --tags airlock_finalize -e base_finalize_build=true
+# (packer/scripts/finalize.sh).
+- name: No SSH server (1.2)
+  ansible.builtin.import_tasks: no_ssh_server.yml
+  tags: [airlock_finalize]
+
+- name: Remove build access (1.5)
+  ansible.builtin.import_tasks: build_access.yml
+  tags: [airlock_finalize]
+
+- name: Prepare the image for its first boot (1.10)
+  ansible.builtin.import_tasks: image_finalize.yml
+  tags: [airlock_finalize]

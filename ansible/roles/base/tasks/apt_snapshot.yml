@@ -1,0 +1,22 @@
+# Control 6.1: apt reads from one dated snapshot.ubuntu.com mirror (apt_snapshot in
+# group_vars/all/main.yml), the same one the autoinstall used, so a rebuild gets the same
+# package versions. The running AIRLOCK system never contacts it: the network is off.
+# Tests: tests/unit/test_base_role.py (template), tests/goss/base.yaml (apt-snapshot).
+
+- name: Point apt at the dated snapshot (6.1)
+  ansible.builtin.template:
+    src: ubuntu.sources.j2
+    dest: /etc/apt/sources.list.d/ubuntu.sources
+    owner: root
+    group: root
+    mode: "0644"
+  when: use_apt_snapshot | bool
+
+- name: Keep the legacy sources.list empty (6.1)
+  ansible.builtin.copy:
+    content: "# AIRLOCK: apt sources are in /etc/apt/sources.list.d/ubuntu.sources\n"
+    dest: /etc/apt/sources.list
+    owner: root
+    group: root
+    mode: "0644"
+  when: use_apt_snapshot | bool

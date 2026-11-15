@@ -1,0 +1,10 @@
+# Control 1.2: GDM logs the analyst in automatically. XDMCP (remote login) stays off.
+# Test: tests/goss/base.yaml (gdm-autologin), tests/run-qemu-tests.sh (desktop session check).
+
+- name: Configure GDM autologin (1.2)
+  ansible.builtin.template:
+    src: gdm-custom.conf.j2
+    dest: /etc/gdm3/custom.conf
+    owner: root
+    group: root
+    mode: "0644"

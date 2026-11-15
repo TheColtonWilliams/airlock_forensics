@@ -1,0 +1,30 @@
+# Control 1.10: first-boot unit. On the first boot of a flashed drive it commits a new
+# machine ID and grows the root filesystem to fill the drive, then disables itself.
+# Enabled in the image build only; it never runs inside the build VM.
+# Tests: tests/functional/test_build_firstboot.sh, tests/goss/base.yaml (firstboot).
+
+- name: Install the first-boot program (1.10)
+  ansible.builtin.copy:
+    src: airlock-firstboot
+    dest: "{{ base_libexec_dir }}/airlock-firstboot"
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the first-boot unit (1.10)
+  ansible.builtin.copy:
+    src: airlock-firstboot.service
+    dest: /etc/systemd/system/airlock-firstboot.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Base systemd reload
+
+- name: Enable the first-boot unit (1.10)
+  ansible.builtin.file:
+    src: /etc/systemd/system/airlock-firstboot.service
+    dest: /etc/systemd/system/multi-user.target.wants/airlock-firstboot.service
+    state: link
+    owner: root
+    group: root
+  when: airlock_phase == 'image'

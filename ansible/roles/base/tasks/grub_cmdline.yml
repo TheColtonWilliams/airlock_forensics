@@ -1,0 +1,29 @@
+# Control (applies 3.3, 3.4 and 3A.1; owned here because the base role owns the boot
+# loader): the kernel command line from airlock_kernel_cmdline, root by UUID, a visible
+# boot menu, and os-prober off so update-grub never opens an attached disk.
+# Tests: tests/unit/test_base_role.py (every entry rendered), tests/goss/base.yaml (kernel-cmdline).
+
+- name: Check the kernel command line entries (3A.1)
+  ansible.builtin.assert:
+    that:
+      - airlock_kernel_cmdline | length > 0
+      - airlock_kernel_cmdline | select('match', '^[A-Za-z0-9_.,:=/+-]+$') | list | length == airlock_kernel_cmdline | length
+    fail_msg: airlock_kernel_cmdline in group_vars/all/main.yml must be a list of single words without quotes or spaces.
+    quiet: true
+
+- name: Make the grub settings folder (1.9)
+  ansible.builtin.file:
+    path: /etc/default/grub.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Write the AIRLOCK grub settings (1.9, 3A.1)
+  ansible.builtin.template:
+    src: 90-airlock.cfg.j2
+    dest: /etc/default/grub.d/90-airlock.cfg
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Base update grub

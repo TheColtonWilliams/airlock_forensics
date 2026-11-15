@@ -1,0 +1,70 @@
+# Controls 2B.13 and 2B.17: ASSETS is mounted read-only with noexec, so large staged data
+# (models, hash sets, signatures) is used in place and cannot be run or changed; OUTPUT is
+# mounted read-write for case output, owned by the analyst, still noexec. Both by UUID,
+# with nofail so a missing partition never stops the boot, and no fsck (pass 0).
+# Tests: tests/unit/test_base_role.py (options), tests/goss/base.yaml (data-mounts).
+
+- name: Read the drive layout (2B.13, 2B.17)
+  ansible.builtin.command:
+    argv: ["{{ base_libexec_dir }}/airlock-partition-layout", --check, --json, --root-source, "{{ base_root_partition }}"]
+  register: base_layout_now
+  changed_when: false
+  check_mode: false
+
+- name: Read the analyst account IDs (2B.17)
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ airlock_user }}"
+
+# The sandboxed parsers run as airlock-parse and write into module work folders on OUTPUT.
+# exFAT keeps no owners, so the mount gives that group write access (dmask=0007, fmask=0117).
+# session_tools adds the user to this group later.
+- name: Create the parser group for OUTPUT access (2B.17, 3A.9)
+  ansible.builtin.group:
+    name: "{{ airlock_parse_user }}"
+    system: true
+
+- name: Read the parser group ID (2B.17, 3A.9)
+  ansible.builtin.getent:
+    database: group
+    key: "{{ airlock_parse_user }}"
+
+- name: Collect the mount details (2B.13, 2B.17)
+  ansible.builtin.set_fact:
+    base_assets_uuid: "{{ (base_layout_now.stdout | from_json).partitions | selectattr('number', 'equalto', 3) | map(attribute='uuid') | first }}"
+    base_output_uuid: "{{ (base_layout_now.stdout | from_json).partitions | selectattr('number', 'equalto', 4) | map(attribute='uuid') | first }}"
+    base_analyst_uid: "{{ ansible_facts.getent_passwd[airlock_user][1] }}"
+    base_analyst_gid: "{{ ansible_facts.getent_passwd[airlock_user][2] }}"
+    base_parse_gid: "{{ ansible_facts.getent_group[airlock_parse_user][1] }}"
+
+- name: Check that ASSETS and OUTPUT have filesystems (2B.13, 2B.17)
+  ansible.builtin.assert:
+    that:
+      - base_assets_uuid | length > 0
+      - base_output_uuid | length > 0
+    fail_msg: ASSETS or OUTPUT has no filesystem. Rebuild the image, or reflash the drive.
+    quiet: true
+
+- name: Make the mount points (2B.13, 2B.17)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ airlock_assets_mount }}"
+    - "{{ airlock_output_mount }}"
+
+- name: Mount ASSETS read-only and OUTPUT read-write, both noexec (2B.13, 2B.17)
+  ansible.builtin.blockinfile:
+    path: /etc/fstab
+    marker: "# {mark} AIRLOCK data partitions (base role, tasks 2B.13 and 2B.17)"
+    block: |
+      UUID={{ base_assets_uuid }} {{ airlock_assets_mount }} exfat {{ base_assets_mount_options }} 0 0
+      UUID={{ base_output_uuid }} {{ airlock_output_mount }} exfat {{ base_output_mount_options }} 0 0
+  vars:
+    base_assets_mount_options: "ro,noexec,nosuid,nodev,nofail,x-systemd.device-timeout=10s,uid=0,gid=0,fmask=0022,dmask=0022"
+    base_output_mount_options: >-
+      rw,noexec,nosuid,nodev,nofail,x-systemd.device-timeout=10s,uid={{ base_analyst_uid }},gid={{ base_parse_gid }},fmask=0117,dmask=0007
+  notify: Base systemd reload

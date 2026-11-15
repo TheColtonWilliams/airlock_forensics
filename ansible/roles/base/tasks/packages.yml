@@ -1,0 +1,11 @@
+# Control 1.5: base packages from the Ubuntu archive (dated snapshot, 6.1). The apt cache
+# is refreshed in the image build only; on first boot (provision phase) there is no network
+# and every package is already installed.
+# Test: tests/goss/base.yaml (base-packages).
+
+- name: Install the base packages (1.5)
+  ansible.builtin.apt:
+    name: "{{ base_packages }}"
+    state: present
+    update_cache: "{{ airlock_phase == 'image' }}"
+    cache_valid_time: 3600

@@ -1,0 +1,33 @@
+# Control 1.8: the GNOME minimal desktop (the live-server ISO has none). The system boots
+# to it, and GNOME's first-login setup is skipped.
+# Test: tests/goss/base.yaml (desktop), tests/run-qemu-tests.sh (desktop session check).
+
+- name: Install the minimal Ubuntu desktop (1.8)
+  ansible.builtin.apt:
+    name: "{{ desktop_package }}"
+    state: present
+
+- name: Boot to the graphical target (1.8)
+  ansible.builtin.file:
+    src: /usr/lib/systemd/system/graphical.target
+    dest: /etc/systemd/system/default.target
+    state: link
+    force: true
+    owner: root
+    group: root
+
+- name: Make the analyst config folder (1.8)
+  ansible.builtin.file:
+    path: "/home/{{ airlock_user }}/.config"
+    state: directory
+    owner: "{{ airlock_user }}"
+    group: "{{ airlock_user }}"
+    mode: "0700"
+
+- name: Skip GNOME first-login setup (1.8)
+  ansible.builtin.copy:
+    content: "yes"
+    dest: "/home/{{ airlock_user }}/.config/gnome-initial-setup-done"
+    owner: "{{ airlock_user }}"
+    group: "{{ airlock_user }}"
+    mode: "0600"

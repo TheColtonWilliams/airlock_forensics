@@ -1,0 +1,19 @@
+# Control 1.5: the clock is UTC. Session logs and reports are in UTC too.
+# Test: tests/goss/base.yaml (utc-clock).
+
+- name: Set the time zone to UTC (1.5)
+  ansible.builtin.file:
+    src: "/usr/share/zoneinfo/{{ base_timezone }}"
+    dest: /etc/localtime
+    state: link
+    force: true
+    owner: root
+    group: root
+
+- name: Record the time zone name (1.5)
+  ansible.builtin.copy:
+    content: "{{ base_timezone }}\n"
+    dest: /etc/timezone
+    owner: root
+    group: root
+    mode: "0644"

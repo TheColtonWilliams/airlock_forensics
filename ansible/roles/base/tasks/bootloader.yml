@@ -1,0 +1,36 @@
+# Control 1.9: portable boot. Signed shim and grub at the removable-media path
+# EFI/BOOT/BOOTX64.EFI with no firmware boot entry, plus i386-pc grub for legacy BIOS on
+# the same disk; root by UUID (grub_cmdline.yml). Package upgrades keep the removable copy
+# (grub2/force_efi_extra_removable) and never touch NVRAM (grub2/update_nvram false).
+# Image phase only: on first boot the loader is already in place.
+# Tests: tests/functional/test_build_bootloader.sh, tests/goss/base.yaml (portable-boot).
+
+- name: Keep the removable-path loader on grub upgrades (1.9)
+  ansible.builtin.debconf:
+    name: grub-efi-amd64
+    question: grub2/force_efi_extra_removable
+    value: "true"
+    vtype: boolean
+
+- name: Never write firmware boot entries on grub upgrades (1.9)
+  ansible.builtin.debconf:
+    name: grub-efi-amd64
+    question: grub2/update_nvram
+    value: "false"
+    vtype: boolean
+
+- name: Install the boot loader helper (1.9)
+  ansible.builtin.copy:
+    src: airlock-install-bootloader
+    dest: "{{ base_libexec_dir }}/airlock-install-bootloader"
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install UEFI (removable path) and BIOS boot loaders on the boot disk (1.9)
+  ansible.builtin.command:
+    argv: ["{{ base_libexec_dir }}/airlock-install-bootloader", --disk, "{{ base_boot_disk }}"]
+  register: base_bootloader
+  changed_when: "'airlock-bootloader: changed' in base_bootloader.stdout"
+  when: airlock_phase == 'image'
+  notify: Base update grub

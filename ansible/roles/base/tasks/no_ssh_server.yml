@@ -1,0 +1,11 @@
+# Control 1.2: no SSH server on the finished drive. Packer needs one during the build, so
+# it is purged by the finalize step (and again, if ever present, on first boot).
+# Purging also deletes the SSH host keys.
+# Test: tests/goss/base.yaml (no-ssh-server).
+
+- name: Remove the SSH server (1.2)
+  ansible.builtin.apt:
+    name: openssh-server
+    state: absent
+    purge: true
+  when: airlock_phase != 'image' or (base_finalize_build | bool)

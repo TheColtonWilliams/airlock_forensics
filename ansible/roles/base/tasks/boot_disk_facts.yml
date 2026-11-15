@@ -1,0 +1,22 @@
+# Helper, not a control: find the disk that holds /, so the drive-layout and boot-loader
+# controls only ever touch the AIRLOCK drive itself and never an attached disk.
+# Test: tests/goss/base.yaml (drive-layout checks run against the same disk).
+
+- name: Find the device mounted at /
+  ansible.builtin.command:
+    argv: [findmnt, -n, -o, SOURCE, --target, /]
+  register: base_root_source
+  changed_when: false
+  check_mode: false
+
+- name: Find the disk that holds /
+  ansible.builtin.command:
+    argv: [lsblk, -n, -d, -o, PKNAME, "{{ base_root_source.stdout }}"]
+  register: base_root_parent
+  changed_when: false
+  check_mode: false
+
+- name: Record the boot disk
+  ansible.builtin.set_fact:
+    base_boot_disk: "/dev/{{ base_root_parent.stdout | trim }}"
+    base_root_partition: "{{ base_root_source.stdout | trim }}"

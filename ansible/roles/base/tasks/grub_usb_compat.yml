@@ -1,0 +1,41 @@
+# Control 1.12: an extra boot-menu entry, "USB compatibility mode (UAS off)", for evidence
+# drives behind flaky USB-SATA bridges. It turns UAS off for every device
+# (modprobe.blacklist=uas), so it names no vendor. One site can add a usb-storage quirk
+# for one bridge with base_uas_quirks (VID:PID:FLAGS from lsusb); docs/build.md explains.
+# Tests: tests/functional/test_build_grub_usb_compat.sh, tests/goss/base.yaml (usb-compat-entry).
+
+- name: Check the optional usb-storage quirk (1.12)
+  ansible.builtin.assert:
+    that:
+      - base_uas_quirks is match('^$|^[0-9a-f]{4}:[0-9a-f]{4}:[a-z]+(,[0-9a-f]{4}:[0-9a-f]{4}:[a-z]+)*$')
+    fail_msg: base_uas_quirks must be empty or VID:PID:FLAGS in lower-case hex, for example 0000:0000:u.
+    quiet: true
+
+- name: Make the AIRLOCK config folder (1.12)
+  ansible.builtin.file:
+    path: "{{ airlock_etc_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Record the optional usb-storage quirk (1.12)
+  ansible.builtin.copy:
+    content: |
+      # usb-storage quirks for the USB compatibility boot entry (VID:PID:FLAGS, comma separated).
+      # Empty means UAS is simply off for every device in that entry. Run update-grub after a change.
+      {{ base_uas_quirks }}
+    dest: "{{ airlock_etc_dir }}/usb-storage-quirks"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Base update grub
+
+- name: Install the USB compatibility boot entry (1.12)
+  ansible.builtin.copy:
+    src: 41_airlock_usb_compat
+    dest: /etc/grub.d/41_airlock_usb_compat
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Base update grub

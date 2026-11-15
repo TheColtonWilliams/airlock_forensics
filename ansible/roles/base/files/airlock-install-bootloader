@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+# airlock-install-bootloader (task 1.9): make the AIRLOCK drive boot on any x86_64 PC.
+#
+#  * UEFI: Ubuntu's signed shim and grub at the removable-media path EFI/BOOT/BOOTX64.EFI
+#    (grub-install --removable --no-nvram), plus the normal EFI/ubuntu copy whose grub.cfg
+#    the signed grub reads. No firmware boot entry is written (--no-nvram), so nothing on
+#    the PC the drive is plugged into is changed. shim's fallback (fbx64.efi) is removed
+#    from EFI/BOOT because it would write boot entries into that PC's NVRAM.
+#  * Legacy BIOS: grub for i386-pc in the BIOS boot partition of the same disk.
+#
+# Usage: airlock-install-bootloader [--disk DEV] [--boot-dir DIR] [--efi-dir DIR] [--targets LIST]
+#   --disk      disk to install to; must be the disk that holds --boot-dir
+#               (default: the disk holding --boot-dir)
+#   --boot-dir  folder with grub/ and the kernels (default /boot)
+#   --efi-dir   mounted EFI system partition (default /boot/efi)
+#   --targets   efi,bios (default). Tests on hosts without FAT support use bios alone.
+# Prints "airlock-bootloader: changed" or "airlock-bootloader: unchanged" last.
+# Exit status: 0 done; 1 failed (one line says what and what to do next).
+#
+# Tests: tests/functional/test_build_bootloader.sh (installs to a loop disk and boots it
+# under SeaBIOS, OVMF, and OVMF with Secure Boot), tests/goss/base.yaml (portable-boot).
+set -euo pipefail
+
+disk=""
+boot_dir="/boot"
+efi_dir="/boot/efi"
+targets="efi,bios"
+
+die() {
+  printf 'airlock-install-bootloader: %s\n' "$*" >&2
+  exit 1
+}
+
+while (($#)); do
+  case "$1" in
+    --disk) disk="${2:?--disk needs a device}"; shift 2 ;;
+    --boot-dir) boot_dir="${2:?--boot-dir needs a folder}"; shift 2 ;;
+    --efi-dir) efi_dir="${2:?--efi-dir needs a folder}"; shift 2 ;;
+    --targets) targets="${2:?--targets needs efi, bios, or efi,bios}"; shift 2 ;;
+    -h | --help) sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) die "unknown option '$1'. Run with --help." ;;
+  esac
+done
+
+do_efi=0
+do_bios=0
+IFS=',' read -r -a target_list <<<"$targets"
+for t in "${target_list[@]}"; do
+  case "$t" in
+    efi) do_efi=1 ;;
+    bios) do_bios=1 ;;
+    *) die "--targets takes efi, bios, or efi,bios (not '$t')." ;;
+  esac
+done
+((do_efi || do_bios)) || die "--targets is empty."
+
+[[ -d "$boot_dir" ]] || die "boot folder $boot_dir does not exist."
+if ((do_efi)); then
+  mountpoint -q -- "$efi_dir" || die "$efi_dir is not a mounted EFI system partition."
+fi
+
+boot_src="$(findmnt -n -o SOURCE --target "$boot_dir")"
+boot_disk="/dev/$(lsblk -n -d -o PKNAME -- "$boot_src")"
+[[ "$boot_disk" != "/dev/" ]] || die "could not find the disk that holds $boot_dir ($boot_src)."
+if [[ -z "$disk" ]]; then
+  disk="$boot_disk"
+elif [[ "$(stat -L -c %t:%T -- "$disk")" != "$(stat -L -c %t:%T -- "$boot_disk")" ]]; then
+  die "$disk does not hold $boot_dir (that is $boot_disk); refusing to write a boot loader to it."
+fi
+if ((do_efi)); then
+  efi_src="$(findmnt -n -o SOURCE --target "$efi_dir")"
+  [[ "/dev/$(lsblk -n -d -o PKNAME -- "$efi_src" 2>/dev/null)" == "$boot_disk" ]] ||
+    die "the EFI partition at $efi_dir ($efi_src) is not on $boot_disk."
+fi
+
+bios_part=""
+for sys in /sys/class/block/"$(basename -- "$(realpath -- "$disk")")"/*/partition; do
+  [[ -e "$sys" ]] || continue
+  part="/dev/$(basename -- "$(dirname -- "$sys")")"
+  if sgdisk -i "$(cat -- "$sys")" "$disk" 2>/dev/null | grep -qi '21686148-6449-6E6F-744E-656564454649'; then
+    bios_part="$part"
+  fi
+done
+[[ -n "$bios_part" ]] || die "$disk has no BIOS boot partition (type EF02). The drive layout is wrong; rebuild the image."
+
+# Fingerprint of everything this script writes, to report changed or unchanged.
+state() {
+  {
+    if ((do_efi)); then
+      find "$efi_dir/EFI/BOOT" "$efi_dir/EFI/ubuntu" -type f -print0 2>/dev/null | sort -z |
+        xargs -0 -r sha256sum
+    fi
+    dd if="$disk" bs=440 count=1 status=none | sha256sum
+    dd if="$bios_part" bs=1M status=none | sha256sum
+  } | sha256sum | cut -d' ' -f1
+}
+
+before="$(state)"
+
+if ((do_efi)); then
+  common=(--target=x86_64-efi --efi-directory="$efi_dir" --boot-directory="$boot_dir"
+    --uefi-secure-boot --no-nvram)
+  grub-install "${common[@]}" --bootloader-id=ubuntu ||
+    die "grub-install for UEFI (EFI/ubuntu) failed. Read its output above."
+  grub-install "${common[@]}" --removable ||
+    die "grub-install for UEFI (removable path EFI/BOOT) failed. Read its output above."
+  rm -f -- "$efi_dir/EFI/BOOT/fbx64.efi"
+  [[ -f "$efi_dir/EFI/BOOT/BOOTX64.EFI" ]] || die "EFI/BOOT/BOOTX64.EFI is missing after grub-install."
+  [[ -f "$efi_dir/EFI/ubuntu/grub.cfg" ]] || die "EFI/ubuntu/grub.cfg is missing after grub-install."
+fi
+
+if ((do_bios)); then
+  grub-install --target=i386-pc --boot-directory="$boot_dir" -- "$disk" ||
+    die "grub-install for legacy BIOS failed. Read its output above."
+fi
+sync
+
+after="$(state)"
+if [[ "$before" == "$after" ]]; then
+  echo "airlock-bootloader: unchanged"
+else
+  echo "airlock-bootloader: changed"
+fi

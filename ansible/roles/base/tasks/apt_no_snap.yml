@@ -1,0 +1,13 @@
+# Control (decision 5.4, snapd_policy=remove): pin snapd and the snap-only browser and
+# mail packages out, so installing the desktop cannot pull them in through Recommends.
+# The harden_services role removes snapd itself; this stops it coming back.
+# Test: tests/goss/base.yaml (no-snap-pin).
+
+- name: Pin snapd and snap-only packages out of apt (5.4)
+  ansible.builtin.copy:
+    src: apt-no-snap.pref
+    dest: /etc/apt/preferences.d/airlock-no-snap.pref
+    owner: root
+    group: root
+    mode: "0644"
+  when: snapd_policy == 'remove'

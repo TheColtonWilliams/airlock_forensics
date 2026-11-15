@@ -1,0 +1,23 @@
+# Control 1.5: one UTF-8 system locale.
+# Test: tests/goss/base.yaml (locale).
+
+- name: List the generated locales (1.5)
+  ansible.builtin.command:
+    argv: [locale, -a]
+  register: base_locales_present
+  changed_when: false
+  check_mode: false
+
+- name: Generate the system locale when it is missing (1.5)
+  ansible.builtin.command:
+    argv: [locale-gen, "{{ base_locale }}"]
+  when: (base_locale | regex_replace('UTF-8$', 'utf8')) not in base_locales_present.stdout_lines
+  changed_when: true
+
+- name: Set the system locale (1.5)
+  ansible.builtin.copy:
+    content: "LANG={{ base_locale }}\n"
+    dest: /etc/default/locale
+    owner: root
+    group: root
+    mode: "0644"

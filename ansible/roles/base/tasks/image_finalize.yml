@@ -1,0 +1,29 @@
+# Control 1.10 (build side): leave the image ready for its first boot. An empty
+# /etc/machine-id makes systemd create a new ID on every flashed drive (committed by
+# airlock-firstboot), and the apt download cache is dropped so the image stays small.
+# Runs only at the end of the build (packer/scripts/finalize.sh).
+# Test: tests/goss/base.yaml (firstboot: machine ID is set and differs per boot of a new overlay).
+
+- name: Empty the machine ID so each drive gets its own (1.10)
+  ansible.builtin.copy:
+    content: ""
+    dest: /etc/machine-id
+    owner: root
+    group: root
+    mode: "0444"
+  when: base_finalize_build | bool
+
+- name: Point the D-Bus machine ID at the systemd one (1.10)
+  ansible.builtin.file:
+    src: /etc/machine-id
+    dest: /var/lib/dbus/machine-id
+    state: link
+    force: true
+    owner: root
+    group: root
+  when: base_finalize_build | bool
+
+- name: Drop the apt download cache (1.10)
+  ansible.builtin.apt:
+    clean: true
+  when: base_finalize_build | bool

@@ -1,0 +1,25 @@
+# Control 1.12: Mesa from the dated snapshot (newer than the 24.04 GA stack, needed for
+# the Vulkan AI backend). The snapshot pins the exact version; this check fails the build
+# if apt resolves anything older than base_mesa_min_version.
+# Test: tests/goss/base.yaml (mesa-version).
+
+- name: Install the Mesa graphics and Vulkan drivers (1.12)
+  ansible.builtin.apt:
+    name: "{{ base_mesa_packages }}"
+    state: present
+
+- name: Read the installed Mesa version (1.12)
+  ansible.builtin.command:
+    argv: [dpkg-query, -W, "-f=${Version}", mesa-vulkan-drivers]
+  register: base_mesa_version
+  changed_when: false
+  check_mode: false
+
+- name: Check the Mesa version (1.12)
+  ansible.builtin.assert:
+    that:
+      - (base_mesa_version.stdout | regex_replace('^[0-9]+:', '') | regex_replace('-.*$', '')) is version(base_mesa_min_version, '>=')
+    fail_msg: >-
+      Mesa {{ base_mesa_version.stdout }} is older than {{ base_mesa_min_version }}.
+      Move apt_snapshot in group_vars/all/main.yml to a newer date and rebuild.
+    quiet: true

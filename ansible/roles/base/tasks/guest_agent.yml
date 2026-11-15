@@ -1,0 +1,32 @@
+# Control (test channel for 1.11 and every goss check): the QEMU guest agent lets
+# tests/run-qemu-tests.sh run goss inside a test VM with the guest network off. It talks
+# over a virtio serial port, not a network, and its unit only starts when that port
+# exists, which real PCs never have. Only the commands the harness needs are allowed.
+# Test: tests/goss/base.yaml (guest-agent), tests/run-qemu-tests.sh (uses it).
+
+- name: Install the QEMU guest agent (1.11)
+  ansible.builtin.apt:
+    name: qemu-guest-agent
+    state: present
+  when: base_test_agent | bool
+
+- name: Make the QEMU config folder (1.11)
+  ansible.builtin.file:
+    path: /etc/qemu
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: base_test_agent | bool
+
+- name: Allow only the guest agent commands the test harness uses (1.11)
+  ansible.builtin.copy:
+    content: |
+      # Managed by the AIRLOCK base role. Used only by tests/run-qemu-tests.sh in a VM.
+      [general]
+      allow-rpcs={{ base_test_agent_rpcs | join(',') }}
+    dest: /etc/qemu/qemu-ga.conf
+    owner: root
+    group: root
+    mode: "0644"
+  when: base_test_agent | bool

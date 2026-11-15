@@ -1,0 +1,103 @@
+# Base role defaults. Shared settings (paths, drive layout, kernel cmdline, apt snapshot)
+# live in ansible/group_vars/all/main.yml; only values used by this role alone are here.
+
+# Build metadata, passed by packer/scripts/run-ansible.sh as extra variables.
+base_build_commit: unknown
+base_build_date: unknown
+
+# Packer's temporary SSH user (packer/variables.pkr.hcl build_user). Removed at the end of
+# the build by the airlock_finalize tasks.
+base_build_user: airlock-build
+# Set to true only by packer/scripts/finalize.sh, as the last step of the image build.
+base_finalize_build: false
+
+base_timezone: Etc/UTC
+base_locale: en_US.UTF-8
+
+# Task 1.5: packages every later role or helper relies on. Ubuntu archive only.
+base_packages:
+  - ansible
+  - python3-apt
+  - cloud-guest-utils
+  - dconf-cli
+  - dosfstools
+  - e2fsprogs
+  - exfatprogs
+  - gdisk
+  - locales
+  - openssl
+  - tzdata
+  - util-linux
+  - grub-efi-amd64-bin
+  - grub-efi-amd64-signed
+  - grub-pc-bin
+  - shim-signed
+
+# Tasks 1.3 and 1.12: generic-flavour HWE kernel only.
+base_kernel_package: linux-generic-hwe-24.04
+base_unwanted_kernel_packages:
+  - linux-virtual
+  - linux-image-virtual
+  - linux-headers-virtual
+  - linux-virtual-hwe-24.04
+  - linux-image-virtual-hwe-24.04
+  - linux-kvm
+  - linux-image-kvm
+
+# Task 1.12: storage and USB drivers always in the initramfs (in addition to MODULES=most),
+# so the drive boots from USB 2/3 sticks, UAS bridges, NVMe, Intel VMD and SATA on any PC.
+base_initramfs_modules:
+  - ahci
+  - ehci_pci
+  - mmc_block
+  - nvme
+  - ohci_pci
+  - sd_mod
+  - sdhci_pci
+  - uas
+  - uhci_hcd
+  - usb_storage
+  - vmd
+  - xhci_hcd
+  - xhci_pci
+
+# Task 1.12: Mesa from the dated snapshot. 25.2.8 is what the 20261101 snapshot carries
+# (noble-security, checked 2026-11-15); the build fails if apt resolves anything older.
+base_mesa_packages:
+  - libgl1-mesa-dri
+  - libvulkan1
+  - mesa-vulkan-drivers
+base_mesa_min_version: "25.2"
+
+# Task 1.12: optional usb-storage quirk for the "USB compatibility mode" boot entry.
+# Format VID:PID:FLAGS from lsusb, for example 0000:0000:u (u = do not use UAS).
+# Never set a vendor ID in the repository; this is for one drive on one site.
+base_uas_quirks: ""
+
+base_grub_timeout: 5
+
+# Task 1.13: lowest SBAT generations accepted for the boot chain. shim,4 and grub,5 are
+# what shim-signed 1.58+15.8 and grub-efi-amd64-signed 1.202.5+2.12-1ubuntu7.3 in the
+# 20261101 snapshot carry (read from their .sbat sections, 2026-11-15).
+base_min_sbat:
+  shim: 4
+  grub: 5
+
+# Helper programs installed by this role.
+base_libexec_dir: "{{ airlock_opt_dir }}/libexec"
+
+# QEMU guest agent: the channel tests/run-qemu-tests.sh uses to run goss in a VM. It only
+# starts when a virtio guest-agent port exists, which real PCs do not have.
+base_test_agent: true
+base_test_agent_rpcs:
+  - guest-sync
+  - guest-sync-delimited
+  - guest-ping
+  - guest-info
+  - guest-exec
+  - guest-exec-status
+  - guest-file-open
+  - guest-file-write
+  - guest-file-read
+  - guest-file-close
+  - guest-shutdown

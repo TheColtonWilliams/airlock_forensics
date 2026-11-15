@@ -1,0 +1,29 @@
+# Controls 2B.9 and 2B.17: the drive layout of docs/dev/contract.md section 3 on the boot
+# disk only: GPT names BIOSBOOT, EFI, ASSETS, OUTPUT, AIRLOCK_ROOT; ASSETS and OUTPUT typed
+# Microsoft basic data so Windows can stage files; both made exFAT once, in the image
+# build. The helper refuses any disk that is not the one holding / and never reformats.
+# Tests: tests/functional/test_build_partition_layout.sh, tests/goss/base.yaml (drive-layout).
+
+- name: Make the AIRLOCK helper folder (2B.9)
+  ansible.builtin.file:
+    path: "{{ base_libexec_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the drive layout helper (2B.9)
+  ansible.builtin.copy:
+    src: airlock_partition_layout.py
+    dest: "{{ base_libexec_dir }}/airlock-partition-layout"
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Set partition names and types, make ASSETS and OUTPUT exFAT (2B.9, 2B.17)
+  ansible.builtin.command:
+    argv: >-
+      {{ [base_libexec_dir ~ '/airlock-partition-layout', '--json', '--root-source', base_root_partition]
+         + (['--format-empty'] if airlock_phase == 'image' else []) }}
+  register: base_partition_layout
+  changed_when: (base_partition_layout.stdout | from_json).changed

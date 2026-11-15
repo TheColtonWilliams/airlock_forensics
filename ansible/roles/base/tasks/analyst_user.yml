@@ -1,0 +1,14 @@
+# Control 1.2: the analyst account has a locked password. No password exists, so there is
+# nothing to guess; the desktop logs in automatically and sudo needs no password.
+# Test: tests/goss/base.yaml (analyst-locked).
+
+- name: Create the analyst account with a locked password (1.2)
+  ansible.builtin.user:
+    name: "{{ airlock_user }}"
+    comment: AIRLOCK analyst
+    shell: /bin/bash
+    create_home: true
+    groups: [adm]
+    append: true
+    password: "!"
+    update_password: always

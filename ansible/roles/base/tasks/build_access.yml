@@ -1,0 +1,38 @@
+# Control 1.5: remove every way in that the build used. The Packer user and its sudo rule,
+# the installer's cloud-init settings (which would recreate that user), and the installer's
+# network configuration. cloud-init is disabled: the finished drive has no datasource.
+# Runs at the end of the build (finalize) and again on first boot.
+# Test: tests/goss/base.yaml (no-build-access).
+
+- name: Delete the build user (1.5)
+  ansible.builtin.user:
+    name: "{{ base_build_user }}"
+    state: absent
+    remove: true
+    force: true
+  when: airlock_phase != 'image' or (base_finalize_build | bool)
+
+- name: Remove build-time sudo, cloud-init and network settings (1.5)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/sudoers.d/90-cloud-init-users
+    - /etc/cloud/cloud.cfg.d/99-installer.cfg
+    - /etc/cloud/cloud.cfg.d/90-installer-network.cfg
+    - /etc/netplan/00-installer-config.yaml
+    - /etc/netplan/50-cloud-init.yaml
+    - /var/lib/cloud
+  when: airlock_phase != 'image' or (base_finalize_build | bool)
+
+# harden_services (5.3) writes the same marker with its own text; create it only if absent
+# so the two roles never rewrite each other's file.
+- name: Disable cloud-init (1.5)
+  ansible.builtin.copy:
+    content: "AIRLOCK: cloud-init is disabled. The USB system never uses a network.\n"
+    dest: /etc/cloud/cloud-init.disabled
+    force: false
+    owner: root
+    group: root
+    mode: "0644"
+  when: airlock_phase != 'image' or (base_finalize_build | bool)

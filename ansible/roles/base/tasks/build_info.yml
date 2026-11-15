@@ -1,0 +1,32 @@
+# Control 1.5: /etc/airlock/build-info.json records what was built, from which commit,
+# when (UTC), and from which apt snapshot. forensic-session-start reads it to warn about an
+# old image. Written in the image build only; it describes the build, not the PC.
+# Tests: tests/unit/test_base_role.py (keys), tests/goss/base.yaml (build-info).
+
+- name: Make the AIRLOCK config folder (1.5)
+  ansible.builtin.file:
+    path: "{{ airlock_etc_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Write the build information (1.5)
+  ansible.builtin.copy:
+    content: "{{ base_build_info | to_nice_json(sort_keys=true) }}\n"
+    dest: "{{ airlock_etc_dir }}/build-info.json"
+    owner: root
+    group: root
+    mode: "0644"
+  vars:
+    base_build_info:
+      schema: 1
+      name: "{{ airlock_name }}"
+      version: "{{ airlock_version }}"
+      git_commit: "{{ base_build_commit }}"
+      build_date: "{{ base_build_date }}"
+      ubuntu_release: "{{ ubuntu_release }}"
+      apt_snapshot: "{{ apt_snapshot }}"
+      apt_snapshot_used: "{{ use_apt_snapshot | bool }}"
+      kernel_package: "{{ base_kernel_package }}"
+  when: airlock_phase == 'image'

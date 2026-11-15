@@ -1,0 +1,313 @@
+# Base role and image build checks. Run inside the booted image by tests/run-qemu-tests.sh
+# (goss validate, guest network off). Each check names the task it proves.
+
+user:
+  # 1.2: the analyst account exists; its password is locked (see command analyst-password-locked).
+  analyst:
+    exists: true
+    home: /home/analyst
+    shell: /bin/bash
+  # 1.5: Packer's build user is gone.
+  airlock-build:
+    exists: false
+
+package:
+  # 1.2: no SSH server on the finished drive.
+  openssh-server:
+    installed: false
+  # 1.3, 1.12: generic-flavour HWE kernel, no virtual kernel.
+  linux-generic-hwe-24.04:
+    installed: true
+  linux-virtual:
+    installed: false
+  linux-image-virtual:
+    installed: false
+  linux-image-virtual-hwe-24.04:
+    installed: false
+  # 1.8: desktop.
+  ubuntu-desktop-minimal:
+    installed: true
+  # 1.5: base packages.
+  exfatprogs:
+    installed: true
+  cloud-guest-utils:
+    installed: true
+  gdisk:
+    installed: true
+  # 1.9, 1.13: signed shim and grub for UEFI, grub modules for legacy BIOS.
+  shim-signed:
+    installed: true
+  grub-efi-amd64-signed:
+    installed: true
+  grub-pc-bin:
+    installed: true
+  # 1.11: test channel used by this harness.
+  qemu-guest-agent:
+    installed: true
+
+file:
+  # 1.2: passwordless sudo, autologin, no screen lock.
+  /etc/sudoers.d/90-airlock-analyst:
+    exists: true
+    mode: "0440"
+    owner: root
+    contents:
+      - "/^analyst ALL=\\(ALL:ALL\\) NOPASSWD: ALL$/"
+  /etc/gdm3/custom.conf:
+    exists: true
+    contents:
+      - "/^AutomaticLoginEnable=true$/"
+      - "/^AutomaticLogin=analyst$/"
+      - "/^InitialSetupEnable=false$/"
+  /etc/dconf/db/local.d/10-airlock-session:
+    exists: true
+    contents:
+      - "/^lock-enabled=false$/"
+      - "/^idle-delay=uint32 0$/"
+      - "/^disable-lock-screen=true$/"
+      - "/^sleep-inactive-ac-type='nothing'$/"
+  /etc/dconf/db/local.d/locks/10-airlock-session:
+    exists: true
+    contents:
+      - "/^\\/org\\/gnome\\/desktop\\/screensaver\\/lock-enabled$/"
+      - "/^\\/org\\/gnome\\/desktop\\/session\\/idle-delay$/"
+  /etc/dconf/profile/user:
+    exists: true
+    contents:
+      - "/^system-db:local$/"
+  # 1.8: boot to the desktop, skip first-login setup.
+  /etc/systemd/system/default.target:
+    exists: true
+    filetype: symlink
+    linked-to: /usr/lib/systemd/system/graphical.target
+  /home/analyst/.config/gnome-initial-setup-done:
+    exists: true
+    owner: analyst
+  # 1.5: UTC clock and locale.
+  /etc/localtime:
+    exists: true
+    filetype: symlink
+    linked-to: /usr/share/zoneinfo/Etc/UTC
+  /etc/timezone:
+    exists: true
+    contents:
+      - "/^Etc\\/UTC$/"
+  /etc/default/locale:
+    exists: true
+    contents:
+      - "/^LANG=en_US.UTF-8$/"
+  # 6.1: apt points at one dated snapshot.
+  /etc/apt/sources.list.d/ubuntu.sources:
+    exists: true
+    contents:
+      - "/^URIs: https:\\/\\/snapshot\\.ubuntu\\.com\\/ubuntu\\/[0-9]{8}T[0-9]{6}Z$/"
+  # 5.4 policy, base side: snapd and snap-only packages pinned out.
+  /etc/apt/preferences.d/airlock-no-snap.pref:
+    exists: true
+    contents:
+      - "/^Package: snapd /"
+      - "/^Pin-Priority: -1$/"
+  # 1.3: initramfs keeps most modules.
+  /etc/initramfs-tools/conf.d/airlock-modules.conf:
+    exists: true
+    contents:
+      - "/^MODULES=most$/"
+  # 1.9, 3A.1: grub settings; os-prober never opens attached disks.
+  /etc/default/grub.d/90-airlock.cfg:
+    exists: true
+    contents:
+      - "/^GRUB_DISABLE_OS_PROBER=true$/"
+      - "/^GRUB_DISABLE_LINUX_UUID=false$/"
+  # 1.12: USB compatibility boot entry.
+  /etc/grub.d/41_airlock_usb_compat:
+    exists: true
+    mode: "0755"
+  /boot/grub/grub.cfg:
+    exists: true
+    contents:
+      - "/AIRLOCK USB compatibility mode \\(UAS off\\)/"
+      - "/modprobe\\.blacklist=uas/"
+      - "/root=UUID=/"
+      - "!/root=\\/dev\\//"
+  # 1.9: portable boot, UEFI removable path and legacy BIOS on the same disk.
+  /boot/efi/EFI/BOOT/BOOTX64.EFI:
+    exists: true
+  /boot/efi/EFI/BOOT/grubx64.efi:
+    exists: true
+  /boot/efi/EFI/BOOT/fbx64.efi:
+    exists: false
+  /boot/efi/EFI/ubuntu/grub.cfg:
+    exists: true
+  /boot/grub/i386-pc/core.img:
+    exists: true
+  # 1.13: SBAT levels met at build time.
+  /etc/airlock/boot-chain.json:
+    exists: true
+    contents:
+      - "/\"sbat_ok\": true/"
+  # 1.5: build information.
+  /etc/airlock/build-info.json:
+    exists: true
+    contents:
+      - "/\"build_date\": /"
+      - "/\"git_commit\": /"
+      - "/\"version\": /"
+      - "/\"apt_snapshot\": /"
+  # 1.5, 1.2: no build access left.
+  /etc/cloud/cloud-init.disabled:
+    exists: true
+  /etc/sudoers.d/90-cloud-init-users:
+    exists: false
+  /etc/ssh/sshd_config:
+    exists: false
+  /etc/netplan/00-installer-config.yaml:
+    exists: false
+  # 1.10: first boot ran and committed a machine ID.
+  /var/lib/airlock/firstboot.done:
+    exists: true
+  /etc/machine-id:
+    exists: true
+    contents:
+      - "/^[0-9a-f]{32}$/"
+  # 1.11: guest agent restricted to the harness commands.
+  /etc/qemu/qemu-ga.conf:
+    exists: true
+    contents:
+      - "/^allow-rpcs=/"
+
+service:
+  # 1.10: the first-boot unit disabled itself.
+  airlock-firstboot:
+    enabled: false
+    running: false
+  # 1.8, 1.2: the desktop runs.
+  gdm:
+    running: true
+  # 1.2: no SSH daemon.
+  ssh:
+    enabled: false
+    running: false
+
+mount:
+  # 2B.13: ASSETS read-only, noexec.
+  /srv/airlock/assets:
+    exists: true
+    filesystem: exfat
+    opts:
+      - ro
+      - noexec
+      - nosuid
+      - nodev
+  # 2B.17: OUTPUT read-write for the analyst, noexec.
+  /srv/airlock/output:
+    exists: true
+    filesystem: exfat
+    opts:
+      - rw
+      - noexec
+      - nosuid
+      - nodev
+  /:
+    exists: true
+    filesystem: ext4
+
+port:
+  # 1.2: nothing listens for SSH.
+  tcp:22:
+    listening: false
+  tcp6:22:
+    listening: false
+
+command:
+  # 1.2: the analyst password is locked (passwd -S prints L).
+  analyst-password-locked:
+    exec: passwd -S analyst
+    exit-status: 0
+    stdout:
+      - "/^analyst L /"
+  # 1.2: autologin reached a desktop session on seat0.
+  desktop-session:
+    exec: loginctl list-sessions --no-legend
+    exit-status: 0
+    stdout:
+      - "/analyst/"
+      - "/seat0/"
+  # 3.3, 3.4, 3A.1 (applied by base): every airlock_kernel_cmdline entry is on the running kernel.
+  # tests/unit/test_base_role.py keeps this list equal to group_vars/all/main.yml.
+  kernel-cmdline:
+    exec: cat /proc/cmdline
+    exit-status: 0
+    stdout:
+      - "/(^| )noresume( |$)/"
+      - "/(^| )systemd\\.gpt_auto=0( |$)/"
+      - "/(^| )rd\\.systemd\\.gpt_auto=0( |$)/"
+      - "/(^| )rd\\.lvm=0( |$)/"
+      - "/(^| )rd\\.md=0( |$)/"
+      - "/(^| )rd\\.dm=0( |$)/"
+      - "/(^| )rd\\.luks=0( |$)/"
+      - "/(^| )nodmraid( |$)/"
+      - "/(^| )rfkill\\.default_state=0( |$)/"
+  # 1.3: running a generic-flavour kernel.
+  kernel-generic:
+    exec: uname -r
+    exit-status: 0
+    stdout:
+      - "/-generic$/"
+  # 1.3, 1.12: the initramfs carries the boot storage drivers.
+  initramfs-modules:
+    exec: lsinitramfs "/boot/initrd.img-$(uname -r)"
+    exit-status: 0
+    stdout:
+      - "/\\/uas\\.ko/"
+      - "/\\/usb-storage\\.ko/"
+      - "/\\/nvme\\.ko/"
+      - "/\\/vmd\\.ko/"
+      - "/\\/ahci\\.ko/"
+    timeout: 60000
+  # 1.12: USB host controllers are built into the HWE kernel (CONFIG_USB_XHCI_PCI=y in
+  # 7.0.0-38-generic); accept built-in or in the initramfs, so a kernel change is still caught.
+  usb-host-drivers:
+    exec: >-
+      for m in xhci-pci ehci-pci; do
+      grep -q "/$m\\.ko" "/lib/modules/$(uname -r)/modules.builtin" ||
+      lsinitramfs "/boot/initrd.img-$(uname -r)" | grep -q "/$m\\.ko" || { echo "missing $m"; exit 1; };
+      done
+    exit-status: 0
+    timeout: 60000
+  # 1.12: Mesa 25.2 or newer.
+  mesa-version:
+    exec: dpkg-query -W -f='${Version}' mesa-vulkan-drivers
+    exit-status: 0
+    stdout:
+      - "/^(1:)?(25\\.([2-9]|[1-9][0-9])|2[6-9]\\.|[3-9][0-9]\\.)/"
+  # 2B.9, 2B.17: GPT names, types, exFAT on ASSETS and OUTPUT, ext4 root last.
+  drive-layout:
+    exec: /opt/airlock/libexec/airlock-partition-layout --check
+    exit-status: 0
+  # 1.9: fstab refers to partitions by UUID only.
+  fstab-by-uuid:
+    exec: "! awk '!/^[[:space:]]*(#|$)/ {print $1}' /etc/fstab | grep -Eqv '^(UUID=|/dev/disk/by-uuid/)'"
+    exit-status: 0
+  # 1.10: the root partition fills the drive and the filesystem fills the partition.
+  root-grown:
+    exec: >-
+      src=$(findmnt -n -o SOURCE /);
+      disk=/dev/$(lsblk -n -d -o PKNAME "$src");
+      n=$(cat "/sys/class/block/$(basename "$src")/partition");
+      ! growpart --dry-run "$disk" "$n" >/dev/null 2>&1 &&
+      part=$(blockdev --getsize64 "$src") &&
+      fs=$(dumpe2fs -h "$src" 2>/dev/null | awk -F: '/^Block count/ {c=$2} /^Block size/ {s=$2} END {print c*s}') &&
+      test $((part - fs)) -lt 16777216
+    exit-status: 0
+  # 1.5: UTC.
+  utc-clock:
+    exec: date +%Z
+    exit-status: 0
+    stdout:
+      - "/^UTC$/"
+  # 1.5: locale generated.
+  locale:
+    exec: locale -a
+    exit-status: 0
+    stdout:
+      - "/^en_US\\.utf8$/"
