@@ -1,0 +1,14 @@
+# Control 4A.1: clamscan and sigtool (clamav), yara and yarac, ssdeep, python3-tlsh, hashdeep
+# installed; the ClamAV scanning daemon and its client are never installed.
+# Test: tests/goss/hashsets.yaml (packages, tools run); tests/functional/test_triage_hash.sh.
+- name: Packages | Install the hash and signature tools (4A.1)
+  ansible.builtin.apt:
+    name: "{{ tools_hashsets_packages }}"
+    state: present
+  when: tools_hashsets_install_packages | bool
+
+- name: Packages | Keep the ClamAV daemon off the image (4A.1)
+  ansible.builtin.apt:
+    name: "{{ tools_hashsets_packages_absent }}"
+    state: absent
+  when: tools_hashsets_install_packages | bool

@@ -1,0 +1,51 @@
+# Control 4A.2: at provisioning, the staged NSRL RDSv3 Modern minimal zip (pinned release,
+# SHA-256 from NIST's published hash) is extracted to /opt/hashsets/nsrl when nsrl_on_image is
+# true, or to the OUTPUT drive (OUTPUT/nsrl) when it is false (the default), opened read-only
+# to prove it is usable, and its release recorded in nsrl.json and the session log.
+# Test: tests/unit/test_hashsets.py (extract, refusal, idempotence, nsrl_path lookup order);
+# tests/unit/test_hashsets_role.py (role run); tests/goss/hashsets.yaml (check step).
+- name: NSRL | Check the OUTPUT drive is mounted when NSRL goes there (4A.2)
+  ansible.builtin.stat:
+    path: "{{ airlock_output_mount }}"
+  register: tools_hashsets_output_stat
+  when:
+    - airlock_phase == 'provision'
+    - tools_hashsets_features.nsrl | default(false) | bool
+    - tools_hashsets_nsrl_pin in tools_hashsets_assets
+    - not (nsrl_on_image | bool)
+
+- name: NSRL | Refuse when the OUTPUT drive is missing (4A.2)
+  ansible.builtin.assert:
+    that:
+      - tools_hashsets_output_stat.stat.isdir | default(false)
+    fail_msg: >-
+      NSRL is set to live on the OUTPUT drive (nsrl_on_image is false) but
+      {{ airlock_output_mount }} is not mounted. Check the drive layout and rerun forensic-provision.
+    quiet: true
+  when: tools_hashsets_output_stat is not skipped
+
+- name: NSRL | Extract the RDS database (4A.2)
+  ansible.builtin.command:
+    argv:
+      - "{{ tools_hashsets_python }}"
+      - -P
+      - -m
+      - airlock_hashsets.build
+      - nsrl
+      - --source
+      - "{{ tools_hashsets_assets[tools_hashsets_nsrl_pin].path }}"
+      - --source-sha256
+      - "{{ tools_hashsets_assets[tools_hashsets_nsrl_pin].sha256 }}"
+      - --dest
+      - "{{ tools_hashsets_nsrl_dir | trim }}"
+      - --version
+      - "{{ tools_hashsets_assets[tools_hashsets_nsrl_pin].version | default('', true) }}"
+  environment:
+    PYTHONPATH: "{{ tools_hashsets_pylib }}"
+    AIRLOCK_SESSION_DIR: "{{ airlock_session_dir }}"
+  register: tools_hashsets_nsrl_out
+  changed_when: (tools_hashsets_nsrl_out.stdout | from_json).changed
+  when:
+    - airlock_phase == 'provision'
+    - tools_hashsets_features.nsrl | default(false) | bool
+    - tools_hashsets_nsrl_pin in tools_hashsets_assets

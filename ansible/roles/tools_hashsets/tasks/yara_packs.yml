@@ -1,0 +1,48 @@
+# Control 4A.5: at provisioning, each staged YARA pack (Neo23x0 signature-base, YARA Forge
+# core; pinned by commit in pins.yml) is unpacked under /opt/yara/<pack>/src and compiled with
+# yarac into /opt/yara/<pack>/rules.yarc. Externals are defined empty; files that do not compile
+# are skipped and listed in pack.json. With the feature off, the packs are removed.
+# Test: tests/unit/test_hashsets.py (compile, skip, unsafe names, idempotence);
+# tests/unit/test_hashsets_role.py (role run); tests/goss/hashsets.yaml (yara loads them).
+- name: YARA | Compile the staged rule packs (4A.5)
+  ansible.builtin.command:
+    argv:
+      - "{{ tools_hashsets_python }}"
+      - -P
+      - -m
+      - airlock_hashsets.build
+      - yara
+      - --source
+      - "{{ tools_hashsets_assets[item.pin].path }}"
+      - --source-sha256
+      - "{{ tools_hashsets_assets[item.pin].sha256 }}"
+      - --dest
+      - "{{ tools_hashsets_yara_dir }}/{{ item.dir }}"
+      - --name
+      - "{{ item.name }}"
+      - --version
+      - "{{ tools_hashsets_assets[item.pin].version | default('unversioned', true) }}"
+  environment:
+    PYTHONPATH: "{{ tools_hashsets_pylib }}"
+    AIRLOCK_SESSION_DIR: "{{ airlock_session_dir }}"
+  loop: "{{ tools_hashsets_yara_packs }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: tools_hashsets_yara_out
+  changed_when: (tools_hashsets_yara_out.stdout | from_json).changed
+  when:
+    - airlock_phase == 'provision'
+    - tools_hashsets_features.yara | default(false) | bool
+    - item.pin in tools_hashsets_assets
+
+- name: YARA | Remove packs that are not staged (4A.5)
+  ansible.builtin.file:
+    path: "{{ tools_hashsets_yara_dir }}/{{ item.dir }}"
+    state: absent
+  loop: "{{ tools_hashsets_yara_packs }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when:
+    - airlock_phase == 'provision'
+    - not (tools_hashsets_features.yara | default(false) | bool
+           and item.pin in tools_hashsets_assets)

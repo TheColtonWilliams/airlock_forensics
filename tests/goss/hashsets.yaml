@@ -1,0 +1,150 @@
+# goss checks for the tools_hashsets role (Milestone 4A, task 4A.8): the hash and signature
+# tools are installed, ClamAV cannot update itself or run as a daemon, the applied hash sets are
+# present and load (clamscan loads the MalwareBazaar .hsb, yara loads each pack), and
+# forensic-import refuses while another disk is attached. Run inside the booted image by
+# tests/run-qemu-tests.sh. Check syntax with: goss -g tests/goss/hashsets.yaml render
+
+package:
+  # 4A.1: scan-only tools.
+  clamav:
+    installed: true
+  yara:
+    installed: true
+  ssdeep:
+    installed: true
+  python3-tlsh:
+    installed: true
+  hashdeep:
+    installed: true
+  # 4A.1: never the scanning daemon or its client.
+  clamav-daemon:
+    installed: false
+  clamdscan:
+    installed: false
+
+file:
+  # 4A.1, 4A.3: ClamAV never updates itself and never runs as a daemon.
+  /etc/systemd/system/clamav-freshclam.service:
+    title: '4A.3: freshclam service masked'
+    exists: true
+    linked-to: /dev/null
+  /etc/systemd/system/clamav-freshclam-once.service:
+    title: '4A.3: one-shot freshclam service masked'
+    exists: true
+    linked-to: /dev/null
+  /etc/systemd/system/clamav-freshclam-once.timer:
+    title: '4A.3: daily freshclam timer masked'
+    exists: true
+    linked-to: /dev/null
+  /etc/systemd/system/clamav-daemon.service:
+    title: '4A.3: clamd masked'
+    exists: true
+    linked-to: /dev/null
+  /etc/systemd/system/clamav-daemon.socket:
+    title: '4A.3: clamd socket masked'
+    exists: true
+    linked-to: /dev/null
+  /etc/systemd/system/clamav-clamonacc.service:
+    title: '4A.3: on-access scanning masked'
+    exists: true
+    linked-to: /dev/null
+  /etc/airlock/hashsets.json:
+    title: '4A.6: hash set locations for evidence-triage-hash'
+    exists: true
+    mode: "0644"
+    contains:
+      - '"clamav_dir": "/opt/hashsets/clamav"'
+      - '"yara_dir": "/opt/yara"'
+  /opt/hashsets/clamav:
+    title: '4A.3, 4A.4: ClamAV folder'
+    exists: true
+    filetype: directory
+  /opt/yara:
+    title: '4A.5: YARA folder'
+    exists: true
+    filetype: directory
+  /usr/local/bin/evidence-triage-hash:
+    title: '4A.6: hash triage helper installed'
+    exists: true
+    mode: "0755"
+  /var/lib/clamav/daily.cvd:
+    title: '4A.3: no signatures fetched by freshclam during the build'
+    exists: false
+  /var/lib/clamav/main.cvd:
+    title: '4A.3: no signatures fetched by freshclam during the build'
+    exists: false
+
+service:
+  clamav-freshclam.service:
+    enabled: false
+    running: false
+  clamav-freshclam-once.service:
+    enabled: false
+    running: false
+  clamav-freshclam-once.timer:
+    enabled: false
+    running: false
+  clamav-daemon.service:
+    enabled: false
+    running: false
+  clamav-daemon.socket:
+    enabled: false
+    running: false
+  clamav-clamonacc.service:
+    enabled: false
+    running: false
+
+command:
+  # 4A.1: each tool runs.
+  clamscan-version:
+    title: '4A.1: clamscan runs'
+    exec: clamscan --version
+    exit-status: 0
+    stdout:
+      - ClamAV
+    timeout: 60000
+  yara-version:
+    title: '4A.1: yara runs'
+    exec: yara --version
+    exit-status: 0
+    timeout: 20000
+  ssdeep-version:
+    title: '4A.1: ssdeep runs'
+    exec: ssdeep -V
+    exit-status: 0
+    timeout: 20000
+  hashdeep-version:
+    title: '4A.1: hashdeep runs'
+    exec: hashdeep -V
+    exit-status: 0
+    timeout: 20000
+  tlsh-import:
+    title: '4A.1: TLSH Python module imports'
+    exec: /usr/bin/python3 -I -c 'import tlsh; print(len(tlsh.hash(bytes(range(256)) * 4)))'
+    exit-status: 0
+    stdout:
+      - '/^7[02]$/'
+    timeout: 20000
+  # 4A.2-4A.5, 4A.8: every hash set the applied profile turned on is present, and clamscan
+  # loads the .hsb and ClamAV databases, yara loads each compiled pack, NSRL opens read-only.
+  hash-sets-present-and-load:
+    title: '4A.8: hash sets present; clamscan loads the .hsb'
+    exec: env PYTHONPATH=/opt/airlock/lib/python /usr/bin/python3 -P -m airlock_hashsets.build check
+    exit-status: 0
+    stdout:
+      - 'hash sets: ok'
+    timeout: 600000
+  # 4A.8, 4A.7: forensic-import refuses while another disk is attached. tests/run-qemu-tests.sh
+  # attaches test disks; without them the check reports that no disk was attached.
+  forensic-import-refuses-with-disk:
+    title: '4A.8: forensic-import refuses with a disk attached'
+    exec: >-
+      /bin/bash -c 'n=$(env PYTHONPATH=/opt/airlock/lib/python /usr/bin/python3 -P -c
+      "from airlock_common import devices; print(len(devices.attached_disks()))");
+      if [ "$n" -eq 0 ]; then echo no-disk-attached; exit 0; fi;
+      if out=$(forensic-import --dry-run 2>&1); then echo "not refused: $out"; exit 1; fi;
+      case "$out" in *refused*attached*) echo refused-with-disk ;; *) echo "$out"; exit 1 ;; esac'
+    exit-status: 0
+    stdout:
+      - '/^(refused-with-disk|no-disk-attached)$/'
+    timeout: 120000

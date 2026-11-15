@@ -1,0 +1,38 @@
+# Control 4A.6 (support): /opt/hashsets and /opt/yara exist, and /etc/airlock/hashsets.json
+# tells evidence-triage-hash and the malware module where the applied sets live. The NSRL
+# folders are listed image first; nsrl_path in airlock.conf.json, when set, is tried before them.
+# Test: tests/unit/test_hashsets_role.py (runs this role in a temporary root and loads the file
+# with airlock_hashsets.config); tests/goss/hashsets.yaml (file present).
+- name: Config | Create the hash set folders (4A.2-4A.5)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ tools_hashsets_dir }}"
+    - "{{ tools_hashsets_clamav_dir }}"
+    - "{{ tools_hashsets_ssdeep_dir }}"
+    - "{{ tools_hashsets_yara_dir }}"
+    - "{{ airlock_etc_dir }}"
+
+- name: Config | Write hashsets.json (4A.6)
+  ansible.builtin.copy:
+    dest: "{{ airlock_etc_dir }}/hashsets.json"
+    content: "{{ tools_hashsets_config | to_nice_json(indent=2, sort_keys=true) }}\n"
+    owner: root
+    group: root
+    mode: "0644"
+  vars:
+    tools_hashsets_config:
+      schema: 1
+      clamav_dir: "{{ tools_hashsets_clamav_dir }}"
+      nsrl_dirs:
+        - "{{ tools_hashsets_nsrl_image_dir }}"
+        - "{{ tools_hashsets_nsrl_output_dir }}"
+      yara_dir: "{{ tools_hashsets_yara_dir }}"
+      ssdeep_dir: "{{ tools_hashsets_ssdeep_dir }}"
+      clamscan_max_filesize_mib: "{{ tools_hashsets_clamscan_max_filesize_mib | int }}"
+      yara_timeout_s: "{{ tools_hashsets_yara_timeout_s | int }}"
+      ssdeep_threshold: "{{ tools_hashsets_ssdeep_threshold | int }}"

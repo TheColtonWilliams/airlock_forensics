@@ -1,0 +1,44 @@
+# Control 4A.3: at provisioning, the staged ClamAV main.cvd and daily.cvd must pass
+# `sigtool --info` (ClamAV's own signature, "Verification OK") before they are copied to
+# /opt/hashsets/clamav; versions are recorded in databases.json and the session log. With the
+# clamav feature off, the copies are removed so clamscan never uses an unstaged set.
+# Test: tests/unit/test_hashsets.py (sigtool refusal, stale database removal, idempotence);
+# tests/goss/hashsets.yaml (airlock_hashsets.build check: clamscan loads them).
+- name: ClamAV databases | Check with sigtool and install (4A.3)
+  ansible.builtin.command:
+    argv: >-
+      {{ [tools_hashsets_python, '-P', '-m', 'airlock_hashsets.build', 'clamav']
+         + (tools_hashsets_clamav_staged | map('extract', tools_hashsets_assets)
+            | map(attribute='path') | map('regex_replace', '^', '--source=') | list)
+         + ['--dest', tools_hashsets_clamav_dir] }}
+  environment:
+    PYTHONPATH: "{{ tools_hashsets_pylib }}"
+    AIRLOCK_SESSION_DIR: "{{ airlock_session_dir }}"
+  register: tools_hashsets_clamav_out
+  changed_when: (tools_hashsets_clamav_out.stdout | from_json).changed
+  vars:
+    tools_hashsets_clamav_staged: "{{ tools_hashsets_clamav_pins | select('in', tools_hashsets_assets) | list }}"
+  when:
+    - airlock_phase == 'provision'
+    - tools_hashsets_features.clamav | default(false) | bool
+    - tools_hashsets_clamav_pins | select('in', tools_hashsets_assets) | list | length > 0
+
+- name: ClamAV databases | Find copies to remove when ClamAV is not staged (4A.3)
+  ansible.builtin.find:
+    paths: "{{ tools_hashsets_clamav_dir }}"
+    patterns: ["*.cvd", "*.cld", "databases.json"]
+  register: tools_hashsets_clamav_old
+  when:
+    - airlock_phase == 'provision'
+    - not (tools_hashsets_features.clamav | default(false) | bool)
+
+- name: ClamAV databases | Remove copies when ClamAV is not staged (4A.3)
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ tools_hashsets_clamav_old.files | default([]) }}"
+  loop_control:
+    label: "{{ item.path }}"
+  when:
+    - airlock_phase == 'provision'
+    - not (tools_hashsets_features.clamav | default(false) | bool)

@@ -1,0 +1,22 @@
+# tools_hashsets: one control per file. Each file names its test in its first comment.
+# Controls and tests are listed in docs/controls.md (section "Hash sets and signatures").
+- name: ClamAV | Update and scanning daemons masked
+  ansible.builtin.import_tasks: clamav_daemons_masked.yml
+
+- name: Packages | ClamAV, YARA, ssdeep, TLSH, hashdeep
+  ansible.builtin.import_tasks: packages.yml
+
+- name: Config | Hash set folders and hashsets.json
+  ansible.builtin.import_tasks: config.yml
+
+- name: Provision | ClamAV databases checked with sigtool
+  ansible.builtin.import_tasks: clamav_databases.yml
+
+- name: Provision | MalwareBazaar export to a ClamAV .hsb
+  ansible.builtin.import_tasks: malwarebazaar_hsb.yml
+
+- name: Provision | YARA rule packs compiled
+  ansible.builtin.import_tasks: yara_packs.yml
+
+- name: Provision | NSRL RDS known-software database
+  ansible.builtin.import_tasks: nsrl.yml

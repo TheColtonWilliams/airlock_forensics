@@ -1,0 +1,15 @@
+# Control 4A.1, 4A.3: ClamAV runs as clamscan only. freshclam (the network updater, as a
+# service and as the daily freshclam-once timer), clamd, its socket, and on-access scanning
+# (clamonacc) are masked, before the packages are installed so their install scripts cannot
+# start them. Signatures arrive only by restaging ASSETS.
+# Test: tests/goss/hashsets.yaml (each unit links to /dev/null and is not running);
+# tests/unit/test_hashsets_role.py (every masked unit has a goss check).
+- name: ClamAV | Mask freshclam and the ClamAV daemons (4A.1, 4A.3)
+  ansible.builtin.file:
+    src: /dev/null
+    dest: "{{ tools_hashsets_systemd_dir }}/{{ item }}"
+    state: link
+    force: true
+  loop: "{{ tools_hashsets_masked_units }}"
+  notify: Tools hashsets | Reload systemd
+  when: tools_hashsets_manage_units | bool

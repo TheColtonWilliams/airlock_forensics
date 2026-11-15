@@ -1,0 +1,11 @@
+#!/usr/bin/python3
+"""evidence-triage-hash: hash triage against NSRL, ClamAV, MalwareBazaar, YARA, ssdeep
+(airlock_hashsets.triage, docs/workflows/hash-triage.md)."""
+
+import os
+import sys
+
+sys.path.insert(0, os.environ.get("AIRLOCK_PYLIB", "/opt/airlock/lib/python"))
+from airlock_hashsets.triage import main
+
+raise SystemExit(main())

@@ -1,0 +1,72 @@
+# tools_hashsets: hash sets and signatures (Milestone 4A). ClamAV as clamscan only (update and
+# scanning daemons masked), YARA, ssdeep, TLSH, hashdeep on the image; ClamAV databases,
+# MalwareBazaar, YARA packs, and NSRL applied offline at provisioning from ASSETS.
+# Controls and tests are listed in docs/controls.md ("Hash sets and signatures").
+# Every unit under *_masked_units must have a goss check in tests/goss/hashsets.yaml;
+# tests/unit/test_hashsets_role.py fails if one is missing.
+
+# Task 4A.1: packages (Ubuntu 24.04 names). clamav pulls in clamav-freshclam (masked below).
+tools_hashsets_packages:
+  - clamav
+  - yara
+  - ssdeep
+  - python3-tlsh
+  - hashdeep
+# Never installed: the scanning daemon quarantines and deletes, and on-access scanning
+# would touch evidence (decision log 2026-11-10).
+tools_hashsets_packages_absent:
+  - clamav-daemon
+  - clamdscan
+
+# Tasks 4A.1, 4A.3: ClamAV never updates itself and never runs as a daemon. Masked before the
+# packages are installed, so their install scripts cannot start them either.
+tools_hashsets_masked_units:
+  - clamav-freshclam.service
+  - clamav-freshclam-once.service
+  - clamav-freshclam-once.timer
+  - clamav-daemon.service
+  - clamav-daemon.socket
+  - clamav-clamonacc.service
+tools_hashsets_systemd_dir: /etc/systemd/system
+
+# Where applied sets live on the root filesystem (read by airlock_hashsets.config).
+tools_hashsets_dir: /opt/hashsets
+tools_hashsets_clamav_dir: "{{ tools_hashsets_dir }}/clamav"
+tools_hashsets_ssdeep_dir: "{{ tools_hashsets_dir }}/ssdeep"
+tools_hashsets_yara_dir: /opt/yara
+# Task 4A.2: NSRL on the image (nsrl_on_image: true) or on the OUTPUT drive (the default).
+# evidence-triage-hash also reads nsrl_path from /etc/airlock/airlock.conf.json first.
+tools_hashsets_nsrl_image_dir: "{{ tools_hashsets_dir }}/nsrl"
+tools_hashsets_nsrl_output_dir: "{{ airlock_output_mount }}/nsrl"
+tools_hashsets_nsrl_dir: >-
+  {{ tools_hashsets_nsrl_image_dir if nsrl_on_image | bool else tools_hashsets_nsrl_output_dir }}
+
+# Tunables written to /etc/airlock/hashsets.json.
+tools_hashsets_clamscan_max_filesize_mib: 2047
+tools_hashsets_yara_timeout_s: 60
+tools_hashsets_ssdeep_threshold: 60
+
+# Staged files (pins.yml ids). forensic-provision passes airlock_features and airlock_assets
+# ({id: {path, sha256, size, target, verify, version}}, verified files only).
+tools_hashsets_clamav_pins:
+  - clamav_main_cvd
+  - clamav_daily_cvd
+tools_hashsets_mbz_pin: malwarebazaar_sha256_full
+tools_hashsets_nsrl_pin: nsrl_rds_modern_minimal
+tools_hashsets_yara_packs:
+  - pin: yara_signature_base
+    dir: signature-base
+    name: Neo23x0 signature-base
+  - pin: yara_forge_core
+    dir: yara-forge-core
+    name: YARA Forge core
+tools_hashsets_features: "{{ airlock_features | default({}) }}"
+tools_hashsets_assets: "{{ airlock_assets | default({}) }}"
+
+# The provisioning steps run airlock_hashsets.build from the installed Python packages.
+tools_hashsets_python: /usr/bin/python3
+tools_hashsets_pylib: "{{ airlock_pylib_dir }}"
+
+# Tests switch these off (no apt, no systemd links outside the temporary folder).
+tools_hashsets_install_packages: true
+tools_hashsets_manage_units: true
