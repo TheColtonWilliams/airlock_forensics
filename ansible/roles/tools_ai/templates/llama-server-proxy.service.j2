@@ -1,0 +1,17 @@
+# Control 4B.10 (role tools_ai): forwards the loopback socket to llama-server on loopback.
+[Unit]
+Description=AIRLOCK local model server (loopback proxy)
+Requires=llama-server.service
+After=llama-server.service
+
+[Service]
+ExecStart=/usr/lib/systemd/systemd-socket-proxyd --exit-idle-time=30min {{ tools_ai_llama_listen_host }}:{{ tools_ai_llama_backend_port }}
+DynamicUser=yes
+IPAddressDeny=any
+IPAddressAllow=localhost
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes

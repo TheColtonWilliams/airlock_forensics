@@ -1,0 +1,120 @@
+# tools_ai: local AI triage (Milestone 4B). llama.cpp with Vulkan only (no CUDA, no ROCm), Mesa
+# Vulkan drivers, the classifier and speech venvs, the socket-activated llama-server bound to
+# 127.0.0.1, and the AI config files. Controls and tests are listed in docs/controls.md.
+
+# Task 4B.1: llama.cpp source tarball (pins.yml) and where it is installed.
+tools_ai_llama_pin: llama_cpp_source
+tools_ai_llama_prefix: /opt/llama
+tools_ai_llama_build_dir: /var/tmp/airlock-llama-build
+tools_ai_llama_cmake_flags:
+  - -DCMAKE_BUILD_TYPE=Release
+  - -DGGML_VULKAN=ON
+  - -DGGML_CUDA=OFF
+  - -DGGML_HIP=OFF
+  - -DGGML_SYCL=OFF
+  - -DGGML_METAL=OFF
+  # Portable CPU code: the build VM's CPU must not decide which CPUs can run the image.
+  - -DGGML_NATIVE=OFF
+  - -DGGML_BACKEND_DL=ON
+  - -DGGML_CPU_ALL_VARIANTS=ON
+  # Nothing that can fetch from the network at run time.
+  - -DLLAMA_CURL=OFF
+  - -DBUILD_SHARED_LIBS=ON
+  - -DLLAMA_BUILD_TESTS=OFF
+  - -DLLAMA_BUILD_EXAMPLES=OFF
+  - -DLLAMA_BUILD_TOOLS=ON
+  - -DLLAMA_BUILD_SERVER=ON
+  - -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON
+  - -DCMAKE_INSTALL_RPATH=$ORIGIN
+tools_ai_llama_targets: [llama-server, llama-mtmd-cli]
+# Ubuntu 24.04 package names for the Vulkan build (glslc is the shaderc compiler).
+tools_ai_build_packages:
+  - build-essential
+  - cmake
+  - glslc
+  - libvulkan-dev
+  - spirv-headers
+  - pkg-config
+
+# Task 4B.2: open Vulkan drivers for every vendor (RADV, ANV, NVK) and vulkaninfo.
+tools_ai_vulkan_packages:
+  - mesa-vulkan-drivers
+  - libvulkan1
+  - vulkan-tools
+
+# Tools the AI path calls: ffmpeg (video frames, audio), poppler-utils (pdftotext, pdftoppm),
+# python3-venv (the two venvs).
+tools_ai_runtime_packages:
+  - ffmpeg
+  - poppler-utils
+  - python3-venv
+
+# Task 4B.3: integrated GPUs share system RAM; the tier is capped at RAM minus this margin.
+tools_ai_integrated_ram_margin_gib: 8
+
+# Task 4B.10: llama-server behind a socket on 127.0.0.1 only. Never another address.
+tools_ai_llama_listen_host: 127.0.0.1
+tools_ai_llama_listen_port: 8088
+tools_ai_llama_backend_port: 8089
+tools_ai_llama_seed: 42
+tools_ai_llama_ctx_size: 8192
+tools_ai_llama_max_tokens: 384
+tools_ai_llama_video_flag: --video
+
+# Task 4B.5: classifier venv (NudeNet + SigLIP via ONNX Runtime, CPU). The wheels are staged on
+# ASSETS by the fetcher and installed offline with --require-hashes (decision log 2026-11-15).
+tools_ai_triage_venv: /opt/triage
+tools_ai_triage_wheel_pins:
+  - wheel_flatbuffers
+  - wheel_nudenet
+  - wheel_numpy
+  - wheel_onnxruntime
+  - wheel_opencv_python_headless
+  - wheel_packaging
+  - wheel_pillow
+  - wheel_protobuf
+  - wheel_tokenizers
+tools_ai_siglip_pins:
+  model: siglip_base_patch16_224_onnx
+  tokenizer: siglip_base_patch16_224_tokenizer
+  preprocessor: siglip_base_patch16_224_preprocessor
+
+# Task 4B.7: speech-to-text venv (faster-whisper, CPU) and the "small" model on ASSETS.
+tools_ai_whisper_venv: /opt/whisper
+tools_ai_whisper_wheel_pins:
+  - wheel_anyio
+  - wheel_av
+  - wheel_click
+  - wheel_ctranslate2
+  - wheel_faster_whisper
+  - wheel_filelock
+  - wheel_flatbuffers
+  - wheel_fsspec
+  - wheel_h11
+  - wheel_hf_xet
+  - wheel_httpcore2
+  - wheel_httpx2
+  - wheel_huggingface_hub
+  - wheel_idna
+  - wheel_numpy
+  - wheel_onnxruntime
+  - wheel_packaging
+  - wheel_protobuf
+  - wheel_pyyaml
+  - wheel_tokenizers
+  - wheel_tqdm
+  - wheel_truststore
+  - wheel_typing_extensions
+tools_ai_whisper_model_pin: faster_whisper_small_model
+tools_ai_whisper_model_dir_target: models/faster-whisper-small
+
+# Which staged features to install at provisioning. forensic-provision may pass
+# airlock_profile_features; otherwise the role reads ASSETS/profile.json.
+tools_ai_features: "{{ airlock_profile_features | default({}) }}"
+
+# Task 4B.15: Ubuntu's signed NVIDIA kernel modules (linux-modules-nvidia-*), staged on ASSETS
+# and installed offline. Off by default; the open drivers stay the default. No DKMS, no MOK.
+# List the pins.yml ids of every .deb to install (kernel modules matching the image's kernel
+# ABI, nvidia-kernel-common, and the userspace Vulkan driver libnvidia-gl).
+tools_ai_nvidia_proprietary: false
+tools_ai_nvidia_deb_pins: []

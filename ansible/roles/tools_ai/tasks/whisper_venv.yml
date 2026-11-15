@@ -1,0 +1,22 @@
+# Control 4B.7: /opt/whisper venv with faster-whisper (MIT) for audio transcripts, installed
+# offline from hash-checked wheels on ASSETS; the "small" model is used in place from ASSETS
+# (pin faster_whisper_small_model and its companions).
+# Test: tests/goss/ai.yaml (venv imports); tests/unit/test_module_audio.py (pipeline).
+- name: Speech | Refuse an unpinned speech model (4B.7)
+  ansible.builtin.assert:
+    that: pins[tools_ai_whisper_model_pin].sha256 is not none
+    fail_msg: "pins.{{ tools_ai_whisper_model_pin }}.sha256 is null; pin it before staging."
+    quiet: true
+  when:
+    - airlock_phase == 'provision'
+    - tools_ai_staged.whisper | default(false) | bool
+
+- name: Speech | Install the speech-to-text venv (4B.7)
+  ansible.builtin.include_tasks: _venv.yml
+  vars:
+    tools_ai_venv_path: "{{ tools_ai_whisper_venv }}"
+    tools_ai_venv_pins: "{{ tools_ai_whisper_wheel_pins }}"
+    tools_ai_venv_check: "import faster_whisper, ctranslate2"
+  when:
+    - airlock_phase == 'provision'
+    - tools_ai_staged.whisper | default(false) | bool

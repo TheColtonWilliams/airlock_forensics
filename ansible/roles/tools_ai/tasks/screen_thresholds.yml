@@ -1,0 +1,10 @@
+# Control 4B.6: conservative screening thresholds at /etc/airlock/screen-thresholds.json (source:
+# ansible/roles/session_tools/files/etc/screen-thresholds.json, equal to the code defaults).
+# Test: tests/unit/test_screen.py (file equals defaults); tests/goss/ai.yaml (file present).
+- name: Screening | Install screen-thresholds.json (4B.6)
+  ansible.builtin.copy:
+    src: "{{ role_path }}/../session_tools/files/etc/screen-thresholds.json"
+    dest: "{{ airlock_etc_dir }}/screen-thresholds.json"
+    owner: root
+    group: root
+    mode: "0644"

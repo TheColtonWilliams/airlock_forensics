@@ -1,0 +1,34 @@
+# tools_ai: one control per file. Each file names its test in its first comment.
+# Controls and tests are listed in docs/controls.md (section "Local AI").
+- name: Packages | Open Vulkan drivers and vulkaninfo
+  ansible.builtin.import_tasks: vulkan_drivers.yml
+
+- name: Packages | Tools the AI path calls
+  ansible.builtin.import_tasks: runtime_packages.yml
+
+- name: Build | llama.cpp with Vulkan only
+  ansible.builtin.import_tasks: llama_build.yml
+
+- name: Config | AI tiers and model locations
+  ansible.builtin.import_tasks: ai_config.yml
+
+- name: Config | Screening thresholds
+  ansible.builtin.import_tasks: screen_thresholds.yml
+
+- name: Boot | Tier probe
+  ansible.builtin.import_tasks: probe_unit.yml
+
+- name: Service | llama-server on 127.0.0.1, socket-activated, off by default
+  ansible.builtin.import_tasks: llama_server_unit.yml
+
+- name: Provision | Staged features from the profile
+  ansible.builtin.import_tasks: profile_features.yml
+
+- name: Provision | Classifier venv
+  ansible.builtin.import_tasks: triage_venv.yml
+
+- name: Provision | Speech-to-text venv
+  ansible.builtin.import_tasks: whisper_venv.yml
+
+- name: Provision | Optional NVIDIA proprietary driver (off by default)
+  ansible.builtin.import_tasks: nvidia_proprietary.yml

@@ -1,0 +1,37 @@
+{
+  "default": {
+    "labels": {
+      "neutral": 0.95
+    },
+    "nudity": 0.01
+  },
+  "files": {
+    "59da7cadd80766cf64bf6deb41585e8ee6672ff51d9366aa563dea7cb5c927d3": {
+      "labels": {
+        "neutral": 0.2
+      },
+      "nudity": 0.91
+    },
+    "930026ed3474cfb463c9294c77385e37bd821112f6ef38d9b28f04449ca544ff": {
+      "error": "stub: simulated classifier failure"
+    },
+    "s_000001.png": {
+      "labels": {
+        "neutral": 0.1,
+        "violence": 0.88
+      },
+      "nudity": 0.0
+    },
+    "shapes-squares.png": {
+      "labels": {
+        "neutral": 0.2
+      },
+      "nudity": 0.91
+    },
+    "text-render.png": {
+      "error": "stub: simulated classifier failure"
+    }
+  },
+  "model_id": "stub classifier (test only)",
+  "note": "Test-only fixed scores (4G.10). Keys are a SHA-256 or a file name; the SHA-256 keys are the generated neutral fixtures shapes-squares.png (scored as flagged) and text-render.png (scored as an error). The images are plain shapes and text."
+}

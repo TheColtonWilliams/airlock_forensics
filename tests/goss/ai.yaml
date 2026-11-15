@@ -1,0 +1,139 @@
+# goss checks for the tools_ai role (Milestone 4B): llama.cpp with Vulkan only, the open Vulkan
+# drivers, the AI config files, the boot-time tier probe, and the llama-server units bound to
+# 127.0.0.1 only and off by default. Run inside the booted image by tests/run-qemu-tests.sh.
+# Check syntax with: goss -g tests/goss/ai.yaml render
+
+package:
+  # 4B.2: open Vulkan drivers for every vendor, and vulkaninfo.
+  mesa-vulkan-drivers:
+    installed: true
+  vulkan-tools:
+    installed: true
+  # 4B.7, 4B.9: tools the AI path calls.
+  ffmpeg:
+    installed: true
+  poppler-utils:
+    installed: true
+  python3-venv:
+    installed: true
+  # 4B.1, 4B.15: no vendor compute stacks; no DKMS build.
+  nvidia-cuda-toolkit:
+    installed: false
+  rocm-hip-runtime:
+    installed: false
+  dkms:
+    installed: false
+
+file:
+  /opt/llama/bin/llama-server:
+    title: '4B.1: llama-server installed'
+    exists: true
+    mode: "0755"
+  /opt/llama/bin/llama-mtmd-cli:
+    title: '4B.1: llama-mtmd-cli installed'
+    exists: true
+    mode: "0755"
+  /opt/llama/bin/libggml-vulkan.so:
+    title: '4B.1: the Vulkan back end is built'
+    exists: true
+  /opt/llama/bin/libggml-cuda.so:
+    title: '4B.1: no CUDA back end'
+    exists: false
+  /opt/llama/bin/libggml-hip.so:
+    title: '4B.1: no ROCm back end'
+    exists: false
+  /etc/airlock/ai-tiers.json:
+    title: '4B.3, 4B.4: AI tier config'
+    exists: true
+    mode: "0644"
+    contains:
+      - '"listen": "127.0.0.1:8088"'
+      - '"tiers_on_image"'
+  /etc/airlock/screen-thresholds.json:
+    title: '4B.6: screening thresholds'
+    exists: true
+    mode: "0644"
+    contains:
+      - '"nudity"'
+  /etc/systemd/system/llama-server.socket:
+    title: '4B.10: socket listens on loopback only'
+    exists: true
+    contains:
+      - 'ListenStream=127.0.0.1:8088'
+      - '!/ListenStream=0\.0\.0\.0/'
+      - '!/ListenStream=\[::\]/'
+      - '!/ListenStream=[0-9]+$/'
+  /etc/systemd/system/llama-server.service:
+    title: '4B.10: llama-server unit allows localhost IP traffic only'
+    exists: true
+    contains:
+      - 'IPAddressDeny=any'
+      - 'IPAddressAllow=localhost'
+  /etc/systemd/system/llama-server-proxy.service:
+    title: '4B.10: proxy forwards to loopback only'
+    exists: true
+    contains:
+      - 'systemd-socket-proxyd --exit-idle-time=30min 127.0.0.1:8089'
+      - 'IPAddressDeny=any'
+  /var/lib/airlock/ai-tier.json:
+    title: '4B.3: ai-probe wrote the tier at boot'
+    exists: true
+    mode: "0644"
+    contains:
+      - '"tier"'
+
+service:
+  airlock-ai-probe:
+    title: '4B.3: tier probe runs at boot'
+    enabled: true
+  llama-server:
+    title: '4B.10: off until evidence-describe starts it'
+    enabled: false
+    running: false
+
+command:
+  'llama-server runs':
+    title: '4B.1: llama-server starts and reports its version'
+    exec: /opt/llama/bin/llama-server --version
+    exit-status: 0
+  'vulkaninfo runs':
+    title: '4B.2: the Vulkan loader finds at least one device (llvmpipe without a GPU)'
+    exec: vulkaninfo --summary
+    exit-status: 0
+    stdout:
+      - deviceType
+  'llama-server socket disabled':
+    title: '4B.10: llama-server.socket is not enabled'
+    exec: systemctl is-enabled llama-server.socket
+    exit-status: 1
+    stdout:
+      - disabled
+  'no listener off loopback':
+    title: '4B.10: nothing listens on any address but loopback'
+    exec: "ss -Hltnu | awk '{print $5}' | grep -Ev '^(127\\.[0-9.]+|\\[::1\\]|\\[::ffff:127\\.[0-9.]+\\]):' || true"
+    exit-status: 0
+    stdout:
+      - '!/./'
+  'socket binds loopback only':
+    title: '4B.10: started, the socket listens on 127.0.0.1:8088 and nowhere else'
+    exec: "systemctl start llama-server.socket && ss -Hltn 'sport = :8088'; systemctl stop llama-server.socket"
+    exit-status: 0
+    stdout:
+      - '127.0.0.1:8088'
+      - '!/0\.0\.0\.0:8088/'
+      - '!/\*:8088/'
+      - '!/\[::\]:8088/'
+  'ai-probe chooses a tier':
+    title: '4B.3: ai-probe runs (tier0 on a machine with no GPU, as in QEMU)'
+    exec: /usr/local/bin/ai-probe --json --no-model-check
+    exit-status: 0
+    stdout:
+      - '"tier": "tier0"'
+  'classifier venv imports':
+    title: '4B.5: the classifier venv works offline (needs the classifiers feature staged)'
+    exec: "test ! -x /opt/triage/bin/python || /opt/triage/bin/python -I -c 'import nudenet, onnxruntime, PIL, numpy, cv2, tokenizers'"
+    exit-status: 0
+  'speech venv imports':
+    title: '4B.7: the speech venv works offline (needs the whisper feature staged)'
+    exec: "test ! -x /opt/whisper/bin/python || /opt/whisper/bin/python -I -c 'import faster_whisper, ctranslate2'"
+    exit-status: 0

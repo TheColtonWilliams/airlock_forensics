@@ -1,0 +1,15 @@
+# Control 4B.3 (role tools_ai): choose the model tier from this machine's GPU memory at boot.
+[Unit]
+Description=AIRLOCK: choose the local AI model tier from measured GPU memory
+After=local-fs.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=AIRLOCK_PYLIB={{ airlock_pylib_dir }}
+ExecStart=/usr/local/bin/ai-probe --write
+# 3: no model tier staged (AI features stay off); not a boot failure.
+SuccessExitStatus=3
+
+[Install]
+WantedBy=multi-user.target

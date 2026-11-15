@@ -1,0 +1,7 @@
+# Control 4B.2: Mesa's open Vulkan drivers for every vendor (RADV, ANV, NVK in one package) and
+# vulkan-tools (vulkaninfo, read by ai-probe). No vendor-specific package.
+# Test: tests/goss/ai.yaml (packages mesa-vulkan-drivers, vulkan-tools; vulkaninfo runs).
+- name: Vulkan | Install the open Vulkan drivers and vulkaninfo (4B.2)
+  ansible.builtin.apt:
+    name: "{{ tools_ai_vulkan_packages }}"
+    state: present

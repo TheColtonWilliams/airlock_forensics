@@ -6,28 +6,43 @@ ai_tiers:
     max_vram_gib: 4
     cpu_ok: true
     description: "Under 4 GB or CPU only"
-    models: []
+    model_id: "Qwen3-VL-2B-Instruct Q4_K_M"
+    models:
+      - {pin: qwen3_vl_2b_instruct_q4_k_m_gguf, role: model}
+      - {pin: qwen3_vl_2b_instruct_mmproj_gguf, role: mmproj}
   tier1:
     min_vram_gib: 4
     max_vram_gib: 6
     cpu_ok: false
     description: "4 to 6 GB"
-    models: []
+    model_id: "Qwen3-VL-4B-Instruct Q4_K_M"
+    models:
+      - {pin: qwen3_vl_4b_instruct_q4_k_m_gguf, role: model}
+      - {pin: qwen3_vl_4b_instruct_mmproj_gguf, role: mmproj}
   tier2:
     min_vram_gib: 6
     max_vram_gib: 10
     cpu_ok: false
     description: "6 to 10 GB"
-    models: []
+    model_id: "Qwen3-VL-8B-Instruct Q4_K_M"
+    models:
+      - {pin: qwen3_vl_8b_instruct_q4_k_m_gguf, role: model}
+      - {pin: qwen3_vl_8b_instruct_mmproj_gguf, role: mmproj}
   tier3:
     min_vram_gib: 10
     max_vram_gib: 20
     cpu_ok: false
     description: "10 to 20 GB"
-    models: []
+    model_id: "Qwen3-VL-8B-Instruct Q8_0"
+    models:
+      - {pin: qwen3_vl_8b_instruct_q8_0_gguf, role: model}
+      - {pin: qwen3_vl_8b_instruct_mmproj_gguf, role: mmproj}
   tier4:
     min_vram_gib: 20
     max_vram_gib: null
     cpu_ok: false
     description: "20 GB and over"
-    models: []
+    model_id: "Qwen3-VL-32B-Instruct Q4_K_M"
+    models:
+      - {pin: qwen3_vl_32b_instruct_q4_k_m_gguf, role: model}
+      - {pin: qwen3_vl_32b_instruct_mmproj_gguf, role: mmproj}

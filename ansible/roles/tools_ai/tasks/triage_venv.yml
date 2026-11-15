@@ -1,0 +1,14 @@
+# Control 4B.5: /opt/triage venv with NudeNet (its 320n detector model ships inside the pinned
+# wheel), ONNX Runtime (CPU), numpy, Pillow, OpenCV (headless), tokenizers; installed offline
+# from hash-checked wheels on ASSETS when the profile stages classifiers. The SigLIP ONNX export
+# is used in place from ASSETS (pins siglip_*). Licences: docs/licenses.md.
+# Test: tests/goss/ai.yaml (venv imports); tests/functional/test_ai_neutral.sh (real screening).
+- name: Classifiers | Install the classifier venv (4B.5)
+  ansible.builtin.include_tasks: _venv.yml
+  vars:
+    tools_ai_venv_path: "{{ tools_ai_triage_venv }}"
+    tools_ai_venv_pins: "{{ tools_ai_triage_wheel_pins }}"
+    tools_ai_venv_check: "import nudenet, onnxruntime, numpy, PIL, cv2, tokenizers"
+  when:
+    - airlock_phase == 'provision'
+    - tools_ai_staged.classifiers | default(false) | bool

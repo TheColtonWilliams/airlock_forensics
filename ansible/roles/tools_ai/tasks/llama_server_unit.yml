@@ -1,0 +1,22 @@
+# Control 4B.10: llama-server is socket-activated on 127.0.0.1:8088 only (systemd-socket-proxyd
+# forwards to the server on 127.0.0.1:8089), off until evidence-describe starts the socket.
+# Units: no IP traffic except localhost (IPAddressDeny=any, IPAddressAllow=localhost).
+# Test: tests/goss/ai.yaml (socket disabled, ListenStream on 127.0.0.1, no listener off
+# loopback, starting the socket listens on 127.0.0.1:8088 only); tests/unit/test_describe_serve.py.
+- name: Llama-server | Install the socket and service units (4B.10)
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - llama-server.socket
+    - llama-server-proxy.service
+    - llama-server.service
+  notify: Tools AI | Reload systemd
+
+- name: Llama-server | Keep the socket off until a describe step starts it (4B.10)
+  ansible.builtin.systemd_service:
+    name: llama-server.socket
+    enabled: false

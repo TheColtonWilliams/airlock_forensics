@@ -1,0 +1,9 @@
+faster-whisper transcription settings used by AIRLOCK (this file is hashed as the "prompt" of every transcript row):
+device=cpu
+compute_type=int8
+beam_size=1
+temperature=0.0
+condition_on_previous_text=false
+vad_filter=false
+language=auto
+input=16 kHz mono WAV made by ffmpeg

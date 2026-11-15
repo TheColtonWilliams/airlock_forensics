@@ -1,0 +1,13 @@
+# Control 4B.10 (role tools_ai): the local model server listens on loopback only. Not enabled:
+# evidence-describe starts it and stops it again. Test: tests/goss/ai.yaml.
+[Unit]
+Description=AIRLOCK local model server socket (127.0.0.1 only)
+Documentation=file:///opt/airlock/repo/docs/workflows/media-screening.md
+
+[Socket]
+ListenStream={{ tools_ai_llama_listen_host }}:{{ tools_ai_llama_listen_port }}
+FreeBind=false
+Service=llama-server-proxy.service
+
+[Install]
+WantedBy=sockets.target

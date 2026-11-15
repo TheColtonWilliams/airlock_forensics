@@ -1,0 +1,17 @@
+# Control 4B.3: airlock-ai-probe.service runs `ai-probe --write` at every boot, so the tier
+# follows the machine the stick is plugged into (capacities only, never the vendor).
+# Test: tests/goss/ai.yaml (unit enabled, /var/lib/airlock/ai-tier.json written);
+# tests/unit/test_probe.py (tier table, 4G.9).
+- name: AI probe | Install the boot unit (4B.3)
+  ansible.builtin.template:
+    src: airlock-ai-probe.service.j2
+    dest: /etc/systemd/system/airlock-ai-probe.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Tools AI | Reload systemd
+
+- name: AI probe | Enable the boot unit (4B.3)
+  ansible.builtin.systemd_service:
+    name: airlock-ai-probe.service
+    enabled: true

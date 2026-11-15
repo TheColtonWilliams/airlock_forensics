@@ -1,0 +1,37 @@
+{
+  "$schema": "https://schema.khronos.org/vulkan/profiles-0.8-latest.json",
+  "capabilities": {
+    "device": {
+      "properties": {
+        "VkPhysicalDeviceProperties": {
+          "apiVersion": 4211006,
+          "deviceID": 0,
+          "deviceName": "llvmpipe (LLVM 20.1.2, 256 bits)",
+          "deviceType": "VK_PHYSICAL_DEVICE_TYPE_CPU",
+          "driverVersion": 104865800,
+          "vendorID": 65541
+        }
+      }
+    }
+  },
+  "profiles": {
+    "VP_VULKANINFO_llvmpipe_(LLVM_20_1_2,_256_bits)_25_2_8": {
+      "api-version": "1.4.318",
+      "capabilities": [
+        "device"
+      ],
+      "contributors": {},
+      "description": "Exported from vulkaninfo",
+      "history": [
+        {
+          "author": "Automated export from vulkaninfo",
+          "comment": "",
+          "date": "2026-11-15",
+          "revision": 1
+        }
+      ],
+      "label": "llvmpipe (LLVM 20.1.2, 256 bits) driver 25.2.8",
+      "version": 1
+    }
+  }
+}

@@ -1,0 +1,20 @@
+# Control 4B.3, 4B.4: /etc/airlock/ai-tiers.json: tier thresholds from ai_models.yml, the tiers
+# on this image (ai_tiers_on_image), each tier's GGUF and projector targets on ASSETS with their
+# pinned SHA-256, classifier and speech model locations, llama.cpp settings (127.0.0.1 only).
+# Read by ai-probe, evidence-screen, evidence-describe, and the llama-server launcher.
+# Test: tests/unit/test_probe.py (renders this template and probes with it); goss file check.
+- name: AI config | Create /etc/airlock (4B.3)
+  ansible.builtin.file:
+    path: "{{ airlock_etc_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: AI config | Write ai-tiers.json (4B.3, 4B.4)
+  ansible.builtin.template:
+    src: ai-tiers.json.j2
+    dest: "{{ airlock_etc_dir }}/ai-tiers.json"
+    owner: root
+    group: root
+    mode: "0644"

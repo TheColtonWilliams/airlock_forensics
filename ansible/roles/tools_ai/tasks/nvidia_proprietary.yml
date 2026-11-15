@@ -1,0 +1,64 @@
+# Control 4B.15: optional NVIDIA proprietary driver from Ubuntu's signed, prebuilt
+# linux-modules-nvidia packages, staged on ASSETS by the fetcher and installed offline at first
+# boot. No DKMS build, no MOK enrolment: Canonical signs these modules for Secure Boot. Off by
+# default (tools_ai_nvidia_proprietary=false and profile feature nvidia_proprietary=false); the
+# open drivers stay the default and the image works without it.
+# Test: tests/unit/test_screen_role.py (off by default, offline, no dkms); verified with staged
+# packages in the QEMU/CI stage.
+- name: NVIDIA | List the packages to install (4B.15)
+  ansible.builtin.set_fact:
+    tools_ai_nvidia_on: >-
+      {{ (tools_ai_nvidia_proprietary | bool or tools_ai_staged.nvidia_proprietary | default(false) | bool)
+         and airlock_phase == 'provision' }}
+
+- name: NVIDIA | Refuse without pinned packages (4B.15)
+  ansible.builtin.assert:
+    that:
+      - tools_ai_nvidia_deb_pins | length > 0
+      - tools_ai_nvidia_deb_pins | map('extract', pins, 'sha256') | select('none') | list | length == 0
+    fail_msg: >-
+      The NVIDIA driver is turned on but tools_ai_nvidia_deb_pins lists no pinned packages.
+      Pin the linux-modules-nvidia packages for this image's kernel and restage.
+    quiet: true
+  when: tools_ai_nvidia_on | bool
+
+- name: NVIDIA | Hash the staged packages (4B.15)
+  ansible.builtin.stat:
+    path: "{{ airlock_assets_files }}/{{ pins[item].target }}"
+    checksum_algorithm: sha256
+    get_checksum: true
+  loop: "{{ tools_ai_nvidia_deb_pins }}"
+  register: tools_ai_nvidia_debs
+  when: tools_ai_nvidia_on | bool
+
+- name: NVIDIA | Check every package is staged and unchanged (4B.15)
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.checksum == pins[item.item].sha256
+    fail_msg: "{{ pins[item.item].target }} is missing or changed on ASSETS. Restage it."
+    quiet: true
+  loop: "{{ tools_ai_nvidia_debs.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: tools_ai_nvidia_on | bool
+
+- name: NVIDIA | Install the signed packages offline (4B.15)
+  ansible.builtin.command:
+    argv: "{{ tools_ai_apt_offline + tools_ai_nvidia_debs_paths }}"
+  vars:
+    tools_ai_apt_offline: [apt-get, install, -y, --no-download, --no-install-recommends]
+    tools_ai_nvidia_debs_paths: >-
+      {{ tools_ai_nvidia_deb_pins | map('extract', pins, 'target')
+         | map('regex_replace', '^', airlock_assets_files ~ '/') | list }}
+  register: tools_ai_nvidia_install
+  changed_when: "'0 newly installed' not in tools_ai_nvidia_install.stdout"
+  when: tools_ai_nvidia_on | bool
+
+- name: NVIDIA | Refuse a DKMS build (4B.15)
+  ansible.builtin.command:
+    argv: [dpkg-query, -W, "-f=${Status}", dkms]
+  register: tools_ai_dkms
+  changed_when: false
+  failed_when: "'install ok installed' in tools_ai_dkms.stdout"
+  when: tools_ai_nvidia_on | bool

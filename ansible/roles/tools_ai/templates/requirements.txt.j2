@@ -1,0 +1,5 @@
+# {{ ansible_managed | default('Managed by Ansible (role tools_ai)') }}
+# Hash-pinned wheels staged on ASSETS (pins.yml); installed with --no-index --no-deps --require-hashes.
+{% for pin in tools_ai_venv_pins | sort %}
+{{ airlock_assets_files }}/{{ pins[pin].target }} --hash=sha256:{{ pins[pin].sha256 }}
+{% endfor %}

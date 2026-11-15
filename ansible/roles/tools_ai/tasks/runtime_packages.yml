@@ -1,0 +1,7 @@
+# Control 4B.7, 4B.9: tools the AI helpers call on the running system: ffmpeg (video frames,
+# audio track), poppler-utils (pdftotext, pdftoppm), python3-venv (classifier and speech venvs).
+# Test: tests/goss/ai.yaml (ai-runtime-packages).
+- name: AI runtime | Install ffmpeg, poppler-utils, python3-venv (4B.7, 4B.9)
+  ansible.builtin.apt:
+    name: "{{ tools_ai_runtime_packages }}"
+    state: present

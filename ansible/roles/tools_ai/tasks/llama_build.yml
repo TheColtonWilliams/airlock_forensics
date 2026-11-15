@@ -1,0 +1,98 @@
+# Control 4B.1: llama.cpp built from the pinned release tarball with the Vulkan back end only
+# (no CUDA, no ROCm), portable CPU code, no network fetcher; llama-server and llama-mtmd-cli
+# installed to /opt/llama/bin. Image phase only (the build needs the network for apt and the
+# tarball; first boot is offline).
+# Test: tests/goss/ai.yaml (llama-server and llama-mtmd-cli run, version matches the pin, no
+# CUDA/ROCm libraries); tests/unit/test_screen_role.py (flags, pin use).
+- name: Llama.cpp | Refuse an unpinned source tarball (4B.1)
+  ansible.builtin.assert:
+    that:
+      - pins[tools_ai_llama_pin].sha256 is not none
+      - pins[tools_ai_llama_pin].sha256 | length == 64
+    fail_msg: >-
+      pins.{{ tools_ai_llama_pin }}.sha256 is null. Pin the llama.cpp release tarball in
+      ansible/group_vars/all/pins.yml before building.
+    quiet: true
+  when: airlock_phase == 'image'
+
+- name: Llama.cpp | Install the build tools (4B.1)
+  ansible.builtin.apt:
+    name: "{{ tools_ai_build_packages }}"
+    state: present
+  when: airlock_phase == 'image'
+
+- name: Llama.cpp | Create the build folder (4B.1)
+  ansible.builtin.file:
+    path: "{{ tools_ai_llama_build_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: airlock_phase == 'image'
+
+- name: Llama.cpp | Download the pinned source tarball (4B.1)
+  ansible.builtin.get_url:
+    url: "{{ pins[tools_ai_llama_pin].url }}"
+    dest: "{{ tools_ai_llama_build_dir }}/llama.cpp.tar.gz"
+    checksum: "sha256:{{ pins[tools_ai_llama_pin].sha256 }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when: airlock_phase == 'image'
+
+- name: Llama.cpp | Unpack the source (4B.1)
+  ansible.builtin.unarchive:
+    src: "{{ tools_ai_llama_build_dir }}/llama.cpp.tar.gz"
+    dest: "{{ tools_ai_llama_build_dir }}"
+    remote_src: true
+    extra_opts: [--strip-components=1]
+    creates: "{{ tools_ai_llama_build_dir }}/CMakeLists.txt"
+  when: airlock_phase == 'image'
+
+- name: Llama.cpp | Configure with Vulkan only (4B.1)
+  ansible.builtin.command:
+    argv: "{{ ['cmake', '-S', tools_ai_llama_build_dir, '-B', tools_ai_llama_build_dir ~ '/build'] + tools_ai_llama_cmake_flags }}"
+    creates: "{{ tools_ai_llama_build_dir }}/build/CMakeCache.txt"
+  when: airlock_phase == 'image'
+
+- name: Llama.cpp | Build llama-server and llama-mtmd-cli (4B.1)
+  ansible.builtin.command:
+    argv: "{{ tools_ai_build_cmd + ['-j', tools_ai_jobs, '--target'] + tools_ai_llama_targets }}"
+    creates: "{{ tools_ai_llama_build_dir }}/build/bin/llama-server"
+  vars:
+    tools_ai_build_cmd: [cmake, --build, "{{ tools_ai_llama_build_dir }}/build", --config, Release]
+    tools_ai_jobs: "{{ ansible_facts['processor_vcpus'] | default(2) | string }}"
+  when: airlock_phase == 'image'
+
+- name: Llama.cpp | Create the install folder (4B.1)
+  ansible.builtin.file:
+    path: "{{ tools_ai_llama_prefix }}/bin"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Llama.cpp | Install the binaries and back-end libraries (4B.1)
+  ansible.builtin.copy:
+    src: "{{ tools_ai_llama_build_dir }}/build/bin/"
+    dest: "{{ tools_ai_llama_prefix }}/bin/"
+    remote_src: true
+    owner: root
+    group: root
+    mode: preserve
+  when: airlock_phase == 'image'
+
+- name: Llama.cpp | Record the pinned version (4B.1)
+  ansible.builtin.copy:
+    dest: "{{ tools_ai_llama_prefix }}/VERSION"
+    content: "{{ pins[tools_ai_llama_pin].version }} sha256:{{ pins[tools_ai_llama_pin].sha256 }}\n"
+    owner: root
+    group: root
+    mode: "0644"
+  when: airlock_phase == 'image'
+
+- name: Llama.cpp | Remove the build folder (4B.1)
+  ansible.builtin.file:
+    path: "{{ tools_ai_llama_build_dir }}"
+    state: absent
+  when: airlock_phase == 'image'

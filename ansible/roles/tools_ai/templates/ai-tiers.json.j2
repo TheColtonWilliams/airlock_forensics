@@ -1,0 +1,42 @@
+{#- Task 4B.3, 4B.4: rendered from group_vars/all/ai_models.yml and pins.yml. -#}
+{%- set tiers = {} -%}
+{%- for name in ai_tiers | sort -%}
+{%-   set t = ai_tiers[name] -%}
+{%-   set models = [] -%}
+{%-   for m in t.models | default([]) -%}
+{%-     set _ = models.append({"id": m.pin, "role": m.role, "target": pins[m.pin].target,
+                              "sha256": pins[m.pin].sha256}) -%}
+{%-   endfor -%}
+{%-   set _ = tiers.update({name: {"min_vram_gib": t.min_vram_gib, "max_vram_gib": t.max_vram_gib,
+                                  "cpu_ok": t.cpu_ok, "description": t.description,
+                                  "model_id": t.model_id | default(""), "models": models}}) -%}
+{%- endfor -%}
+{%- set sig = tools_ai_siglip_pins -%}
+{{ {
+  "schema": 1,
+  "integrated_ram_margin_gib": tools_ai_integrated_ram_margin_gib,
+  "tiers_on_image": ai_tiers_on_image,
+  "tiers": tiers,
+  "classifiers": {
+    "nudenet": {"id": "NudeNet 320n (in the nudenet " ~ pins.wheel_nudenet.version ~ " wheel)",
+                "model_target": none},
+    "siglip": {"id": "SigLIP base patch16-224 (ONNX)",
+               "model_target": pins[sig.model].target,
+               "tokenizer_target": pins[sig.tokenizer].target,
+               "preprocessor_target": pins[sig.preprocessor].target,
+               "sha256": pins[sig.model].sha256},
+  },
+  "whisper": {"id": "faster-whisper small (CTranslate2)",
+              "model_dir_target": tools_ai_whisper_model_dir_target,
+              "model_file": "model.bin",
+              "sha256": pins[tools_ai_whisper_model_pin].sha256},
+  "llama": {"prefix": tools_ai_llama_prefix,
+            "listen": tools_ai_llama_listen_host ~ ":" ~ tools_ai_llama_listen_port,
+            "backend_port": tools_ai_llama_backend_port,
+            "seed": tools_ai_llama_seed,
+            "ctx_size": tools_ai_llama_ctx_size,
+            "max_tokens": tools_ai_llama_max_tokens,
+            "video_flag": tools_ai_llama_video_flag,
+            "version": pins[tools_ai_llama_pin].version},
+  "venvs": {"triage": tools_ai_triage_venv, "whisper": tools_ai_whisper_venv},
+} | to_nice_json(indent=2, sort_keys=true) }}

@@ -1,0 +1,27 @@
+{
+  "label_template": "a photo of {label}.",
+  "labels": {
+    "blood": 0.3,
+    "gore": 0.25,
+    "injury": 0.3,
+    "nudity": 0.25,
+    "sexual activity": 0.25,
+    "violence": 0.3,
+    "weapon": 0.35
+  },
+  "note": "Scores at or above a threshold flag the file. Lower is more cautious. See docs/workflows/media-screening.md.",
+  "nudenet_classes": [
+    "ANUS_EXPOSED",
+    "BUTTOCKS_EXPOSED",
+    "FEMALE_BREAST_EXPOSED",
+    "FEMALE_GENITALIA_EXPOSED",
+    "MALE_GENITALIA_EXPOSED"
+  ],
+  "nudity": 0.3,
+  "schema": 1,
+  "video": {
+    "frame_interval_s": 2,
+    "max_frames": 900,
+    "scene_threshold": 0.4
+  }
+}

@@ -1,0 +1,31 @@
+# Control 4B.10 (role tools_ai): llama.cpp server for evidence-describe. The launcher
+# (airlock_ai.serve) binds 127.0.0.1:{{ tools_ai_llama_backend_port }} only, loads the tier ai-probe chose, falls back
+# to the CPU tier if the GPU tier fails to load, and records model hashes in
+# /run/airlock-llama/effective.json. Started only through llama-server.socket.
+[Unit]
+Description=AIRLOCK local model server (llama.cpp, 127.0.0.1 only)
+StopWhenUnneeded=yes
+
+[Service]
+Type=notify
+NotifyAccess=main
+Environment=PYTHONPATH={{ airlock_pylib_dir }}
+Environment=AIRLOCK_LLAMA_RUN_DIR=/run/airlock-llama
+ExecStart=/usr/bin/python3 -m airlock_ai.serve --port {{ tools_ai_llama_backend_port }}
+TimeoutStartSec=20min
+DynamicUser=yes
+SupplementaryGroups=render video
+RuntimeDirectory=airlock-llama
+RuntimeDirectoryMode=0755
+IPAddressDeny=any
+IPAddressAllow=localhost
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+DevicePolicy=closed
+DeviceAllow=char-drm rw

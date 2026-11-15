@@ -1,0 +1,65 @@
+# Shared steps for triage_venv.yml and whisper_venv.yml (not a control on its own): verify each
+# staged wheel against pins.yml, create the venv, install offline with --require-hashes.
+- name: Venv | Refuse unpinned wheels
+  ansible.builtin.assert:
+    that:
+      - pins[item].sha256 is not none
+      - pins[item].sha256 | length == 64
+    fail_msg: "pins.{{ item }}.sha256 is null; pin it before staging."
+    quiet: true
+  loop: "{{ tools_ai_venv_pins }}"
+
+- name: Venv | Hash the staged wheels
+  ansible.builtin.stat:
+    path: "{{ airlock_assets_files }}/{{ pins[item].target }}"
+    checksum_algorithm: sha256
+    get_checksum: true
+  loop: "{{ tools_ai_venv_pins }}"
+  register: tools_ai_venv_wheels
+
+- name: Venv | Check every wheel is staged and unchanged
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.checksum == pins[item.item].sha256
+    fail_msg: >-
+      {{ pins[item.item].target }} is missing from ASSETS or does not match its pinned hash.
+      Restage the drive with fetch-assets.
+    quiet: true
+  loop: "{{ tools_ai_venv_wheels.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Venv | Create the venv
+  ansible.builtin.command:
+    argv: [python3, -m, venv, "{{ tools_ai_venv_path }}"]
+    creates: "{{ tools_ai_venv_path }}/bin/python"
+
+- name: Venv | Write the hash-pinned requirements
+  ansible.builtin.template:
+    src: requirements.txt.j2
+    dest: "{{ tools_ai_venv_path }}/requirements.txt"
+    owner: root
+    group: root
+    mode: "0644"
+  register: tools_ai_venv_reqs
+
+- name: Venv | Install the wheels offline
+  ansible.builtin.command:
+    argv:
+      - "{{ tools_ai_venv_path }}/bin/pip"
+      - install
+      - --no-index
+      - --no-deps
+      - --require-hashes
+      - --no-cache-dir
+      - --disable-pip-version-check
+      - -r
+      - "{{ tools_ai_venv_path }}/requirements.txt"
+  when: tools_ai_venv_reqs.changed  # noqa: no-handler - must run before the import check
+  changed_when: true
+
+- name: Venv | Check the packages import
+  ansible.builtin.command:
+    argv: ["{{ tools_ai_venv_path }}/bin/python", -I, -c, "{{ tools_ai_venv_check }}"]
+  changed_when: false

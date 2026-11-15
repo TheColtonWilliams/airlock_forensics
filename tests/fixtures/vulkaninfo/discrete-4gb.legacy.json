@@ -1,0 +1,27 @@
+{
+  "$schema": "https://schema.khronos.org/vulkan/devsim_1_0_0.json#",
+  "VkPhysicalDeviceMemoryProperties": {
+    "memoryHeapCount": 2,
+    "memoryHeaps": [
+      {
+        "flags": 1,
+        "size": 4294967296
+      },
+      {
+        "flags": 0,
+        "size": 16642998272
+      }
+    ]
+  },
+  "VkPhysicalDeviceProperties": {
+    "apiVersion": 4206881,
+    "deviceID": 0,
+    "deviceName": "Synthetic discrete GPU",
+    "deviceType": 2,
+    "driverVersion": 100671496,
+    "vendorID": 0
+  },
+  "comments": {
+    "desc": "Synthesised legacy vulkaninfo --json report (AIRLOCK test)"
+  }
+}
