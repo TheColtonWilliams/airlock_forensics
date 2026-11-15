@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Asset tamper tests (task 4G.4; checks 2B.12, 2B.14, 2B.15). A drive staged by the real
 # fetcher is tampered with in four ways: a swapped file, a truncated file, an edited manifest,
-# and a bad signature (plus a changed daily signature file). Each must be detected both at
+# and a bad signature (plus a changed daily signature file and a ClamAV database whose vendor
+# signature fails). Each must be detected both at
 # provisioning (forensic-provision) and at session start (the airlock_common.assets check that
 # forensic-session-start runs), with the asset named and the feature that needs it turned off.
-# Ansible, goss and systemctl are stubs; the signing key is made here and thrown away.
+# Ansible, goss, systemctl and sigtool are stubs; the signing key is made here and thrown away.
 set -euo pipefail
 # shellcheck source=tests/functional/lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -45,6 +46,8 @@ for a in "$@"; do case "$a" in @*) cp -- "${a#@}" "$AIRLOCK_TEST_CALLS.vars.json
 stub goss 'printf "goss %s\n" "$*" >>"$AIRLOCK_TEST_CALLS"; echo "{\"summary\": {\"failed-count\": 0, \"test-count\": 1}}"'
 # shellcheck disable=SC2016
 stub systemctl 'printf "systemctl %s\n" "$*" >>"$AIRLOCK_TEST_CALLS"'
+# The fake daily.cvd below is not signed by ClamAV; the stand-in sigtool accepts it (lib.sh).
+stub_sigtool
 
 # ------------------------------------------------------------------ release: content, manifest
 SRC="$TEST_TMP/src"
@@ -216,5 +219,15 @@ assert_eq "$RC" 1 "changed daily file caught at session start"
 assert_contains "$OUT" "clamav_daily: size" "daily file named"
 assert_contains "$OUT" "turned off: clamav" "clamav turned off"
 echo "ok: a changed daily signature file is caught against the hash recorded at provisioning"
+
+# ------------------------------------------------------------------ 6. vendor signature fails
+# A ClamAV database whose own signature does not verify (sigtool says so) is refused even
+# though its hash matches what was staged and applied.
+reset_drive
+"$PROVISION" --no-reboot >/dev/null
+assert_contains "$(cat "$TEST_TMP/sigtool.calls")" "daily.cvd" "sigtool checked the ClamAV database"
+export AIRLOCK_TEST_SIGTOOL_FAIL=1
+expect_detected "failed vendor signature" clamav_daily "vendor signature check failed (sigtool)" clamav
+unset AIRLOCK_TEST_SIGTOOL_FAIL
 
 echo "PASS test_assets"

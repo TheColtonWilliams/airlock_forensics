@@ -377,6 +377,50 @@ def test_tool_versions(monkeypatch) -> None:
     assert out["packages"]["airlock-no-such-package-xyz"] in {"absent", "unknown (no dpkg-query)"}
 
 
+def _role_defaults() -> dict:
+    import yaml  # noqa: PLC0415 - test-only dependency
+
+    out: dict = {}
+    for f in sorted((REPO / "ansible" / "roles").glob("tools_*/defaults/main.yml")):
+        out.update(yaml.safe_load(f.read_text(encoding="utf-8")) or {})
+    return out
+
+
+def test_version_table_matches_tool_roles() -> None:
+    """Every command and package logged at session start is one a tools role installs."""
+    d = _role_defaults()
+    installed = {"python3"}
+    for key, value in d.items():
+        if key.endswith("_packages") and isinstance(value, list):
+            installed |= {str(v) for v in value}
+    # Pinned .deb files: the package name starts the file name (dotnet-runtime-9.0_9.0.4-1...).
+    import yaml  # noqa: PLC0415
+
+    pins = yaml.safe_load((REPO / "ansible/group_vars/all/pins.yml").read_text(encoding="utf-8"))
+    for pin in pins["pins"].values():
+        url = str(pin.get("url") or "")
+        if url.endswith(".deb"):
+            installed.add(url.rsplit("/", 1)[-1].split("_", 1)[0])
+    missing = [p for p in system.DPKG_PACKAGES if p not in installed]
+    assert missing == [], f"not installed by any tools role: {missing}"
+    assert "bulk-extractor" not in system.DPKG_PACKAGES  # built from source (tools_carve)
+
+    names = {name: argv for name, argv in system.VERSION_COMMANDS}
+    for cmd in ("log2timeline", "psort"):
+        assert cmd in d["tools_timeline_commands"] and cmd in names
+    assert not [n for n in names if n.endswith(".py")]
+    assert "target-query" in d["tools_dissect_commands"]
+    assert names["llama-server"][0] == d["tools_ai_llama_prefix"] + "/bin/llama-server"
+    assert "llama-server" in d["tools_ai_llama_targets"]
+    ez = [t["name"] for t in d["tools_eztools_tools"]]
+    assert list(system.EZTOOLS) == ez
+    for tool in ez:
+        assert names[tool] == (tool, "--version")
+    assert {"clamav", "yara"} <= set(d["tools_hashsets_packages"])
+    assert names["clamscan"][0] == "clamscan" and names["yara"][0] == "yara"
+    assert "bulk_extractor" in names and "photorec" in names
+
+
 # ------------------------------------------------------------------ forensic-session-start
 
 
@@ -476,6 +520,56 @@ def test_unlock_needs_root(airlock_env: Path, monkeypatch, capsys) -> None:
     monkeypatch.setattr(common.os, "geteuid", lambda: 1000)
     assert unlock.main(["/dev/sdb", "--confirm", "sdb"]) == 1
     assert "needs root" in capsys.readouterr().err
+
+
+def test_run_dir_from_paths(monkeypatch) -> None:
+    from airlock_common import paths  # noqa: PLC0415
+
+    monkeypatch.delenv("AIRLOCK_RUN_DIR", raising=False)
+    assert paths.run_dir() == Path("/run/airlock")
+    assert paths.rw_allow_dir() == Path("/run/airlock/rw-allow")
+    monkeypatch.setenv("AIRLOCK_RUN_DIR", "/tmp/x-run")
+    assert paths.rw_allow_dir() == Path("/tmp/x-run/rw-allow")
+
+
+def _unlock_env(airlock_env: Path, tmp_path: Path, monkeypatch, *, fail: bool = False) -> list:
+    """Root, the fake tree, and a blockdev stand-in that flips the fake sysfs ro flags."""
+    sysfs = fake_tree(tmp_path, monkeypatch)
+    monkeypatch.setattr(common.os, "geteuid", lambda: 0)
+    calls: list = []
+
+    def fake_blockdev(flag: str, dev_path: str) -> None:
+        calls.append((flag, dev_path))
+        if fail:
+            raise proc.ToolError("blockdev exited 1: Permission denied")
+        name = dev_path.rsplit("/", 1)[-1]
+        (sysfs / "class" / "block" / name / "ro").write_text("0\n" if flag == "--setrw" else "1\n")
+
+    monkeypatch.setattr(unlock, "_blockdev", fake_blockdev)
+    return calls
+
+
+def test_unlock_writes_and_removes_rw_allow_marker(
+    airlock_env: Path, tmp_path: Path, monkeypatch
+) -> None:
+    calls = _unlock_env(airlock_env, tmp_path, monkeypatch)
+    marker = tmp_path / "run" / "rw-allow" / "sdb"  # the kernel name airlock-setro checks
+    assert unlock.main(["/dev/sdb", "--confirm", "sdb"]) == 0
+    assert marker.is_file()
+    assert json.loads(marker.read_text(encoding="utf-8"))["device"] == "/dev/sdb"
+    assert ("--setrw", "/dev/sdb") in calls and ("--setrw", "/dev/sdb1") in calls
+    assert last(airlock_env, "output_unlocked")["marker"] == str(marker)
+    # readonly_flags (session start) now treats sdb as unlocked, not unexpectedly writable.
+    assert system.readonly_flags()["writable_unexpected"] == []
+    assert unlock.main(["/dev/sdb", "--lock"]) == 0
+    assert not marker.exists()
+    assert ("--setro", "/dev/sdb1") in calls
+
+
+def test_unlock_failure_leaves_no_marker(airlock_env: Path, tmp_path: Path, monkeypatch) -> None:
+    _unlock_env(airlock_env, tmp_path, monkeypatch, fail=True)
+    assert unlock.main(["/dev/sdb", "--confirm", "sdb"]) == 1
+    assert not (tmp_path / "run" / "rw-allow" / "sdb").exists()
 
 
 # ------------------------------------------------------------------ evidence-mount (3A.3)

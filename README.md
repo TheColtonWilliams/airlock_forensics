@@ -21,11 +21,14 @@ computer before first boot; the drive itself never downloads anything.
 
 Full steps, with the warnings that matter: [docs/quickstart.md](docs/quickstart.md).
 
-* **Linux with KVM, one command:** `git clone`, `cd airlock`, `sudo ./make-usb.sh`. It builds,
-  tests, writes the drive, stages the tools and models, and boot-tests the finished drive.
-* **Windows, or Linux without KVM:** download the published base image, check its SHA-256, write
-  it with Rufus (DD Image mode) or balenaEtcher, run `fetch-assets.ps1` (or `fetch-assets.sh`)
-  to stage the tools and models, then boot. The drive sets itself up offline.
+* **Linux with KVM, one command:**
+  `git clone https://github.com/TheColtonWilliams/airlock_forensics.git airlock`, `cd airlock`,
+  `sudo ./make-usb.sh`. It builds, tests, writes the drive, stages the tools and models, and
+  boot-tests the finished drive.
+* **Windows, or Linux without KVM:** download the published base image from the
+  [release page](https://github.com/TheColtonWilliams/airlock_forensics/releases), check its
+  SHA-256, write it with Rufus (DD Image mode) or balenaEtcher, run `fetch-assets.ps1` (or
+  `fetch-assets.sh`) to stage the tools and models, then boot. The drive sets itself up offline.
 
 You need a 64 GB or larger drive (a USB SSD is much faster than a flash stick) and an x86_64 PC
 that can boot from USB. No step depends on a particular brand of PC, GPU, or drive.

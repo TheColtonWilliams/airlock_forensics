@@ -67,3 +67,25 @@ stub() {
 }
 
 sha256_of() { sha256sum -- "$1" | cut -d' ' -f1; }
+
+# Stand-in for ClamAV's sigtool, first on PATH. Test .cvd fixtures are not signed by ClamAV,
+# and the real sigtool (installed on the image and on some hosts) rightly rejects them. The
+# stand-in prints "Verification OK." only for a --info=FILE whose content starts with
+# $AIRLOCK_TEST_SIGTOOL_PREFIX (default "ClamAV-VDB:daily"), and fails every file while
+# AIRLOCK_TEST_SIGTOOL_FAIL=1, so the vendor-signature failure path stays testable.
+# Calls are appended to $TEST_TMP/sigtool.calls.
+stub_sigtool() {
+  # shellcheck disable=SC2016 # expands when the stub runs
+  stub sigtool 'path=""
+for a in "$@"; do case "$a" in --info=*) path="${a#--info=}" ;; esac; done
+printf "sigtool %s\n" "$*" >>"'"$TEST_TMP"'/sigtool.calls"
+printf "File: %s\nBuild time: 15 Nov 2026 00:00 +0000\nVersion: 1\n" "$path"
+prefix="${AIRLOCK_TEST_SIGTOOL_PREFIX:-ClamAV-VDB:daily}"
+if [[ "${AIRLOCK_TEST_SIGTOOL_FAIL:-0}" != 1 && -f "$path" ]] \
+  && [[ "$(head -c "${#prefix}" -- "$path")" == "$prefix" ]]; then
+  echo "Verification OK."
+  exit 0
+fi
+echo "ERROR: Verification failed"
+exit 1'
+}

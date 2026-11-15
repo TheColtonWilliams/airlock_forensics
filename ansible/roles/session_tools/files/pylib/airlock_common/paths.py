@@ -17,6 +17,7 @@ _DEFAULTS: dict[str, str] = {
     "AIRLOCK_SESSION_DIR": "/var/log/forensic-session",
     "AIRLOCK_ASSETS_DIR": "/srv/airlock/assets",
     "AIRLOCK_OUTPUT_DIR": "/srv/airlock/output",
+    "AIRLOCK_RUN_DIR": "/run/airlock",
 }
 
 
@@ -52,6 +53,17 @@ def assets_dir() -> Path:
 
 def output_dir() -> Path:
     return _get("AIRLOCK_OUTPUT_DIR")
+
+
+def run_dir() -> Path:
+    """Runtime state in tmpfs (``/run/airlock``). ``rw-allow/<disk>`` markers here tell
+    ``airlock-setro`` (harden_storage role) to leave an unlocked output drive writable."""
+    return _get("AIRLOCK_RUN_DIR")
+
+
+def rw_allow_dir() -> Path:
+    """Where ``evidence-unlock-output`` leaves one marker per unlocked disk (kernel name)."""
+    return run_dir() / "rw-allow"
 
 
 def assets_files_dir() -> Path:

@@ -6,6 +6,10 @@
 # key sent only with the MalwareBazaar download and never written, unpinned files refused, a
 # changed file refused, --refresh, the NVIDIA packages only with nvidia_proprietary, profile
 # changes, the free-space check, and (as root with loop devices) a real exFAT ASSETS partition.
+# Also: the ClamAV set as pinned in the repo (tag clamav, verify vendor_signature, target
+# hashsets/clamav/*.cvd), a wheel tagged by gen-manifest from the tools_ai role (classifiers),
+# and make-usb.sh's exact call ("--yes --manifest M --profile P --assets DIR --cache DIR", the
+# abuse.ch key only in AIRLOCK_ABUSECH_KEY, no terminal) against both fetchers.
 set -euo pipefail
 # shellcheck source=tests/functional/lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -17,7 +21,7 @@ FETCH="$REPO_ROOT/scripts/fetch-assets.sh"
 KEY="abusech-test-key-$RANDOM$RANDOM"
 SRV="$TEST_TMP/srv"
 REQLOG="$TEST_TMP/requests.log"
-mkdir -p "$SRV/models" "$SRV/yara" "$SRV/clamav" "$SRV/mb" "$SRV/nvidia" "$SRV/bad"
+mkdir -p "$SRV/models" "$SRV/yara" "$SRV/clamav" "$SRV/mb" "$SRV/nvidia" "$SRV/bad" "$SRV/wheels"
 
 # ------------------------------------------------------------------ test server
 cat >"$TEST_TMP/server.py" <<'PY'
@@ -128,6 +132,7 @@ printf 'ClamAV-VDB:daily v1\n' >"$SRV/clamav/daily.cvd"
 printf 'sha256_hash\n%064d\n' 0 >"$SRV/mb/full.txt"
 printf 'nvidia test package\n' >"$SRV/nvidia/modules.deb"
 printf 'the real file\n' >"$SRV/bad/file.bin"
+printf 'not a real wheel, test bytes\n' >"$SRV/wheels/demo-1.0-py3-none-any.whl"
 
 size_of() { stat -c %s -- "$1"; }
 cat >"$TEST_TMP/pins.yml" <<EOF
@@ -137,7 +142,9 @@ pins:
   yara_rules:
     {url: "$BASE/yara/rules.yar", version: "abc", sha256: "$(sha256_of "$SRV/yara/rules.yar")", size: $(size_of "$SRV/yara/rules.yar"), stage: assets, target: yara/rules.yar, profiles: [yara], verify: sha256, license: DRL-1.1, notes: ""}
   clamav_daily:
-    {url: "$BASE/clamav/daily.cvd", version: daily, sha256: null, size: null, stage: assets, target: clamav/daily.cvd, profiles: [clamav], verify: vendor_signature, license: GPL-2.0, notes: daily}
+    {url: "$BASE/clamav/daily.cvd", version: daily, sha256: null, size: null, stage: assets, target: hashsets/clamav/daily.cvd, profiles: [clamav], verify: vendor_signature, license: GPL-2.0, notes: daily}
+  wheel_demo:
+    {url: "$BASE/wheels/demo-1.0-py3-none-any.whl", version: "1.0", sha256: "$(sha256_of "$SRV/wheels/demo-1.0-py3-none-any.whl")", size: null, stage: assets, target: wheels/demo-1.0-py3-none-any.whl, profiles: [gpu], verify: sha256, license: MIT, notes: ""}
   malwarebazaar_full:
     {url: "$BASE/mb/full.txt", version: daily, sha256: null, size: null, stage: assets, target: hashsets/mb.txt, profiles: [malwarebazaar], verify: trusted_at_staging, license: CC0, notes: daily}
   nvidia_pkg:
@@ -151,16 +158,18 @@ pins:
 EOF
 cat >"$TEST_TMP/profiles.yml" <<'EOF'
 profiles:
-  default: {description: d, features: {ai_tiers: [tier0], clamav: true, yara: true, malwarebazaar: true, nvidia_proprietary: false}}
+  default: {description: d, features: {ai_tiers: [tier0], clamav: true, yara: true, malwarebazaar: true, nvidia_proprietary: false, classifiers: true}}
   minimal: {description: m, features: {ai_tiers: [], yara: true}}
   gpu: {description: g, features: {ai_tiers: [tier0], yara: true, nvidia_proprietary: true}}
   ci: {description: c, features: {ai_tiers: []}}
 EOF
 printf 'ai_tiers: {}\n' >"$TEST_TMP/ai.yml"
+# gen-manifest tags the tools_ai role's wheels with their feature (here: classifiers).
+printf 'tools_ai_triage_wheel_pins: [wheel_demo]\n' >"$TEST_TMP/ai-role.yml"
 REL="$TEST_TMP/release"
 mkdir -p "$REL"
 run python3 "$REPO_ROOT/scripts/gen-manifest.py" --pins "$TEST_TMP/pins.yml" --profiles "$TEST_TMP/profiles.yml" \
-  --ai-models "$TEST_TMP/ai.yml" --release v0.1.0-test --out "$REL/manifest.json"
+  --ai-models "$TEST_TMP/ai.yml" --ai-role "$TEST_TMP/ai-role.yml" --release v0.1.0-test --out "$REL/manifest.json"
 assert_eq "$RC" 0 "gen-manifest: $OUT"
 openssl genpkey -algorithm ed25519 -out "$TEST_TMP/sign.key" 2>/dev/null
 run bash "$REPO_ROOT/scripts/sign-manifest.sh" --key "$TEST_TMP/sign.key" --manifest "$REL/manifest.json"
@@ -181,7 +190,10 @@ run env AIRLOCK_ABUSECH_KEY="$KEY" bash "$FETCH" --yes --manifest "$MANIFEST" --
   --target-volume "$A" --cache "$TEST_TMP/cache-a" --examiner "Test Examiner"
 assert_eq "$RC" 0 "bash fetcher stages the default profile: $OUT"
 assert_contains "$OUT" "free; this profile needs" "free space reported before starting"
-assert_eq "$(staged_ids "$A")" "clamav_daily malwarebazaar_full model_tier0 yara_rules" "staged set"
+assert_eq "$(staged_ids "$A")" "clamav_daily malwarebazaar_full model_tier0 wheel_demo yara_rules" "staged set"
+assert_contains "$(staged_rows "$A")" "clamav_daily $(sha256_of "$SRV/clamav/daily.cvd") hashsets/clamav/daily.cvd vendor_signature" \
+  "ClamAV set staged with its observed hash, the repo's target and vendor_signature"
+assert_file "$A/files/wheels/demo-1.0-py3-none-any.whl"
 assert_eq "$(sha256_of "$A/files/models/tier0.gguf")" "$(sha256_of "$SRV/models/tier0.gguf")" "model copied intact"
 assert_contains "$(skip_reason "$A" unpinned_tool)" "not pinned yet" "unpinned file refused"
 assert_no_file "$A/files/tools/none.bin"
@@ -208,7 +220,7 @@ before="$(gets)"
 run bash "$FETCH" --yes --manifest "$MANIFEST" --profile default --target-volume "$A" --cache "$TEST_TMP/cache-a"
 assert_eq "$RC" 0 "rerun: $OUT"
 assert_eq "$(gets)" "$before" "rerun downloads nothing"
-assert_contains "$OUT" "4 already on ASSETS and checked" "rerun checks what is there"
+assert_contains "$OUT" "5 already on ASSETS and checked" "rerun checks what is there"
 assert_contains "$OUT" "no abuse.ch key given; keeping the copy" "no key: the staged list is kept"
 echo "ok: rerun keeps verified files"
 
@@ -236,12 +248,37 @@ else
   echo "note: pwsh not installed; PowerShell half not run"
 fi
 
+# ------------------------------------------------------------------ M: make-usb.sh's call
+# Exactly the arguments make-usb.sh step_stage passes, the key only in the environment, stdin
+# not a terminal: nothing is asked, and both fetchers stage what the bash run above staged.
+M="$TEST_TMP/assets-m"
+mkdir -p "$M"
+run env AIRLOCK_ABUSECH_KEY="$KEY" bash "$FETCH" --yes --manifest "$MANIFEST" --profile default \
+  --assets "$M" --cache "$TEST_TMP/cache-m" </dev/null
+assert_eq "$RC" 0 "bash fetcher with make-usb.sh's arguments: $OUT"
+assert_not_contains "$OUT" "Auth-Key for the MalwareBazaar" "no key prompt with --yes"
+assert_eq "$(staged_ids "$M")" "$(staged_ids "$A")" "make-usb call stages the same set"
+no_key_in "$M" "$TEST_TMP/cache-m"
+if command -v pwsh >/dev/null 2>&1; then
+  MP="$TEST_TMP/assets-mps"
+  mkdir -p "$MP"
+  run env AIRLOCK_ABUSECH_KEY="$KEY" pwsh -NoProfile -NonInteractive -File "$REPO_ROOT/scripts/fetch-assets.ps1" \
+    --yes --manifest "$MANIFEST" --profile default --assets "$MP" --cache "$TEST_TMP/cache-mps" </dev/null
+  assert_eq "$RC" 0 "PowerShell fetcher with make-usb.sh's (GNU-style) arguments: $OUT"
+  assert_eq "$(staged_rows "$MP")" "$(staged_rows "$M")" "PowerShell stages the same files from the same call"
+  no_key_in "$MP" "$TEST_TMP/cache-mps"
+  run pwsh -NoProfile -NonInteractive -File "$REPO_ROOT/scripts/fetch-assets.ps1" --yes --manifest "$MANIFEST" \
+    --profile default --target-volume "$MP" --cache "$TEST_TMP/cache-mps" --dry-run --case-prefix X </dev/null
+  assert_eq "$RC" 0 "PowerShell takes --target-volume, --dry-run and --case-prefix too: $OUT"
+fi
+echo "ok: make-usb.sh's fetcher call works with both fetchers and asks nothing"
+
 # ------------------------------------------------------------------ C: --refresh
 printf 'ClamAV-VDB:daily v2 (newer)\n' >"$SRV/clamav/daily.cvd"
 before="$(gets)"
 run bash "$FETCH" --yes --refresh --manifest "$MANIFEST" --profile default --target-volume "$A" --cache "$TEST_TMP/cache-a"
 assert_eq "$RC" 0 "refresh: $OUT"
-assert_eq "$(sha256_of "$A/files/clamav/daily.cvd")" "$(sha256_of "$SRV/clamav/daily.cvd")" "daily set restaged"
+assert_eq "$(sha256_of "$A/files/hashsets/clamav/daily.cvd")" "$(sha256_of "$SRV/clamav/daily.cvd")" "daily set restaged"
 assert_contains "$(staged_rows "$A")" "clamav_daily $(sha256_of "$SRV/clamav/daily.cvd")" "new daily hash recorded"
 after="$(gets)"
 assert_eq "$((after - before))" 1 "refresh downloads only the daily set (MalwareBazaar kept without a key)"
@@ -251,8 +288,8 @@ echo "ok: --refresh restages the daily-changing set"
 run bash "$FETCH" --yes --manifest "$MANIFEST" --profile gpu --target-volume "$A" --cache "$TEST_TMP/cache-a"
 assert_eq "$RC" 0 "gpu profile: $OUT"
 assert_file "$A/files/nvidia/modules.deb"
-assert_no_file "$A/files/clamav/daily.cvd"
-assert_contains "$OUT" "removed files/clamav/daily.cvd (not in this profile)" "profile change prunes old files"
+assert_no_file "$A/files/hashsets/clamav/daily.cvd"
+assert_contains "$OUT" "removed files/hashsets/clamav/daily.cvd (not in this profile)" "profile change prunes old files"
 echo "ok: nvidia_proprietary stages the driver packages; profile change prunes"
 
 # ------------------------------------------------------------------ E: changed file refused

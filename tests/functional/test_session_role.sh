@@ -8,12 +8,13 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 require_cmd ansible-playbook python3
 require_root # files are installed owned by root, as on the image
 
-# A snapshot of the repo parts the role reads, so concurrent edits or byte-compiles in the
-# working tree cannot make the second run look non-idempotent.
+# A snapshot of the repo parts the role reads (ansible/, tests/goss/, docs/), so concurrent
+# edits or byte-compiles in the working tree cannot make the second run look non-idempotent.
 SRC="$TEST_TMP/src"
 mkdir -p "$SRC/tests"
 cp -a -- "$REPO_ROOT/ansible" "$SRC/ansible"
 cp -a -- "$REPO_ROOT/tests/goss" "$SRC/tests/goss"
+cp -a -- "$REPO_ROOT/docs" "$SRC/docs"
 find "$SRC" -name __pycache__ -type d -prune -exec rm -rf -- {} +
 
 ROOT="$TEST_TMP/root"
@@ -119,6 +120,10 @@ assert_file "$ROOT/opt/airlock/repo/ansible/site.yml" "repo copy: site.yml"
 assert_file "$ROOT/opt/airlock/repo/ansible/group_vars/all/pins.yml" "repo copy: pins"
 assert_file "$ROOT/opt/airlock/repo/ansible/group_vars/all/profiles.yml" "repo copy: profiles"
 assert_file "$ROOT/opt/airlock/repo/tests/goss/session_tools.yaml" "repo copy: goss files"
+# evidence-report cites docs/known-limitations.md by path and SHA-256 (repo_copy.yml).
+assert_file "$ROOT/opt/airlock/repo/docs/known-limitations.md" "repo copy: known limitations"
+assert_eq "$(sha256_of "$ROOT/opt/airlock/repo/docs/known-limitations.md")" \
+  "$(sha256_of "$SRC/docs/known-limitations.md")" "repo copy: known limitations unchanged"
 
 # Launchers.
 assert_file "$ROOT/usr/share/applications/airlock-session-start.desktop"

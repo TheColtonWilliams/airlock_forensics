@@ -12,12 +12,31 @@ from pathlib import Path
 from typing import Any
 
 from airlock_common import devices, jsonio, paths, proc, timeutil
-from airlock_session.common import procfs, readonly_flag, run_dir, sysfs
+from airlock_session.common import procfs, readonly_flag, sysfs
 
 VERSION_TIMEOUT = 15.0
 
 # Commands whose version is logged at session start. Tools that are not installed are logged
 # as absent. Every command here only prints a version; none reads a target or the network.
+# Names match what the tool roles install (checked by tests/unit/test_session_helpers.py
+# against ansible/roles/tools_*/defaults): Plaso's venv commands are linked into
+# /usr/local/bin without ".py" (tools_timeline_commands), llama.cpp lives under /opt/llama/bin
+# (tools_ai_llama_prefix, not on PATH), bulk_extractor is built from source, and each EZ tool
+# has a /usr/local/bin/<Tool> wrapper (tools_eztools_tools) on the .NET runtime.
+LLAMA_SERVER = "/opt/llama/bin/llama-server"
+EZTOOLS: tuple[str, ...] = (
+    "MFTECmd",
+    "RBCmd",
+    "LECmd",
+    "JLECmd",
+    "PECmd",
+    "EvtxECmd",
+    "AmcacheParser",
+    "AppCompatCacheParser",
+    "RECmd",
+    "SBECmd",
+    "bstrings",
+)
 VERSION_COMMANDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("python3", ("python3", "--version")),
     ("mmls", ("mmls", "-V")),
@@ -29,12 +48,13 @@ VERSION_COMMANDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("hashdeep", ("hashdeep", "-V")),
     ("ssdeep", ("ssdeep", "-V")),
     ("target-query", ("target-query", "--version")),
-    ("log2timeline.py", ("log2timeline.py", "--version")),
-    ("psort.py", ("psort.py", "--version")),
+    ("log2timeline", ("log2timeline", "--version")),
+    ("psort", ("psort", "--version")),
     ("exiftool", ("exiftool", "-ver")),
     ("mediainfo", ("mediainfo", "--Version")),
     ("ffmpeg", ("ffmpeg", "-version")),
     ("exiv2", ("exiv2", "--version")),
+    ("photorec", ("photorec", "/version")),
     ("foremost", ("foremost", "-V")),
     ("scalpel", ("scalpel", "-V")),
     ("bulk_extractor", ("bulk_extractor", "-V")),
@@ -42,35 +62,45 @@ VERSION_COMMANDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("yara", ("yara", "--version")),
     ("ntfs-3g", ("ntfs-3g", "--version")),
     ("dotnet", ("dotnet", "--list-runtimes")),
-    ("llama-server", ("llama-server", "--version")),
+    *((name, (name, "--version")) for name in EZTOOLS),
+    ("llama-server", (LLAMA_SERVER, "--version")),
 )
 
-# Ubuntu packages whose installed version is logged (one dpkg-query call).
+# Ubuntu packages whose installed version is logged (one dpkg-query call). Every name is one a
+# tools role installs (tools_*_packages, or a pinned .deb); optional ones (Autopsy, SIFT, EZ
+# Tools) are logged as absent when the profile left them out.
 DPKG_PACKAGES: tuple[str, ...] = (
     "sleuthkit",
+    "libfsntfs-utils",
+    "python3-libfsntfs",
+    "ntfs-3g",
     "ewf-tools",
     "dc3dd",
     "gddrescue",
+    "afflib-tools",
     "guymager",
     "hashdeep",
     "ssdeep",
-    "afflib-tools",
     "libvshadow-utils",
-    "libfsntfs-utils",
-    "ntfs-3g",
     "testdisk",
     "scalpel",
     "foremost",
-    "bulk-extractor",
     "libimage-exiftool-perl",
     "mediainfo",
     "ffmpeg",
     "exiv2",
+    "vinetto",
+    "poppler-utils",
     "regripper",
     "libregf-utils",
     "libhivex-bin",
     "clamav",
     "yara",
+    "python3-tlsh",
+    "mesa-vulkan-drivers",
+    "dotnet-runtime-9.0",
+    "openjdk-17-jre",
+    "sleuthkit-java",
     "python3",
 )
 
@@ -233,7 +263,7 @@ def readonly_flags() -> dict[str, Any]:
     """The read-only flag of every disk and partition, and which ones are writable."""
     tree = devices.lsblk()
     boot = devices.boot_disk(tree)
-    rw_allow = run_dir() / "rw-allow"
+    rw_allow = paths.rw_allow_dir()
     rows: list[dict[str, Any]] = []
     writable: list[str] = []
     for top in tree:

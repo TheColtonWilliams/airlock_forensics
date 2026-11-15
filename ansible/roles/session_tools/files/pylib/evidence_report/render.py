@@ -912,6 +912,21 @@ def _known_limitations() -> str:
     return base
 
 
+def coverage_limits(doc: dict[str, Any]) -> list[str]:
+    """``coverage_limit`` events modules logged into ``run.json`` (e.g. the inventory's bounded
+    Dissect cross-check), one line each, in module order. Never silently dropped."""
+    out: list[str] = []
+    events = doc.get("module_events")
+    if not isinstance(events, dict):
+        return out
+    for module, evs in sorted(events.items()):
+        for ev in evs if isinstance(evs, list) else []:
+            if isinstance(ev, dict) and ev.get("event") == "coverage_limit":
+                scope = str(ev.get("scope") or ev.get("parser") or "a step")
+                out.append(f"{module}, {scope}: {ev.get('reason') or 'no reason recorded'}.")
+    return out
+
+
 def _interpretation(doc: dict[str, Any], block: AiBlock) -> Section:
     mode = doc.get("mode_record", {}).get("mode") or doc.get("config", {}).get("mode")
     blocks: list[Block] = [
@@ -931,6 +946,16 @@ def _interpretation(doc: dict[str, Any], block: AiBlock) -> Section:
         )
     )
     blocks.append(Para(_known_limitations()))
+    limits = coverage_limits(doc)
+    if limits:
+        blocks.append(Heading("Coverage limits of this run"))
+        blocks.append(
+            Para(
+                "These steps were left out or stopped early to keep the run to a workable time. "
+                "What they would have checked was not checked:"
+            )
+        )
+        blocks.append(Bullets(limits, css="limits"))
     blocks.append(Heading("Interpretation"))
     blocks.append(block)
     return Section("6. Interpretation and limitations", "interpretation", blocks)

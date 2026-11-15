@@ -18,6 +18,19 @@ Shadow Copy check per volume, which always says what it found, "none found" incl
 
 Writes ``modules/inventory/files.jsonl`` (the index other modules read) from the first parser
 that worked, in the order tsk, dissect, mftecmd.
+
+Scale (bounded mode). Dissect's MFT pass costs about 57 ms per file and grows linearly (300 000
+files take about 5 h), so it is a cross-check with a budget: when The Sleuth Kit listed every
+NTFS volume and its file count is above ``dissect_max_files`` (default 50 000), or the
+estimate is above ``dissect_budget_s`` (default 3600 s), the Dissect pass is left out; when it
+runs, it is stopped at that budget and its partial output is not used. The Sleuth Kit pass is
+always complete. A left-out or stopped pass is never silent: a ``coverage_limit`` row (category
+``xval``), the cross-check summary's ``parsers_missing``, a ``coverage_limit`` module event and
+``dissect_crosscheck_*`` counts in ``run.json``, and the report's limitations section all say
+so, and ``modules/inventory/dissect-mft.jsonl.limited`` tells the ``users`` module not to run
+the same query. Settings: the run options, else ``inventory`` in
+``/etc/airlock/airlock.conf.json`` (``{"inventory": {"dissect_max_files": N,
+"dissect_budget_s": S}}``); ``dissect_max_files`` 0 means no file-count limit.
 """
 
 from __future__ import annotations
@@ -26,11 +39,13 @@ import datetime as _dt
 import re
 import shutil
 import struct
+import time
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from airlock_common import jsonio, paths, proc
 from forensic_analyze import extract, ntfs_interp, xval
 from forensic_analyze.api import Module, ModuleContext, ModuleResult, Volume, sorted_rows
 from forensic_analyze.inventory_index import index_path, write_index
@@ -49,6 +64,10 @@ EQUAL = {
     "si_changed": xval.same_second,
     "si_accessed": xval.same_second,
 }
+# Bounded mode for Dissect's whole-target MFT pass (see the module docstring).
+DISSECT_MAX_FILES = 50_000
+DISSECT_BUDGET_S = 3600.0
+DISSECT_S_PER_FILE = 0.057  # measured: target-query -f mft --compact, linear in files
 VSS_GUID = bytes.fromhex("6b87083876c1484eb7ae04046e6cc752")
 VSS_HEADER_OFFSET = 0x1E00
 _MONTHS = {
@@ -527,6 +546,98 @@ def _safe_index_entry(entry: dict[str, Any]) -> dict[str, Any]:
 
 
 # ----------------------------------------------------------------------------------------------
+# Bounded mode for the Dissect cross-check
+# ----------------------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class DissectLimits:
+    max_files: int = DISSECT_MAX_FILES  # 0 = no file-count limit
+    budget_s: float = DISSECT_BUDGET_S
+    source: str = "default"
+
+
+def dissect_limits(options: dict[str, Any]) -> DissectLimits:
+    """Run options first, then ``inventory`` in ``airlock.conf.json``, then the defaults."""
+    conf: dict[str, Any] = {}
+    path = paths.etc_dir() / "airlock.conf.json"
+    if path.is_file():
+        try:
+            data = jsonio.load_json(path)
+            if isinstance(data, dict) and isinstance(data.get("inventory"), dict):
+                conf = data["inventory"]
+        except (OSError, ValueError):
+            conf = {}
+    out = DissectLimits()
+    for src, values in ((str(path), conf), ("run options", options)):
+        try:
+            if "dissect_max_files" in values:
+                out = DissectLimits(int(values["dissect_max_files"]), out.budget_s, src)
+            if "dissect_budget_s" in values:
+                out = DissectLimits(out.max_files, float(values["dissect_budget_s"]), src)
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def dissect_plan(files: int, limits: DissectLimits) -> str:
+    """Why the Dissect pass is left out for ``files`` files, or "" to run it."""
+    est = files * DISSECT_S_PER_FILE
+    if limits.max_files > 0 and files > limits.max_files:
+        return (
+            f"{files} files is more than the limit of {limits.max_files} for the Dissect "
+            f"cross-check (about {est / 3600:.1f} h at {DISSECT_S_PER_FILE * 1000:.0f} ms per file)"
+        )
+    if limits.budget_s > 0 and est > limits.budget_s:
+        return (
+            f"the Dissect cross-check of {files} files would take about {est / 60:.0f} min, more "
+            f"than the time budget of {limits.budget_s / 60:.0f} min"
+        )
+    return ""
+
+
+def coverage_limit_row(ctx: ModuleContext, reason: str, files: int, limits: DissectLimits) -> dict:
+    return {
+        "category": "xval",
+        "artifact_type": "coverage_limit",
+        "message": (
+            "Coverage limit: the Dissect cross-check of the file inventory was not done for this "
+            f"run ({reason}). The Sleuth Kit listing is complete; its file entries were not "
+            "compared with Dissect, so they show as single-source unless MFTECmd ran. Raise "
+            "inventory.dissect_max_files or dissect_budget_s in /etc/airlock/airlock.conf.json "
+            "and run again to include it."
+        ),
+        "derivation": "observed",
+        "source_tool": "forensic-analyze",
+        "tool_version": "inventory 1",
+        "parser": DISSECT,
+        "label": "dissect_crosscheck_limited",
+        "text": (
+            f"files={files}; max_files={limits.max_files}; budget_s={limits.budget_s:g}; "
+            f"settings={limits.source}"
+        ),
+        "inode_ref": "inventory:dissect",
+    }
+
+
+def _record_limit(
+    ctx: ModuleContext, reason: str, files: int, limits: DissectLimits, counts: Counter[str]
+) -> dict[str, Any]:
+    rec = {
+        "reason": reason,
+        "files": files,
+        "max_files": limits.max_files,
+        "budget_s": limits.budget_s,
+        "settings": limits.source,
+    }
+    jsonio.dump_json(ctx.workdir / (extract.DISSECT_MFT + extract.DISSECT_LIMIT_SUFFIX), rec)
+    ctx.log("coverage_limit", parser=DISSECT, scope="inventory cross-check", **rec)
+    counts["dissect_crosscheck_limited"] = 1
+    counts["dissect_crosscheck_files"] = files
+    return coverage_limit_row(ctx, reason, files, limits)
+
+
+# ----------------------------------------------------------------------------------------------
 # The module
 # ----------------------------------------------------------------------------------------------
 
@@ -570,14 +681,36 @@ class Inventory(Module):
             else:
                 missing[MFTECMD] = "not installed (EZ Tools are staged on ASSETS)"
 
-        # Dissect reads the whole target once; its filesystems are matched to volumes.
+        # Dissect reads the whole target once; its filesystems are matched to volumes. It is a
+        # cross-check with a budget (bounded mode, module docstring) once TSK listed everything.
         dis: dict[int, list[FileObs]] = {}
-        dpath = ctx.workdir / "dissect-mft.jsonl"
-        try:
-            cp = extract.dissect_query(ctx, ["-f", "mft", "--compact"], dpath)
-        except Exception as exc:
-            cp = None
-            failures.append(f"Dissect: {exc}")
+        dpath = ctx.workdir / extract.DISSECT_MFT
+        limits = dissect_limits(ctx.options)
+        tsk_complete = bool(vols) and all(tsk.get(v.index) is not None for v in vols)
+        tsk_files = sum(len(tsk.get(v.index) or []) for v in vols)
+        limit_reason = dissect_plan(tsk_files, limits) if tsk_complete else ""
+        cp = None
+        if limit_reason:
+            missing[DISSECT] = f"left out (coverage limit): {limit_reason}"
+            system_rows.append(_record_limit(ctx, limit_reason, tsk_files, limits, counts))
+        else:
+            budget = limits.budget_s if tsk_complete and limits.budget_s > 0 else None
+            t0 = time.monotonic()
+            try:
+                cp = extract.dissect_query(ctx, ["-f", "mft", "--compact"], dpath, timeout=budget)
+            except proc.ToolError as exc:
+                if budget is not None and time.monotonic() - t0 >= budget * 0.99:
+                    dpath.unlink(missing_ok=True)  # partial output: not compared
+                    limit_reason = (
+                        f"Dissect did not finish within the time budget of {budget / 60:.0f} min "
+                        f"for {tsk_files} files; its partial output was not used"
+                    )
+                    missing[DISSECT] = f"stopped (coverage limit): {limit_reason}"
+                    system_rows.append(_record_limit(ctx, limit_reason, tsk_files, limits, counts))
+                else:
+                    failures.append(f"Dissect: {exc}")
+            except Exception as exc:
+                failures.append(f"Dissect: {exc}")
         if cp is None:
             missing.setdefault(DISSECT, "target-query is not installed")
         else:

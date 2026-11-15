@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import hashlib
 import shutil
 from collections import namedtuple
 from pathlib import Path
 from typing import Any
 
 import pytest
+from test_module_images import STUB_SCORES
 from test_parsers_ntfs_fixture import build_ntfs_image, make_ctx, ntfs_tools_ok
 
+from airlock_ai import llm
 from forensic_analyze.inventory_index import iter_files
 from forensic_analyze.modules import carve
 
@@ -34,10 +37,20 @@ def test_skipped_outside_full(image: tuple[Path, dict], tmp_path: Path) -> None:
     assert rows == []
 
 
+def _no_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(llm.URL_ENV, "http://127.0.0.1:9")  # nothing listens: no descriptions
+    monkeypatch.setenv(llm.NO_START_ENV, "1")
+
+
 @pytest.mark.skipif(not shutil.which("photorec"), reason="needs photorec (testdisk)")
-def test_carves_deleted_picture(image: tuple[Path, dict], tmp_path: Path) -> None:
+def test_carves_deleted_picture(
+    image: tuple[Path, dict], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     img, truth = image
     run = tmp_path / "run"
+    _no_model(monkeypatch)
+    # The stub screening backend clears the fixture picture (neutral scores), so it stays.
+    monkeypatch.setenv("AIRLOCK_SCREEN_BACKEND", f"stub:{STUB_SCORES}")
     ctx, rows = make_ctx(img, run, "carve", options=FULL)
     res = carve.MODULE.run(ctx)
     assert res.status == "ok"
@@ -55,6 +68,36 @@ def test_carves_deleted_picture(image: tuple[Path, dict], tmp_path: Path) -> Non
     assert pngs[0]["carved_path"].startswith("modules/carve/carved/")
     if not shutil.which("bulk_extractor"):
         assert any(r["artifact_type"] == "carve_tool_missing" for r in rows)
+    screened = [r for r in rows if r["artifact_type"] == "screen_nudity"]
+    assert any(r["sha256"] == truth["png_sha256"] for r in screened)
+
+
+@pytest.mark.skipif(not shutil.which("photorec"), reason="needs photorec (testdisk)")
+@pytest.mark.skipif(Path("/opt/triage").exists(), reason="the classifier venv is installed here")
+def test_carved_picture_removed_without_classifiers(
+    image: tuple[Path, dict], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No classifiers staged (minimal profile): a carved picture cannot be screened, so it is
+    deleted at once and only its hashes are recorded (4B.17)."""
+    img, truth = image
+    run = tmp_path / "run"
+    _no_model(monkeypatch)
+    monkeypatch.delenv("AIRLOCK_SCREEN_BACKEND", raising=False)
+    monkeypatch.setenv("AIRLOCK_OPT_DIR", str(tmp_path / "no-opt"))
+    ctx, rows = make_ctx(img, run, "carve", options=FULL)
+    res = carve.MODULE.run(ctx)
+    assert res.status == "ok", res.reason
+    gone = [r for r in rows if r["artifact_type"] == "carved_media_removed"]
+    hit = [r for r in gone if r["sha256"] == truth["png_sha256"]]
+    assert hit and hit[0]["label"] == "not_screened", gone
+    carved = [c for c in iter_files(run, include_carved=True) if c["sha256"] == truth["png_sha256"]]
+    assert carved and carved[0]["removed"] == "not_screened"
+    assert not (run / carved[0]["carved_path"]).exists()
+    for p in run.rglob("*.png"):
+        assert hashlib.sha256(p.read_bytes()).hexdigest() != truth["png_sha256"], p
+    files = [r for r in rows if r["artifact_type"] == "carved_file"]
+    row = next(r for r in files if r["sha256"] == truth["png_sha256"])
+    assert "Deleted after screening (not_screened)" in row["message"]
 
 
 def test_not_enough_room(

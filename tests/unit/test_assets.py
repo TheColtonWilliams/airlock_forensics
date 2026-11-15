@@ -187,6 +187,38 @@ def test_daily_file_checked_against_applied_hash(drive: FakeDrive) -> None:
     assert "forensic-import" in found["clamav_daily"]
 
 
+def test_vendor_signature_is_checked_with_sigtool(drive: FakeDrive) -> None:
+    """ClamAV databases go through sigtool (the stand-in on PATH accepts the fake fixtures)."""
+    assert assets.verify_staged().ok
+    log = Path(f"{drive.calls}.sigtool").read_text(encoding="utf-8")
+    assert "--info=" in log and "daily.cvd" in log
+
+
+def test_failed_vendor_signature_disables_clamav(
+    drive: FakeDrive, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AIRLOCK_TEST_SIGTOOL_FAIL", "1")
+    report = assets.verify_staged()
+    assert not report.ok
+    assert problems(report) == {"clamav_daily": "vendor signature check failed (sigtool)"}
+    assert report.disabled_features == ["clamav"]
+    assert "clamav_daily" not in report.verified
+
+
+def test_restaged_unsigned_database_fails_vendor_check(drive: FakeDrive) -> None:
+    """A daily database whose profile.json hash matches but which ClamAV did not sign."""
+    daily = drive.assets / "files" / "clamav" / "daily.cvd"
+    daily.write_bytes(b"not a ClamAV database\n" + b"\x00" * 300)
+    prof = json.loads((drive.assets / "profile.json").read_text(encoding="utf-8"))
+    for row in prof["files"]:
+        if row["id"] == "clamav_daily":
+            row["sha256"] = assets.hashing.sha256_file(daily)
+    (drive.assets / "profile.json").write_text(json.dumps(prof), encoding="utf-8")
+    report = assets.verify_staged()
+    assert problems(report)["clamav_daily"] == "vendor signature check failed (sigtool)"
+    assert report.disabled_features == ["clamav"]
+
+
 def test_asset_path_only_for_applied_files(drive: FakeDrive) -> None:
     assert assets.asset_path("model_tier0") is None  # nothing applied yet
     report = assets.verify_staged()

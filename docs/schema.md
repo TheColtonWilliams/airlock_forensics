@@ -47,7 +47,7 @@ Required fields come first. Absent means unknown; `null` is never written.
 | `evidence_id` | string, not empty | yes | Exhibit or target identifier for the run. |
 | `evidence_sha256` | string, 64 lower-case hex | yes | SHA-256 of the target device or image, taken before the run. |
 | `category` | enum | yes | `inventory`, `recycle_bin`, `deletion`, `users`, `malware`, `hash`, `images`, `video`, `audio`, `documents`, `timeline`, `carve`, `system`, `xval`. |
-| `artifact_type` | string, not empty | yes | What kind of record produced the row, snake_case by convention (`file_entry`, `usn_delete`, `recycle_bin_entry`, `hash_match`). |
+| `artifact_type` | string, not empty | yes | What kind of record produced the row, snake_case by convention (`file_entry`, `usn_delete`, `recycle_bin_entry`, `hash_hit`). |
 | `message` | string, not empty | yes | One plain line describing the finding. Says "account SID", never a person. |
 | `derivation` | enum | yes | `observed` (read directly from a record), `inferred` (an interpretation made by code, for example `$SI` created before `$FN` created), `ai_generated` (made by a model; triage, never evidence). |
 | `source_tool` | string, not empty | yes | Tool that produced the record (`sleuthkit`, `MFTECmd`, `dissect`). |
@@ -136,7 +136,7 @@ Views (every view is `SELECT *` from `findings`):
 | `v_deleted` | `allocated = 0` or `category = 'deletion'` | Finding order. |
 | `v_recycle_bin` | `category = 'recycle_bin'` | Finding order. |
 | `v_media` | `category IN ('images', 'video', 'audio')` | Finding order. |
-| `v_hash_hits` | `category IN ('malware', 'hash')` | Finding order. |
+| `v_hash_hits` | `category IN ('malware', 'hash')`: hits (`hash_hit`, `clamav_hit`, `yara_hit`) are `malware`; `nsrl_known_good`, `hashset_status` and `hash_triage_error` are `hash` | Finding order. |
 | `v_flags` | `sensitive_flag = 1`, or a classifier result: `label IS NOT NULL AND score IS NOT NULL` | Finding order. |
 | `v_disagreements` | `xval_status = 'disagree'` | Finding order. |
 

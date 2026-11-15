@@ -8,7 +8,7 @@ the steps use is already in this repository.
 
 1. Sign in to GitHub with the account or organisation that will own the project.
 2. Open <https://github.com/new>.
-3. Repository name: **`airlock`**. Description:
+3. Repository name: **`airlock_forensics`** (project name AIRLOCK). Description:
    "AIRLOCK: Air-gapped, Isolated, Read-only, Locked-down, Offline Case Kit. A bootable,
    locked-down USB forensic workstation built from Ubuntu 24.04 as code."
 4. Visibility: **Public**.
@@ -19,7 +19,7 @@ the steps use is already in this repository.
 Or with the GitHub CLI, from the checkout:
 
 ```
-gh repo create <owner>/airlock --public \
+gh repo create TheColtonWilliams/airlock_forensics --public \
   --description "AIRLOCK: Air-gapped, Isolated, Read-only, Locked-down, Offline Case Kit"
 ```
 
@@ -28,11 +28,11 @@ gh repo create <owner>/airlock --public \
 From the root of the local checkout:
 
 ```
-git remote add origin https://github.com/<owner>/airlock.git
+git remote add origin https://github.com/TheColtonWilliams/airlock_forensics.git
 git push -u origin main
 ```
 
-If `origin` already exists, use `git remote set-url origin https://github.com/<owner>/airlock.git`.
+If `origin` already exists, use `git remote set-url origin https://github.com/TheColtonWilliams/airlock_forensics.git`.
 
 ## 3. Repository settings
 
@@ -43,7 +43,7 @@ In **Settings**:
 * **General, Pull Requests:** allow squash merging and rebase merging; turn off merge commits
   (the branch rule below asks for a linear history); turn on "Automatically delete head branches".
 * **Actions, General:** "Allow all actions and reusable workflows" is not needed: choose "Allow
-  <owner>, and select non-<owner>, actions" and allow `actions/checkout@*`,
+  TheColtonWilliams, and select non-TheColtonWilliams, actions" and allow `actions/checkout@*`,
   `actions/setup-python@*`, `actions/upload-artifact@*`, `actions/download-artifact@*`. Workflow
   permissions: **Read repository contents** (the release workflow asks for more itself).
 * **Code security:** turn on Dependabot alerts and secret scanning. Private vulnerability
@@ -86,7 +86,7 @@ secret, the `MANIFEST_SIGNING_PUBKEY` variable, and the optional `AIRLOCK_BUILD_
 
 ## Done when
 
-* the repository is public at `https://github.com/<owner>/airlock` with the full history;
+* the repository is public at `https://github.com/TheColtonWilliams/airlock_forensics` with the full history;
 * the branch rule shows on **Settings, Branches** for `main`;
 * a test pull request cannot be merged until its checks pass.
 

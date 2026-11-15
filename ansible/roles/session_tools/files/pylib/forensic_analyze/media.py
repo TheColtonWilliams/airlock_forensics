@@ -1,6 +1,7 @@
 """Shared machinery for the media modules: images, video, audio, documents (4C.8 to 4C.11).
 
-Flow for each file the inventory lists with a matching extension (live, deleted, and carved):
+Flow for each file the inventory lists with a matching extension (live and deleted; carved files
+go through the same flow from the ``carve`` module, see below):
 
 1. stop if ``forensic-escalate`` has marked the run (``<run>/ESCALATED``), before every batch
    and every export;
@@ -16,6 +17,16 @@ Flow for each file the inventory lists with a matching extension (live, deleted,
 
 Exports live under ``modules/<name>/export/`` so ``cleanup.purge_exports`` and
 ``forensic-escalate`` find them.
+
+Carved files (``modules/carve/carved.jsonl``, ``volume_index`` -1). The ``carve`` module runs
+last (order 110), after the media modules, so it calls :func:`process_carved` on its own
+output: each media module runs the flow above on the carved files of its types, in place (they
+are never copied). A carved image or video that is flagged, could not be screened, is too large
+to screen, or has a type the screening step does not read is deleted from the carve folder at
+once and its index line is marked ``removed``: no copy is kept anywhere in or outside the run
+and nothing is displayed. A ``carved_media_removed`` row records it with the SHA-256 and MD5
+(plan 4B.17). The main pass of each media module leaves carved lines alone, so a resumed run
+does not screen them twice.
 """
 
 from __future__ import annotations
@@ -40,8 +51,9 @@ from airlock_ai.screen import ScreenResult
 from airlock_common import hashing, proc
 from forensic_analyze import extract
 from forensic_analyze.api import Module, ModuleContext, ModuleResult, Volume
-from forensic_analyze.inventory_index import available, iter_files
+from forensic_analyze.inventory_index import available, carved_path, iter_files, write_index
 
+CARVED_VERSION = "media carved 1"
 ESCALATED_REASON = "stopped: forensic-escalate was run for this run; exports are frozen"
 BATCH = 64
 _EXT_RE = re.compile(r"^\.[a-z0-9]{1,10}$")
@@ -79,6 +91,8 @@ class MediaItem:
     md5: str = ""
     error: str = ""
     kept: bool = False
+    removed: str = ""  # carved only: why the carved file was deleted (4B.17)
+    screen_failure: str = ""  # carved only: why the screening step could not run
     screen: ScreenResult | None = None
     meta: dict[str, Any] = field(default_factory=dict)
     meta_record: str = ""
@@ -133,18 +147,31 @@ def _volume(ctx: ModuleContext, index: int) -> Volume | None:
 
 
 def select(
-    ctx: ModuleContext, extensions: Iterable[str], max_bytes: int, counts: Counter[str]
+    ctx: ModuleContext,
+    extensions: Iterable[str],
+    max_bytes: int,
+    counts: Counter[str],
+    *,
+    carved: bool = False,
+    oversize: list[MediaItem] | None = None,
 ) -> list[MediaItem]:
+    """Index lines with a matching extension: live and deleted files, or (``carved=True``)
+    only the carve module's files that are still there. Lines over ``max_bytes`` are counted
+    and, when ``oversize`` is given, collected there."""
     items: list[MediaItem] = []
-    for e in iter_files(ctx.run_dir, extensions=sorted(extensions), include_carved=True):
+    for e in iter_files(ctx.run_dir, extensions=sorted(extensions), include_carved=carved):
+        if (int(e.get("volume_index", 0)) < 0) != carved or e.get("removed"):
+            continue
         size = int(e.get("size_bytes") or 0)
         if size <= 0:
             counts["empty"] += 1
             continue
         if size > max_bytes:
             counts["too_large"] += 1
+            if oversize is not None:
+                oversize.append(MediaItem(e, carved=carved))
             continue
-        items.append(MediaItem(e, carved=int(e.get("volume_index", 0)) < 0))
+        items.append(MediaItem(e, carved=carved))
     items.sort(
         key=lambda i: (
             int(i.entry.get("volume_index", 0)),
@@ -161,9 +188,9 @@ def export_item(ctx: ModuleContext, item: MediaItem, dest: Path) -> None:
     check_escalated(ctx)
     try:
         if item.carved:
-            p = (ctx.run_dir / str(item.entry.get("carved_path", ""))).resolve()
-            if ctx.run_dir.resolve() not in p.parents or not p.is_file():
-                raise extract.ExtractError("carved file not found in the run folder")
+            p = _carved_file(ctx, item)
+            if p is None or not p.is_file():
+                raise extract.ExtractError("carved file not found in the carve folder of this run")
             item.path = p
         else:
             vol = _volume(ctx, int(item.entry.get("volume_index", 0)))
@@ -194,11 +221,74 @@ def keep(item: MediaItem, export_dir: Path) -> None:
 
 
 def discard(item: MediaItem) -> None:
-    """Delete a pending copy now: flagged or unscreened content is never kept (4B.17)."""
+    """Delete a pending copy now: flagged or unscreened content is never kept (4B.17).
+
+    A carved file is not a copy made here; :func:`remove_carved` deletes it."""
     if item.path is not None and not item.carved:
         item.path.unlink(missing_ok=True)
     item.path = None
     item.kept = False
+
+
+def _carved_file(ctx: ModuleContext, item: MediaItem) -> Path | None:
+    """The carved file inside ``modules/carve/carved/`` of this run, or None."""
+    rel = str(item.entry.get("carved_path") or "")
+    if not rel:
+        return None
+    root = (ctx.run_dir / "modules" / "carve" / "carved").resolve()
+    p = (ctx.run_dir / rel).resolve()
+    return p if root in p.parents else None
+
+
+def remove_carved(ctx: ModuleContext, item: MediaItem, why: str) -> None:
+    """Delete a flagged or unscreened carved file where carve left it (4B.17).
+
+    Nothing is copied first: the file is unlinked in place, so no copy is kept anywhere. The
+    hashes stay on the item for the ``carved_media_removed`` row; they are computed here when
+    the file was never exported (too large, unsupported type).
+    """
+    p = item.path if item.path is not None else _carved_file(ctx, item)
+    if p is not None and p.is_file():
+        if not item.sha256:
+            with contextlib.suppress(OSError, ValueError):
+                h = hashing.hash_file(p)
+                item.sha256, item.md5 = h["sha256"], h["md5"]
+        p.unlink()
+    item.path = None
+    item.kept = False
+    item.removed = why
+
+
+REMOVED_WHY = {
+    "flagged": "was flagged by the screening models",
+    "not_screened": "could not be screened",
+    "too_large": "is too large to screen",
+    "unsupported": "is of a type the screening step cannot read",
+}
+
+
+def carved_removed_row(item: MediaItem, category: str, kind: str) -> dict[str, Any]:
+    """The record of a deleted carved file: where it was, its hashes, and why it went."""
+    why = REMOVED_WHY.get(item.removed, item.removed or "was not cleared")
+    row = {
+        **base_row(item, category),
+        "artifact_type": "carved_media_removed",
+        "message": (
+            f"Carved {kind} file {why}; it was deleted from the carve folder at once. No copy "
+            "is kept anywhere and it was never shown. Only its hashes are recorded."
+            + (" Do not re-carve it to look at it." if item.removed == "flagged" else "")
+        ),
+        "derivation": "observed",
+        "source_tool": "forensic-analyze",
+        "tool_version": CARVED_VERSION,
+        "parser": "forensic_analyze.media",
+        "label": item.removed or "not_cleared",
+    }
+    if item.screen_failure:
+        row["text"] = item.screen_failure
+    if item.removed == "flagged":
+        row["sensitive_flag"] = True
+    return row
 
 
 def run_json_tool(
@@ -407,6 +497,67 @@ class DescribeSession:
 # ---------------------------------------------------------------------------------------------
 
 
+@dataclass
+class CarvedTally:
+    """Carved paths (relative to the run folder) cleared by a screening module, and removed."""
+
+    cleared: set[str] = field(default_factory=set)
+    removed: dict[str, str] = field(default_factory=dict)
+
+
+# Carved families the screening step must clear before a carved file may stay (carve.EXT_FAMILY).
+SCREENED_FAMILIES: dict[str, tuple[str, str]] = {
+    "images": ("images", "image"),
+    "video": ("video", "video"),
+}
+
+
+def process_carved(ctx: ModuleContext, modules: Sequence[MediaModule]) -> dict[str, int]:
+    """Run each media module over the carve module's files (call it with carve's context).
+
+    Afterwards every carved image or video that no screening module cleared (a type the
+    screening step does not read, an empty file) is deleted too, and ``carved.jsonl`` is
+    rewritten with ``removed`` set on each deleted file's line. Fails closed: a carved picture
+    stays only when the classifiers cleared it. Raises :class:`Escalated` when the run was
+    escalated (carved files are then left as they are: frozen).
+    """
+    tally = CarvedTally()
+    counts: Counter[str] = Counter()
+    for mod in modules:
+        for k, v in mod.run_carved(ctx, tally).items():
+            counts[f"{mod.name}_{k}"] += v
+    leftovers = []
+    for e in iter_files(ctx.run_dir, include_carved=True):
+        rel = str(e.get("carved_path", ""))
+        if int(e.get("volume_index", 0)) >= 0 or e.get("removed") or not rel:
+            continue
+        family = str(e.get("family", ""))
+        if family in SCREENED_FAMILIES and rel not in tally.cleared and rel not in tally.removed:
+            leftovers.append(MediaItem(e, carved=True))
+    for item in sorted(leftovers, key=lambda i: str(i.entry.get("carved_path"))):
+        check_escalated(ctx)
+        category, kind = SCREENED_FAMILIES[str(item.entry.get("family"))]
+        remove_carved(ctx, item, "unsupported")
+        tally.removed[str(item.entry.get("carved_path"))] = "unsupported"
+        counts["carved_removed_unsupported"] += 1
+        ctx.emit(carved_removed_row(item, category, kind))
+    if tally.removed:
+        mark_removed(ctx.run_dir, tally.removed)
+    counts["carved_removed"] = len(tally.removed)
+    return _plain(counts)
+
+
+def mark_removed(run_dir: Path, removed: dict[str, str]) -> None:
+    """Rewrite ``carved.jsonl`` with ``removed: <why>`` on the lines of deleted carved files."""
+    lines = []
+    for e in iter_files(run_dir, include_carved=True):
+        if int(e.get("volume_index", 0)) >= 0:
+            continue
+        why = removed.get(str(e.get("carved_path", "")))
+        lines.append({**e, "removed": why} if why else e)
+    write_index(carved_path(run_dir), lines)
+
+
 class MediaModule(Module):
     """Template for the four media modules; subclasses fill in the hooks."""
 
@@ -457,9 +608,45 @@ class MediaModule(Module):
             return ModuleResult("failed", str(exc))
         if not available(ctx.run_dir):
             return ModuleResult("skipped", "the inventory module has not listed any files")
-        thr = aicfg.load_thresholds()
         items = select(ctx, self.extensions, self.max_bytes, counts)
-        counts["files"] = len(items)
+        try:
+            self._process(ctx, items, counts, extra_pass=True)
+        except Escalated as exc:
+            return ModuleResult("failed", str(exc), _plain(counts))
+        return ModuleResult("ok", "", _plain(counts))
+
+    def run_carved(self, ctx: ModuleContext, tally: CarvedTally | None = None) -> dict[str, int]:
+        """The same flow over the carve module's files of this module's types, in place.
+
+        Called by ``carve`` with its own context (rows go to the carve module's part file).
+        Flagged, unscreened, and too-large carved files of a screened type are deleted
+        (:func:`remove_carved`). Raises :class:`Escalated` when the run was escalated.
+        """
+        counts: Counter[str] = Counter()
+        check_escalated(ctx)
+        oversize: list[MediaItem] = []
+        items = select(ctx, self.extensions, self.max_bytes, counts, carved=True, oversize=oversize)
+        if self.screened:
+            for item in oversize:
+                check_escalated(ctx)
+                remove_carved(ctx, item, "too_large")
+                counts["carved_removed"] += 1
+                ctx.emit(carved_removed_row(item, self.category, self.kind))
+        self._process(ctx, items, counts, extra_pass=False)
+        if tally is not None:
+            for item in (*oversize, *items):
+                rel = str(item.entry.get("carved_path", ""))
+                if item.removed:
+                    tally.removed[rel] = item.removed
+                elif item.kept and self.screened:
+                    tally.cleared.add(rel)
+        return _plain(counts)
+
+    def _process(
+        self, ctx: ModuleContext, items: list[MediaItem], counts: Counter[str], *, extra_pass: bool
+    ) -> None:
+        thr = aicfg.load_thresholds()
+        counts["files"] += len(items)
         export_dir = ctx.workdir / "export"
         pending = export_dir / ".pending"
         session = DescribeSession(ctx)
@@ -468,12 +655,13 @@ class MediaModule(Module):
                 self._batch(
                     ctx, items[start : start + BATCH], thr, export_dir, pending, session, counts
                 )
-            self.extra_pass(ctx, counts)
-        except Escalated as exc:
+            if extra_pass:
+                self.extra_pass(ctx, counts)
+        except Escalated:
             for it in items:
                 if it.path is not None and not it.kept:
-                    discard(it)
-            return ModuleResult("failed", str(exc), _plain(counts))
+                    discard(it)  # pending copies only; carved files stay frozen as they are
+            raise
         finally:
             session.close()
             shutil.rmtree(pending, ignore_errors=True)
@@ -490,7 +678,20 @@ class MediaModule(Module):
                     "parser": "airlock_ai.describe",
                 }
             )
-        return ModuleResult("ok", "", _plain(counts))
+
+    def _screen(self, ctx: ModuleContext, live: list[MediaItem], thr: aicfg.Thresholds) -> None:
+        try:
+            self.screen_batch(ctx, live, thr)
+        except Escalated:
+            raise
+        except Exception as exc:
+            # The main pass fails the module (nothing was kept). Carved files already sit in
+            # the run folder, so they are treated as unscreened and removed instead.
+            if not all(i.carved for i in live):
+                raise
+            for i in live:
+                i.screen = None
+                i.screen_failure = f"{type(exc).__name__}: {exc}"[:300]
 
     def _batch(  # noqa: PLR0917
         self,
@@ -507,12 +708,15 @@ class MediaModule(Module):
             export_item(ctx, item, pending)
             if item.error:
                 counts["export_errors"] += 1
+                if item.carved and self.screened:
+                    remove_carved(ctx, item, "not_screened")  # unread is not cleared
+                    counts["carved_removed"] += 1
                 continue
             counts["exported"] += 1
             self.metadata(ctx, item)
         live = [i for i in batch if not i.error]
         if self.screened and live:
-            self.screen_batch(ctx, live, thr)
+            self._screen(ctx, live, thr)
         for item in live:
             check_escalated(ctx)
             res = item.screen
@@ -520,10 +724,30 @@ class MediaModule(Module):
                 keep(item, export_dir)
                 counts["cleared" if self.screened else "kept"] += 1
             else:
-                discard(item)
-                counts["flagged" if res is not None and res.flagged else "not_screened"] += 1
+                why = "flagged" if res is not None and res.flagged else "not_screened"
+                if item.carved:
+                    remove_carved(ctx, item, why)
+                    counts["carved_removed"] += 1
+                else:
+                    discard(item)
+                counts[why] += 1
         for item in batch:
             self._emit_item(ctx, item, thr, session, counts)
+
+    def _emit_error(self, ctx: ModuleContext, item: MediaItem) -> None:
+        ctx.emit(
+            {
+                **base_row(item, self.category),
+                "artifact_type": f"{self.kind}_export_error",
+                "message": f"Could not export this {self.kind} file: {item.error}"[:300],
+                "derivation": "observed",
+                "source_tool": "sleuthkit",
+                "tool_version": ctx.tool_version("icat"),
+                "parser": "icat",
+            }
+        )
+        if item.removed:
+            ctx.emit(carved_removed_row(item, self.category, self.kind))
 
     def _emit_item(
         self,
@@ -534,17 +758,7 @@ class MediaModule(Module):
         counts: Counter[str],
     ) -> None:
         if item.error:
-            ctx.emit(
-                {
-                    **base_row(item, self.category),
-                    "artifact_type": f"{self.kind}_export_error",
-                    "message": f"Could not export this {self.kind} file: {item.error}"[:300],
-                    "derivation": "observed",
-                    "source_tool": "sleuthkit",
-                    "tool_version": ctx.tool_version("icat"),
-                    "parser": "icat",
-                }
-            )
+            self._emit_error(ctx, item)
             return
         for row in self.metadata_rows(ctx, item):
             ctx.emit(row)
@@ -554,6 +768,8 @@ class MediaModule(Module):
                 ctx.emit(row)
         for row in item.extra_rows:
             ctx.emit(row)
+        if item.removed:
+            ctx.emit(carved_removed_row(item, self.category, self.kind))
         if not item.kept:
             return
         check_escalated(ctx)

@@ -5,7 +5,8 @@
 # speech model for the added whisper feature). Offline, forensic-import verifies and applies
 # it and logs each file's SHA-256; the boot unit's `forensic-provision --if-changed` then has
 # nothing left to do, and applies the next restage by itself. Ansible, goss and systemctl are
-# stubs; the test HTTPS server stands in for the vendors; the signing key is thrown away.
+# stubs (sigtool too); the test HTTPS server stands in for the vendors; the signing key is
+# thrown away.
 set -euo pipefail
 # shellcheck source=tests/functional/lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -146,6 +147,8 @@ for a in "$@"; do case "$a" in @*) cp -- "${a#@}" "$AIRLOCK_TEST_CALLS.vars.json
 stub goss 'printf "goss %s\n" "$*" >>"$AIRLOCK_TEST_CALLS"; echo "{\"summary\": {\"failed-count\": 0, \"test-count\": 1}}"'
 # shellcheck disable=SC2016
 stub systemctl 'printf "systemctl %s\n" "$*" >>"$AIRLOCK_TEST_CALLS"'
+# The fake daily.cvd sets are not signed by ClamAV; the stand-in sigtool accepts them (lib.sh).
+stub_sigtool
 ansible_runs() { grep -c '^ansible-playbook' "$CALLS" 2>/dev/null || true; }
 
 # ------------------------------------------------------------------ release v0.1.0

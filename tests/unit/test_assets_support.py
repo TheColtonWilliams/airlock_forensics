@@ -5,6 +5,11 @@ ASSETS partition with profile.json, a repo copy with site.yml and goss files, a 
 with only the boot disk, fake /sys and /proc trees (offline), and stub ``ansible-playbook``,
 ``goss`` and ``systemctl`` commands that record their calls. A throwaway Ed25519 key is made
 with openssl for every test; no key is committed.
+
+The fake ClamAV databases are not signed by ClamAV, so a stand-in ``sigtool`` goes first on
+PATH whether or not the real one is installed. It accepts only files that start with
+``FAKE_CVD_MAGIC`` (the test fixtures) and fails everything when
+``AIRLOCK_TEST_SIGTOOL_FAIL=1``, so the vendor-signature failure path stays tested.
 """
 
 from __future__ import annotations
@@ -21,7 +26,8 @@ import pytest
 
 GOOD_MODEL = b"GGUF" + bytes(range(256)) * 64
 GOOD_RULES = b'rule demo { strings: $a = "airlock-test" condition: $a }\n'
-DAILY_V1 = b"ClamAV-VDB:test daily v1\n" + b"\x00" * 300
+FAKE_CVD_MAGIC = b"ClamAV-VDB:test"
+DAILY_V1 = FAKE_CVD_MAGIC + b" daily v1\n" + b"\x00" * 300
 MB_V1 = b"sha256_hash\n" + b"0" * 64 + b"\n"
 
 
@@ -212,6 +218,23 @@ echo '{"summary": {"failed-count": 0, "test-count": 3}}'
 STUB_SYSTEMCTL = """#!/usr/bin/env bash
 printf 'systemctl %s\\n' "$*" >>"$AIRLOCK_TEST_CALLS"
 """
+# Stand-in for ClamAV's sigtool: "Verification OK" only for the fake fixture databases.
+STUB_SIGTOOL = """#!/usr/bin/env bash
+set -euo pipefail
+path=""
+for a in "$@"; do
+  case "$a" in --info=*) path="${a#--info=}" ;; esac
+done
+printf 'sigtool %s\\n' "$*" >>"$AIRLOCK_TEST_CALLS.sigtool"
+printf 'File: %s\\nBuild time: 15 Nov 2026 00:00 +0000\\nVersion: 1\\n' "$path"
+if [[ "${AIRLOCK_TEST_SIGTOOL_FAIL:-0}" != 1 && -n "$path" ]] \\
+   && [[ "$(head -c 15 -- "$path")" == "ClamAV-VDB:test" ]]; then
+  echo "Verification OK."
+  exit 0
+fi
+echo "ERROR: Verification failed"
+exit 1
+"""
 
 
 def build_drive(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> FakeDrive:
@@ -244,7 +267,7 @@ def build_drive(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> FakeDrive:
     stubs = tmp_path / "stubs"
     stubs.mkdir()
     for name, body in (("ansible-playbook", STUB_ANSIBLE), ("goss", STUB_GOSS),
-                       ("systemctl", STUB_SYSTEMCTL)):  # fmt: skip
+                       ("systemctl", STUB_SYSTEMCTL), ("sigtool", STUB_SIGTOOL)):  # fmt: skip
         (stubs / name).write_text(body, encoding="utf-8")
         (stubs / name).chmod(0o755)
     monkeypatch.setenv("PATH", f"{stubs}:{os.environ['PATH']}")

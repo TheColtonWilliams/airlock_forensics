@@ -205,3 +205,95 @@ def test_version_matches_main_yml() -> None:
     assert main["airlock_version"] == fa.FETCHER_VERSION
     ps1 = (repo / "scripts" / "fetch-assets.ps1").read_text(encoding="utf-8")
     assert f"$FetcherVersion = '{fa.FETCHER_VERSION}'" in ps1
+
+
+# ------------------------------------------------------------------ the repository's own pins
+
+
+def _repo_manifest() -> dict[str, Any]:
+    import importlib.util  # noqa: PLC0415
+
+    repo = Path(__file__).resolve().parents[2]
+    spec = importlib.util.spec_from_file_location(
+        "gen_manifest_t", repo / "scripts" / "gen-manifest.py"
+    )
+    assert spec is not None and spec.loader is not None
+    gm = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gm)
+    gv = repo / "ansible" / "group_vars" / "all"
+    return gm.build_manifest(
+        gm.CP.load_yaml(gv / "pins.yml"),
+        gm.CP.load_yaml(gv / "profiles.yml"),
+        gm.CP.load_yaml(gv / "ai_models.yml"),
+        "t",
+        gm.CP.load_yaml(gm.AI_ROLE_DEFAULTS),
+    )
+
+
+def test_repo_clamav_pins_are_staged_with_their_signature() -> None:
+    """clamav_main_cvd and clamav_daily_cvd: tag clamav, ClamAV's own signature, .cvd targets."""
+    m = _repo_manifest()
+    files = {f["id"]: f for f in m["files"]}
+    for fid, name in (("clamav_main_cvd", "main.cvd"), ("clamav_daily_cvd", "daily.cvd")):
+        f = files[fid]
+        assert "clamav" in f["profiles"] and f["verify"] == "vendor_signature"
+        assert f["target"] == f"hashsets/clamav/{name}"
+        assert f["sha256"] is None  # moving file: allowed because verify is vendor_signature
+    for prof in ("default", "minimal", "full"):
+        _name, feats, ids = fa.resolve_profile(m, prof)
+        assert feats.get("clamav") is True
+        assert {"clamav_main_cvd", "clamav_daily_cvd"} <= set(ids), prof
+    plan = fa.plan_items(
+        [files["clamav_main_cvd"]],
+        Path("/nonexistent-assets"),
+        fa.Cache(Path("/nonexistent-cache")),
+        key=None,
+        refresh=False,
+    )
+    assert not plan.skipped  # a null hash is not "not pinned yet" for a signed ClamAV file
+
+
+def test_custom_profile_file_gets_wheels_and_models(tmp_path: Path) -> None:
+    """A profile file that turns a feature on stages that feature's wheels and models, whatever
+    the profile is called (make-usb.sh passes --profile <path>)."""
+    m = _repo_manifest()
+    files = {f["id"]: f for f in m["files"]}
+    prof = tmp_path / "lab.json"
+    prof.write_text(
+        json.dumps({"features": {"ai_tiers": ["tier0"], "classifiers": True, "whisper": True}}),
+        encoding="utf-8",
+    )
+    name, _feats, ids = fa.resolve_profile(m, str(prof))
+    assert name == "lab"
+    wheels = {i for i in ids if i.startswith("wheel_")}
+    default_wheels = {i for i in fa.resolve_profile(m, "default")[2] if i.startswith("wheel_")}
+    assert wheels and wheels == default_wheels
+    assert {"wheel_nudenet", "wheel_faster_whisper"} <= wheels
+    assert {"siglip_base_patch16_224_onnx", "faster_whisper_small_model"} <= set(ids)
+    tier0 = [
+        i
+        for i in ids
+        if files[i]["target"].startswith("models/") and "ai_tier0" in (files[i]["profiles"])
+    ]
+    assert tier0, "the tier0 model files"
+    # Classifiers only: the classifier wheels, not the speech ones.
+    prof.write_text(json.dumps({"features": {"classifiers": True}}), encoding="utf-8")
+    ids = set(fa.resolve_profile(m, str(prof))[2])
+    assert "wheel_nudenet" in ids and "wheel_faster_whisper" not in ids
+    assert "faster_whisper_small_model" not in ids
+
+
+def test_make_usb_call_interface(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """make-usb.sh: --yes --manifest M --profile P --assets DIR --cache DIR, the key only in
+    AIRLOCK_ABUSECH_KEY, and no prompt with --yes even with no terminal input."""
+    args = fa.parse_args(
+        ["--yes", "--manifest", "m.json", "--profile", "default", "--assets", "a", "--cache", "c"]
+    )
+    assert (args.yes, args.manifest, args.profile, args.assets, args.cache) == (
+        True, "m.json", "default", "a", "c"
+    )  # fmt: skip
+    monkeypatch.setattr(fa.getpass, "getpass", lambda *_a, **_k: pytest.fail("prompted"))
+    monkeypatch.setenv(fa.KEY_ENV, KEY)
+    assert fa.read_key(args, True, interactive=False) == KEY
+    assert fa.KEY_ENV not in __import__("os").environ  # removed once read
+    assert fa.read_key(args, True, interactive=False) is None  # no key, no prompt

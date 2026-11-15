@@ -12,7 +12,10 @@ was not clean UTF-8 text, ``path_b64`` (base64 of the raw bytes).
 
 The ``carve`` module writes ``<run>/modules/carve/carved.jsonl`` in the same format with
 ``volume_index`` -1, ``inode`` "", and ``carved_path`` (the carved copy, relative to the run
-folder). ``iter_files(..., include_carved=True)`` adds those lines.
+folder). ``iter_files(..., include_carved=True)`` adds those lines. The carve module hands them
+to the media modules itself (``media.process_carved``, it runs after them); a carved image or
+video that was not cleared by screening is deleted and its line gets ``removed`` (the reason),
+which readers skip.
 """
 
 from __future__ import annotations

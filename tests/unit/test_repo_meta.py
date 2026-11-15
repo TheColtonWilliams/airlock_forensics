@@ -1,10 +1,10 @@
 """Repository meta files, CI workflows, release steps, and the live build configuration.
 
-Tasks 0.3, 0.4, 0.5, 0.7, 0.8, 0.9, 2A.8, 2B.1, 2B.2, 2B.8, 2B.16, 2B.19, 4G.1, 4G.2, 4G.17,
-5.6, 5.7, 6.3, 7.2. The workflows themselves run on GitHub; these tests check what can be
-checked here: their structure, the exact commands they run, the check names branch protection
-requires, the image split and SHA256SUMS steps (run for real on a small file), and the
-live-build configuration stage.
+Tasks 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.10, 1.13 (quickstart link), 2A.8, 2B.1,
+2B.2, 2B.8, 2B.16, 2B.19, 4G.1, 4G.2, 4G.17, 5.6, 5.7, 6.3, 7.2. The workflows themselves
+run on GitHub; these tests check what can be checked here: their structure, the exact
+commands they run, the check names branch protection requires, the image split and SHA256SUMS
+steps (run for real on a small file), and the live-build configuration stage.
 """
 
 from __future__ import annotations
@@ -88,6 +88,7 @@ DOCS_WITH_LINKS = [
     "SECURITY.md",
     "CONTRIBUTING.md",
     "docs/index.md",
+    "docs/quickstart.md",
     "docs/threat-model.md",
     "docs/release-process.md",
     "docs/hardware-checklist.md",
@@ -212,9 +213,51 @@ def test_decision_log_records_live_build_and_ci_licences() -> None:
         assert lic in log
 
 
+def test_scaffold_files() -> None:
+    """Tasks 0.2, 0.6, 0.10: licence, decision log seeded from Part 4, editor and git settings,
+    pre-commit hooks."""
+    assert read("LICENSE").lstrip().startswith("Apache License\n")
+    assert "Version 2.0, January 2004" in read("LICENSE")
+    assert "* text=auto eol=lf" in read(".gitattributes").splitlines()
+    editorconfig = read(".editorconfig")
+    assert "root = true" in editorconfig and "end_of_line = lf" in editorconfig
+    hooks = yaml.safe_load(read(".pre-commit-config.yaml"))
+    ids = {h["id"] for repo in hooks["repos"] for h in repo["hooks"]}
+    assert {"ansible-lint", "shellcheck", "yamllint"} <= ids
+    plan = read("docs/build-plan.md").splitlines()
+    part4 = plan[plan.index("## Decision log") : plan.index("## Rejected alternatives")]
+    log = read("docs/decision-log.md")
+    rows = [line for line in part4 if line.startswith("| 20")]
+    assert len(rows) >= 30
+    for line in rows:
+        decision = line.strip("|").split("|")[1].strip()
+        assert decision in log, decision
+
+
+REPO_URL = "https://github.com/TheColtonWilliams/airlock_forensics"
+
+
+def test_repository_url_and_quickstart_bitlocker_link() -> None:
+    """Task 0.1 (repository URL in the docs) and 1.13 (quickstart links the BitLocker and
+    Secure Boot warning)."""
+    for rel in ("README.md", "docs/quickstart.md"):
+        text = read(rel)
+        assert "<AIRLOCK repository URL>" not in text, rel
+        assert f"git clone {REPO_URL}.git airlock" in text, rel
+    quickstart = read("docs/quickstart.md")
+    anchor = "before-you-change-anything-on-a-pc-with-bitlocker"
+    assert f"(hardware-matrix.md#{anchor})" in quickstart
+    headings = [
+        re.sub(r"[^a-z0-9 -]", "", h[3:].strip().lower()).replace(" ", "-")
+        for h in read("docs/hardware-matrix.md").splitlines()
+        if h.startswith("## ")
+    ]
+    assert anchor in headings
+
+
 def test_repo_setup_and_issue_templates() -> None:
     setup = read("docs/dev/repo-setup.md")
-    assert "Repository name: **`airlock`**" in setup
+    assert "Repository name: **`airlock_forensics`**" in setup
     assert "**Public**" in setup
     assert "scripts/setup-branch-protection.sh" in setup
     tdir = REPO / ".github" / "ISSUE_TEMPLATE"

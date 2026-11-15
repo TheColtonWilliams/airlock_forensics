@@ -5,10 +5,13 @@ the flag on one whole drive and its partitions so it can hold case output. It re
 AIRLOCK drive itself, refuses partitions, and refuses unless the operator types the drive's
 name back (or passes ``--confirm NAME``). ``--yes`` never skips that confirmation.
 
-It writes a marker in ``/run/airlock/rw-allow/`` so a later udev event does not lock the drive
-again (``airlock-setro`` reads it), then runs ``blockdev --setrw`` and logs model, serial, and
-size. Surviving risk 1: the log records the change; it does not prevent a mistake. ``--lock``
-undoes it: the marker goes and ``blockdev --setro`` runs again.
+It writes a marker ``<run dir>/rw-allow/<kernel name of the disk>`` (``airlock_common.paths``
+``rw_allow_dir()``: ``AIRLOCK_RUN_DIR``, default ``/run/airlock``) so a later udev ``change``
+event, which re-runs ``airlock-setro`` from the harden_storage role, leaves the drive and its
+partitions writable. Then it runs ``blockdev --setrw`` and logs model, serial, and size. If the
+drive stays read-only the marker is removed again (fail closed). Surviving risk 1: the log
+records the change; it does not prevent a mistake. ``--lock`` undoes it: the marker goes first,
+then ``blockdev --setro`` runs again.
 """
 
 from __future__ import annotations
@@ -17,7 +20,7 @@ import argparse
 from pathlib import Path
 from typing import Any
 
-from airlock_common import devices, jsonio, proc, timeutil, ui
+from airlock_common import devices, jsonio, paths, proc, timeutil, ui
 from airlock_session.common import (
     CommandError,
     human_size,
@@ -25,7 +28,6 @@ from airlock_session.common import (
     open_session_log,
     readonly_flag,
     require_root,
-    run_dir,
     run_main,
 )
 
@@ -156,14 +158,20 @@ def run(args: argparse.Namespace) -> int:
             f"not unlocked: you typed {answer!r}, not {disk.name}. Nothing was changed."
         )
 
-    marker_dir = run_dir() / "rw-allow"
-    marker_dir.mkdir(parents=True, exist_ok=True)
-    jsonio.dump_json(marker_dir / disk.name, {"ts": timeutil.iso(), "tool": TOOL, **record})
+    marker = marker_path(disk)
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    # The marker goes first: a udev "change" event during --setrw must not re-lock the drive.
+    jsonio.dump_json(marker, {"ts": timeutil.iso(), "tool": TOOL, **record})
     members = disk.walk()
-    for d in members:
-        _blockdev("--setrw", d.path)
+    try:
+        for d in members:
+            _blockdev("--setrw", d.path)
+    except (proc.ToolError, OSError):
+        marker.unlink(missing_ok=True)
+        raise
     still_ro = [d.path for d in members if readonly_flag(d.name)]
     if still_ro:
+        marker.unlink(missing_ok=True)
         log(TOOL, "unlock_failed", still_readonly=still_ro, **record)
         raise CommandError(
             f"blockdev --setrw ran but {', '.join(still_ro)} is still read-only. Unplug the "
@@ -173,7 +181,7 @@ def run(args: argparse.Namespace) -> int:
         TOOL,
         "output_unlocked",
         confirmed_via=via,
-        marker=str(marker_dir / disk.name),
+        marker=str(marker),
         note="Logging is not enforcement (surviving risk 1).",
         **record,
     )
@@ -182,8 +190,16 @@ def run(args: argparse.Namespace) -> int:
     return 0
 
 
+def marker_path(disk: devices.BlockDevice) -> Path:
+    """``<run dir>/rw-allow/<kernel name>``, the file ``airlock-setro`` checks (e.g. ``sdc``)."""
+    name = disk.name
+    if not name or "/" in name or name in {".", ".."}:
+        raise CommandError(f"{disk.path} has no usable kernel name; nothing was changed.")
+    return paths.rw_allow_dir() / name
+
+
 def _lock(disk: devices.BlockDevice, record: dict[str, Any]) -> int:
-    (run_dir() / "rw-allow" / disk.name).unlink(missing_ok=True)
+    marker_path(disk).unlink(missing_ok=True)
     members = disk.walk()
     for d in members:
         _blockdev("--setro", d.path)

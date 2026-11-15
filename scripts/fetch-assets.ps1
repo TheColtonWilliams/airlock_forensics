@@ -43,6 +43,12 @@ Ask nothing. Without a key, MalwareBazaar is skipped.
 .EXAMPLE
 powershell -ExecutionPolicy Bypass -File .\fetch-assets.ps1 -Profile default -TargetVolume E:
 
+.EXAMPLE
+pwsh -File ./fetch-assets.ps1 --yes --manifest ./manifest.json --profile default --assets E:\ --cache C:\cache
+The same options in the spelling scripts/fetch-assets.sh and make-usb.sh use (--target-volume,
+--abuse-key-file, --case-prefix and --dry-run included). The abuse.ch key comes only from
+AIRLOCK_ABUSECH_KEY or --abuse-key-file; with --yes nothing is asked.
+
 .NOTES
 Exit status: 0 staged, 1 a file failed or the run was refused, 2 usage error.
 Test: tests/functional/test_fetch_assets.sh (runs this script under pwsh against a test server).
@@ -52,15 +58,18 @@ param(
     [Alias('Profile')]
     [string]$ProfileName = '',
     [string]$Manifest = '',
-    [Alias('Assets')]
+    [Alias('Assets', 'target-volume')]
     [string]$TargetVolume = '',
     [string]$Cache = '',
     [switch]$Refresh,
+    [Alias('abuse-key-file')]
     [string]$AbuseKeyFile = '',
     [switch]$Yes,
     [string]$Examiner = '',
     [string]$Agency = '',
+    [Alias('case-prefix')]
     [string]$CasePrefix = '',
+    [Alias('dry-run')]
     [switch]$DryRun
 )
 

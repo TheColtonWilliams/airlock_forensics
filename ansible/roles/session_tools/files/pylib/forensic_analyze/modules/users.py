@@ -115,6 +115,19 @@ def dissect_owners(ctx: ModuleContext, vol: Volume) -> tuple[dict[int, str], str
     return {}, extract.relative(ctx, path)
 
 
+def dissect_owner_table(
+    ctx: ModuleContext, vol: Volume
+) -> tuple[tuple[dict[int, str], str] | None, str]:
+    """``dissect_owners`` unless the inventory left Dissect's MFT pass out of this run (bounded
+    mode: running the same whole-target query here would cost the time it saved). Returns the
+    owners (or None) and, when None, why."""
+    limited = extract.dissect_mft_limit(ctx.run_dir)
+    if limited:
+        return None, f"left out (coverage limit set by the inventory): {limited.get('reason', '')}"
+    dis = dissect_owners(ctx, vol)
+    return dis, "" if dis is not None else "target-query is not installed"
+
+
 def mftecmd_sds(ctx: ModuleContext, vol: Volume) -> tuple[dict[int, str], str] | None:
     if not shutil.which("MFTECmd"):
         return None
@@ -204,13 +217,13 @@ def owner_rows(ctx: ModuleContext, vol: Volume, counts: Counter[str]) -> list[di
     # Cross-checks.
     missing: dict[str, str] = {}
     ours_by_entry = {t["entry"]: t["owner_sid"] for t in table}
-    dis = dissect_owners(ctx, vol)
+    dis, dis_missing = dissect_owner_table(ctx, vol)
     obs = [
         xval.Observation("airlock", (vol.index, e), {"owner": s}, f"{rel}#entry={e}")
         for e, s in ours_by_entry.items()
     ]
     if dis is None:
-        missing["dissect"] = "target-query is not installed"
+        missing["dissect"] = dis_missing
     else:
         dmap, dref = dis
         obs += [

@@ -3,7 +3,9 @@
 # Part 1 runs as root with a fake lsblk tree, fake sysfs, and a stub blockdev: refuses the
 # boot disk, partitions, unknown names, and any run without the typed confirmation; unlocks
 # with --confirm, writes the rw-allow marker airlock-setro honours, logs model/serial/size;
-# --lock undoes it. Part 2 uses a real loop device and the real blockdev.
+# --lock undoes it. The harden_storage role's airlock-setro is then run on the same fake sysfs
+# (as a udev "change" event would) to show it leaves the unlocked drive writable and locks it
+# again after --lock. Part 2 uses a real loop device and the real blockdev.
 # shellcheck source=tests/functional/lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
@@ -16,8 +18,20 @@ LOG="$AIRLOCK_SESSION_DIR/current.log"
 
 # ---------------------------------------------------------------- part 1: fakes
 FS="$TEST_TMP/sys"
+SETRO="$REPO_ROOT/ansible/roles/harden_storage/files/airlock-setro"
+# Laid out like the kernel's: partitions sit inside their disk's folder and carry a
+# "partition" file; class/block holds symlinks (airlock-setro finds the parent disk this way).
+mkdir -p "$FS/class/block"
+for disk in sda sdb; do
+  mkdir -p "$FS/devices/virtual/block/$disk"
+  ln -s "../../devices/virtual/block/$disk" "$FS/class/block/$disk"
+done
+for part in sda/sda1 sdb/sdb1 sdb/sdb2; do
+  mkdir -p "$FS/devices/virtual/block/$part"
+  echo 1 >"$FS/devices/virtual/block/$part/partition"
+  ln -s "../../devices/virtual/block/$part" "$FS/class/block/${part#*/}"
+done
 for name in sda sda1 sdb sdb1 sdb2; do
-  mkdir -p "$FS/class/block/$name"
   echo 1 >"$FS/class/block/$name/ro"
 done
 echo 0 >"$FS/class/block/sda/ro"
@@ -101,6 +115,27 @@ assert_contains "$last" '"size_bytes":500107862016' "size logged"
 assert_contains "$last" '"confirmed_via":"flag"' "confirmation route logged"
 assert_contains "$last" 'not enforcement' "log says logging is not enforcement"
 
+# A later udev "change" event re-runs the software read-only policy on the drive and its
+# partitions: with the marker in place, airlock-setro leaves them writable.
+# shellcheck disable=SC2317 # called through run
+setro() {
+  AIRLOCK_SYSFS="$FS" AIRLOCK_RUN_DIR="$AIRLOCK_RUN_DIR" AIRLOCK_SETRO_ROOT_DEV=sda1 \
+    AIRLOCK_DEV_DIR=/dev AIRLOCK_LOG_LIB="$REPO_ROOT/ansible/roles/session_tools/files/lib/airlock-log.sh" \
+    "$SETRO" "$@"
+}
+: >"$CALLS"
+for name in sdb sdb1 sdb2; do
+  run setro "$name"
+  assert_eq "$RC" 0 "airlock-setro $name after unlock: $OUT"
+done
+[[ ! -s "$CALLS" ]] || fail "airlock-setro re-locked the unlocked drive: $(cat "$CALLS")"
+for name in sdb sdb1 sdb2; do assert_eq "$(cat "$FS/class/block/$name/ro")" 0 "$name stays writable"; done
+grep -q '"decision":"unlocked"' "$LOG" ||
+  fail "airlock-setro logged the unlocked decision: $(tail -n 3 "$LOG")"
+run setro --check
+assert_eq "$RC" 0 "airlock-setro --check accepts the unlocked drive: $OUT"
+assert_contains "$OUT" "unlocked sdb1 disk=sdb" "check lists sdb1 as unlocked"
+
 # /dev/sdb typed in full also counts as the name.
 : >"$CALLS"
 run fake "$CMD" sdb --confirm /dev/sdb
@@ -113,6 +148,15 @@ assert_eq "$RC" 0 "lock: $OUT"
 for name in sdb sdb1 sdb2; do assert_eq "$(cat "$FS/class/block/$name/ro")" 1 "$name read-only again"; done
 assert_no_file "$AIRLOCK_RUN_DIR/rw-allow/sdb" "marker removed by --lock"
 grep -q '"event":"output_locked"' "$LOG" || fail "lock logged"
+
+# Without the marker the next udev event applies the policy again.
+for name in sdb sdb1 sdb2; do echo 0 >"$FS/class/block/$name/ro"; done
+: >"$CALLS"
+run setro sdb1
+assert_eq "$RC" 0 "airlock-setro sdb1 after --lock: $OUT"
+grep -qx -- "--setro /dev/sdb1" "$CALLS" || fail "airlock-setro did not lock sdb1 after --lock"
+assert_eq "$(cat "$FS/class/block/sdb1/ro")" 1 "sdb1 read-only after --lock and a udev event"
+for name in sdb sdb2; do echo 1 >"$FS/class/block/$name/ro"; done
 
 # Not root: refused before anything happens.
 if command -v setpriv >/dev/null 2>&1; then

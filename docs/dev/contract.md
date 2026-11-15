@@ -50,8 +50,11 @@ hyphenated packages, so these live at
 | Python packages | `/opt/airlock/lib/python` | (sys.path) |
 | Repo copy used by provisioning | `/opt/airlock/repo` (ansible/, profiles) | `AIRLOCK_REPO_DIR` |
 | Commands | `/usr/local/bin/<name>` | `PATH` |
-| Config | `/etc/airlock/` (`airlock.conf.json`, `screen-thresholds.json`, `manifest-signing.pub.pem`, `build-info.json`) | `AIRLOCK_ETC_DIR` |
-| State | `/var/lib/airlock/` (`provision/`, `applied-assets.json`, `manifest.json`) | `AIRLOCK_STATE_DIR` |
+| Config | `/etc/airlock/` (`airlock.conf.json`, `screen-thresholds.json`, `hashsets.json`, `manifest-signing.pub.pem`, `build-info.json`) | `AIRLOCK_ETC_DIR` |
+| Hash-set config | `/etc/airlock/hashsets.json` (written by the `tools_hashsets` role; read by `airlock_hashsets.config`: `clamav_dir`, `nsrl_dirs`, `yara_dir`, `ssdeep_dir`, limits) | `AIRLOCK_ETC_DIR` |
+| State | `/var/lib/airlock/` (`provision/`, `applied-assets.json`, `provision-manifest.json`, `manifest.json`) | `AIRLOCK_STATE_DIR` |
+| Runtime state (tmpfs) | `/run/airlock/` (`rw-allow/<disk kernel name>` markers, section 8a) | `AIRLOCK_RUN_DIR` |
+| Base-image helpers | `/opt/airlock/libexec/` (`airlock-firstboot`, `airlock-partition-layout`, `airlock-install-bootloader`, `airlock-check-boot-chain`; role `base`) | |
 | Session logs | `/var/log/forensic-session/` | `AIRLOCK_SESSION_DIR` |
 | ASSETS partition mount | `/srv/airlock/assets` (exFAT, `ro,noexec,nosuid,nodev`) | `AIRLOCK_ASSETS_DIR` |
 | OUTPUT partition mount | `/srv/airlock/output` (exFAT, `rw,noexec,nosuid,nodev,uid=analyst`) | `AIRLOCK_OUTPUT_DIR` |
@@ -59,7 +62,9 @@ hyphenated packages, so these live at
 | Operator account | `analyst` (locked password, autologin, passwordless sudo) | |
 
 `airlock_common.paths` is the only place that reads these env vars. Every Python
-module gets paths from there. Bash helpers use the same variable names with the
+module gets paths from there (`opt_dir()`, `repo_dir()`, `etc_dir()`, `state_dir()`,
+`session_dir()`, `assets_dir()`, `output_dir()`, `run_dir()`, `rw_allow_dir()` =
+`run_dir() / "rw-allow"`). Bash helpers use the same variable names with the
 same defaults.
 
 ## 3. Drive layout (GPT)
@@ -90,7 +95,17 @@ holds `/`; every partition on it is exempt from the read-only udev rule.
   Bash: `airlock_log <tool> <event> [key=value ...]` from
   `/opt/airlock/lib/airlock-log.sh` (source:
   `ansible/roles/session_tools/files/lib/airlock-log.sh`), which calls the
-  Python logger so escaping is correct.
+  Python logger so escaping is correct. The library runs
+  `python3 -m airlock_common.sessionlog` with `${AIRLOCK_PYLIB:-${AIRLOCK_OPT_DIR:-/opt/airlock}/lib/python}`
+  on `PYTHONPATH`.
+* Bash helpers find the library in this order (as `airlock-setro` does): `AIRLOCK_LOG_LIB`
+  (full path of `airlock-log.sh`; tests set it to the repo copy), then
+  `${AIRLOCK_PYLIB%/python}/airlock-log.sh` when `AIRLOCK_PYLIB` is set, then
+  `${AIRLOCK_OPT_DIR:-/opt/airlock}/lib/airlock-log.sh`. The first readable one wins. On the
+  image the second and third are the same file. In the repository layout the second does not
+  resolve (`AIRLOCK_PYLIB` is `.../files/pylib`, the library is `.../files/lib/airlock-log.sh`),
+  so tests set `AIRLOCK_LOG_LIB`. If none is readable (early boot), the helper writes to the
+  system journal (`logger`) instead.
 
 ## 5. Pins (`ansible/group_vars/all/pins.yml`)
 
@@ -234,24 +249,60 @@ makes a module skip on resume.
   ```python
   #!/usr/bin/python3
   import os, sys
+
   sys.path.insert(0, os.environ.get("AIRLOCK_PYLIB", "/opt/airlock/lib/python"))
   from forensic_analyze.cli import main
+
   raise SystemExit(main())
   ```
-  Bash commands source `${AIRLOCK_PYLIB%/python}/airlock-log.sh` the same way
-  (default `/opt/airlock/lib/airlock-log.sh`). Tests set `AIRLOCK_PYLIB` to the repo's `pylib`.
+  Bash commands find `airlock-log.sh` in the order given in section 4 (`AIRLOCK_LOG_LIB`, then
+  `${AIRLOCK_PYLIB%/python}/airlock-log.sh`, then `${AIRLOCK_OPT_DIR:-/opt/airlock}/lib/airlock-log.sh`).
+  Tests set `AIRLOCK_PYLIB` to the repo's `pylib` and `AIRLOCK_LOG_LIB` to the repo's
+  `files/lib/airlock-log.sh`, because `${AIRLOCK_PYLIB%/python}` does not reach it in the
+  repository layout.
 * **Installation**: the `session_tools` role copies *everything* in `files/bin/` to
-  `/usr/local/bin/` (mode 0755) and `files/pylib/` to `/opt/airlock/lib/python/`.
-  Other packages only drop files there; they do not edit the role.
+  `/usr/local/bin/` (mode 0755), `files/pylib/` to `/opt/airlock/lib/python/` (0644),
+  everything in `files/etc/` to `/etc/airlock/` (0644, root-owned; for example
+  `screen-thresholds.json`), and `files/lib/airlock-log.sh` to `/opt/airlock/lib/` (0644).
+  Other packages only drop files there; they do not edit the role. Desktop launchers in
+  `files/desktop/` (`airlock-session-start.desktop`, `airlock-forensic-analyze.desktop`) go to
+  `/usr/share/applications/` (0644) from a list in `tasks/desktop_launchers.yml`; a new launcher
+  is added to that list. `airlock-session-start.desktop` is also the analyst's login autostart
+  entry.
 * **Devices**: `airlock_common.devices` (`lsblk()`, `boot_disk()`,
   `attached_disks()`, `is_readonly()`; `AIRLOCK_LSBLK_JSON` fixture override).
+* **Read-only policy and output unlock**: `airlock-setro` (harden_storage role, run by the
+  udev rule with the kernel name, and `--all` / `--check`) sets every `sd*`, `nvme*`,
+  `mmcblk*`, `vd*` device read-only except the disk holding `/`, and leaves alone a device
+  whose own kernel name or whose whole disk's kernel name has a file in
+  `$AIRLOCK_RUN_DIR/rw-allow/` (default `/run/airlock/rw-allow/`). `evidence-unlock-output`
+  creates `rw-allow/<kernel name of the whole disk>` (for example `sdc`) before
+  `blockdev --setrw`, removes it again if the drive stays read-only, and `--lock` removes it
+  before `blockdev --setro`. The markers are in tmpfs, so a reboot re-locks every drive.
+  Python reaches the folder through `airlock_common.paths.rw_allow_dir()`.
+* **Evidence mount**: `evidence-mount` attaches one kernel read-only loop device per filesystem
+  (`losetup --read-only --find --show`, plus `--offset`/`--sizelimit` for a partition; offsets from `sfdisk -J`,
+  filesystem type from `blkid -p`), never `losetup -r -P` (partition scanning depends on udev
+  and the kernel; decision log). The loop device exposes only the filesystem being mounted.
 * **Assets** (`airlock_common/assets.py`, owned by the assets package):
   `load_manifest() -> dict` (baked, or a newer signed one from ASSETS),
+  `load_manifest_info() -> ManifestInfo` (`manifest`, `source` `"baked"|"assets"`, `path`,
+  `sha256`, `release`, `notes: list[tuple[str, str]]`; raises `AssetError` when there is no
+  trusted manifest),
   `verify_signature(manifest_path, sig_path, pubkey_path) -> bool`,
-  `verify_staged(*, deep: bool = True) -> AssetReport` where `AssetReport` has
-  `ok: bool`, `checked: list[str]`, `problems: list[tuple[str, str]]` (asset id,
-  reason), `disabled_features: list[str]`, and `to_dict()`.
-  `asset_path(asset_id) -> Path | None` returns the verified on-ASSETS path of a staged file.
+  `verify_staged(*, deep: bool = True, for_apply: bool = False) -> AssetReport` where
+  `AssetReport` has `ok: bool`, `checked: list[str]`, `problems: list[tuple[str, str]]` (asset
+  id, reason), `disabled_features: list[str]`, `deep`, `profile`, `features`,
+  `manifest_source`, `manifest_release`, `manifest_sha256`, `verified` (asset id to the record
+  that was checked), `to_dict()` and `summary()`. `deep=False` checks presence and size only.
+  Daily-changing files (`verify: vendor_signature | trusted_at_staging`) are checked against the
+  hash recorded at the last apply in `/var/lib/airlock/applied-assets.json`; `for_apply=True`
+  (provisioning and import) checks them against the hash in `profile.json` instead.
+  `asset_path(asset_id) -> Path | None` returns the on-ASSETS path of an applied file (cheap
+  size check against `applied-assets.json`).
+  `log_report(report, tool) -> None` writes one `assets_verified` session-log event with every
+  checked file's SHA-256. The variables provisioning passes to the roles are listed in
+  `docs/assets.md`.
 * **Findings** (`forensic_analyze/findings.py`, owned by the findings package):
   `FindingsWriter(part_path, *, run_id, evidence_id, evidence_sha256, module)` with
   `.emit(row: dict) -> None` (validates with `validate_row`, raises `SchemaError`),
@@ -290,7 +341,12 @@ makes a module skip on resume.
   CLI commands `ai-probe`, `evidence-screen`, `evidence-describe` wrap them.
 * **Hash triage** (`pylib/airlock_hashsets/`, owned by the hash-set package):
   `triage.triage_paths(paths, out_csv) -> list[TriageResult]`, wrapped by
-  `evidence-triage-hash`.
+  `evidence-triage-hash`. Applied sets are found through `/etc/airlock/hashsets.json`
+  (`airlock_hashsets.config`). In `findings.jsonl` the `malware` module writes hits
+  (`artifact_type` `hash_hit`, `clamav_hit`, `yara_hit`) with category `malware`, and
+  `nsrl_known_good` (known software, not "safe"), `hashset_status` (one per applied set) and
+  `hash_triage_error` (a file that could not be checked) with category `hash`. The
+  `v_hash_hits` view holds both categories.
 * **Report** (`pylib/evidence_report/`, owned by the report package):
   `render.build(run_dir, *, use_model: bool) -> tuple[Path, Path]` (html, md),
   wrapped by `evidence-report RUN_DIR`. The runner calls it with no other flags before
@@ -327,6 +383,20 @@ makes a module skip on resume.
   a tool, a VM).
 * Tests that need the booted image live in `tests/vm/` and are run inside the
   guest by `tests/run-qemu-tests.sh` (goss files from `tests/goss/` too).
+  Interface inside the guest:
+  * Each `tests/vm/*.sh` runs as root and exits 0 pass, 77 skip (last output line says why),
+    anything else fail. It gets `AIRLOCK_TEST_DIR` (the copied test folder),
+    `AIRLOCK_TEST_FIRMWARE` (`uefi`, `uefi-sb` or `bios`), `AIRLOCK_TEST_NIC` (`1` when a
+    restricted network card is attached, else `0`), `AIRLOCK_TEST_DISK_EXT4`,
+    `AIRLOCK_TEST_DISK_SWAP`, `AIRLOCK_TEST_DISK_SIG`, `AIRLOCK_TEST_DISK_NTFS`
+    (`/dev/disk/by-id/virtio-airlock-<ext4|swap|sig|ntfs>`, or empty when that disk is not
+    attached) and `AIRLOCK_SIGDISK_SHA256` (the host's SHA-256 of the LVM/mdraid/swap
+    signature disk before boot).
+  * goss runs with `--vars-inline` `{"disks": {"ext4", "ntfs", "sig", "swap"}, "firmware",
+    "nic", "provision": false}`. `forensic-provision`'s self-test runs the same files with
+    `"provision": true` and empty `disks`, so checks that need test disks or a running desktop
+    are wrapped in `{{ if not (index .Vars "provision") }}`.
+  * Base-image helpers the tests may call are in `/opt/airlock/libexec` (section 2).
 * No sexual, violent, or otherwise sensitive media anywhere in the repo.
   Image fixtures are generated shapes and text.
 

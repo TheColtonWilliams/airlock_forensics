@@ -108,11 +108,11 @@ With [cosign](https://docs.sigstore.dev/) installed:
 
 ```
 cosign verify-blob SHA256SUMS --bundle SHA256SUMS.sigstore.json \
-  --certificate-identity "https://github.com/<owner>/airlock/.github/workflows/release.yml@refs/tags/<tag>" \
+  --certificate-identity "https://github.com/TheColtonWilliams/airlock_forensics/.github/workflows/release.yml@refs/tags/<tag>" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
-Replace `<owner>` and `<tag>` with the repository owner and the release tag. `Verified OK` means
+Replace `<tag>` with the release tag. `Verified OK` means
 `SHA256SUMS` was signed by this repository's release workflow for that tag.
 
 ### 4. Check the asset manifest (the drive does this itself)

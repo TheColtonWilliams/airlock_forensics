@@ -7,7 +7,12 @@ id). Each profile in profiles.yml lists the ``stage: assets`` pins it needs:
 * a pin tagged with the profile's own name, or with ``all``;
 * a pin tagged with a feature the profile turns on (``clamav``, ``eztools``, ...);
 * a pin tagged ``ai_tierN`` when the profile's ``ai_tiers`` holds ``tierN``; a model named
-  in ai_models.yml under ``tierN`` gets the ``ai_tierN`` tag automatically.
+  in ai_models.yml under ``tierN`` gets the ``ai_tierN`` tag automatically;
+* the tools_ai role's own pins get their feature tag automatically (``--ai-role``, default
+  ansible/roles/tools_ai/defaults/main.yml): the classifier wheels and SigLIP files get
+  ``classifiers``, the speech wheels and the faster-whisper model files get ``whisper``. So a
+  custom profile file (``fetch-assets --profile FILE``) that turns a feature on stages the
+  wheels and models it needs, whatever the profile is called.
 
 The output is deterministic: the same inputs and release string give the same bytes.
 ``--check`` compares with the file on disk and fails when it is out of date.
@@ -17,6 +22,7 @@ Host-side tool: needs PyYAML (Ubuntu package python3-yaml).
 Usage:
   scripts/gen-manifest.py [--out FILE | --stdout] [--release STR] [--check]
                           [--pins FILE] [--profiles FILE] [--ai-models FILE] [--main FILE]
+                          [--ai-role FILE]
 """
 
 from __future__ import annotations
@@ -34,6 +40,7 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 GROUP_VARS = REPO_ROOT / "ansible" / "group_vars" / "all"
+AI_ROLE_DEFAULTS = REPO_ROOT / "ansible" / "roles" / "tools_ai" / "defaults" / "main.yml"
 FILE_KEYS: tuple[str, ...] = (
     "id",
     "url",
@@ -72,10 +79,44 @@ def active_tags(name: str, features: dict[str, Any]) -> set[str]:
     return tags
 
 
-def file_tags(pid: str, pin: dict[str, Any], model_tiers: dict[str, set[str]]) -> list[str]:
+def file_tags(
+    pid: str,
+    pin: dict[str, Any],
+    model_tiers: dict[str, set[str]],
+    feature_pins: dict[str, set[str]] | None = None,
+) -> list[str]:
     tags = set(pin.get("profiles") or [])
     tags |= {f"ai_{t}" for t in model_tiers.get(pid, set())}
+    tags |= (feature_pins or {}).get(pid, set())
     return sorted(tags)
+
+
+def feature_pins_of(role_doc: Any, pins: dict[str, Any]) -> dict[str, set[str]]:
+    """Feature tags for the pins the tools_ai role installs: ``classifiers`` for the classifier
+    venv's wheels and the SigLIP files, ``whisper`` for the speech venv's wheels and every file
+    under the faster-whisper model folder. Ids not in ``pins`` are ignored."""
+    out: dict[str, set[str]] = {}
+    if not isinstance(role_doc, dict):
+        return out
+
+    def add(pid: Any, tag: str) -> None:
+        if isinstance(pid, str) and pid in pins:
+            out.setdefault(pid, set()).add(tag)
+
+    for pid in role_doc.get("tools_ai_triage_wheel_pins") or []:
+        add(pid, "classifiers")
+    siglip = role_doc.get("tools_ai_siglip_pins")
+    for pid in siglip.values() if isinstance(siglip, dict) else []:
+        add(pid, "classifiers")
+    for pid in role_doc.get("tools_ai_whisper_wheel_pins") or []:
+        add(pid, "whisper")
+    add(role_doc.get("tools_ai_whisper_model_pin"), "whisper")
+    model_dir = str(role_doc.get("tools_ai_whisper_model_dir_target") or "").strip("/")
+    if model_dir:
+        for pid, pin in pins.items():
+            if str((pin or {}).get("target") or "").startswith(model_dir + "/"):
+                add(pid, "whisper")
+    return out
 
 
 def model_tiers_of(ai_doc: Any) -> dict[str, set[str]]:
@@ -89,16 +130,19 @@ def model_tiers_of(ai_doc: Any) -> dict[str, set[str]]:
     return out
 
 
-def build_manifest(pins_doc: Any, profiles_doc: Any, ai_doc: Any, release: str) -> dict[str, Any]:
+def build_manifest(
+    pins_doc: Any, profiles_doc: Any, ai_doc: Any, release: str, role_doc: Any = None
+) -> dict[str, Any]:
     pins: dict[str, Any] = pins_doc["pins"]
     profiles: dict[str, Any] = profiles_doc["profiles"]
     tiers = model_tiers_of(ai_doc)
+    features = feature_pins_of(role_doc, pins)
     files: list[dict[str, Any]] = []
     for pid in sorted(pins):
         pin = pins[pid]
         entry = {k: pin.get(k) for k in FILE_KEYS if k != "id"}
         entry["id"] = pid
-        entry["profiles"] = file_tags(pid, pin, tiers)
+        entry["profiles"] = file_tags(pid, pin, tiers, features)
         files.append(entry)
     out_profiles: dict[str, Any] = {}
     for name in sorted(profiles):
@@ -161,6 +205,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--profiles", type=Path, default=GROUP_VARS / "profiles.yml")
     ap.add_argument("--ai-models", type=Path, default=GROUP_VARS / "ai_models.yml")
     ap.add_argument("--main", type=Path, default=GROUP_VARS / "main.yml")
+    ap.add_argument(
+        "--ai-role",
+        type=Path,
+        default=AI_ROLE_DEFAULTS,
+        help="tools_ai role defaults: feature tags for its wheel and model pins",
+    )
     ap.add_argument("--out", type=Path, default=REPO_ROOT / "assets" / "manifest.json")
     ap.add_argument("--stdout", action="store_true", help="print instead of writing --out")
     ap.add_argument("--release", help="release string (default: git describe)")
@@ -170,6 +220,7 @@ def main(argv: list[str] | None = None) -> int:
     pins_doc = CP.load_yaml(args.pins)
     profiles_doc = CP.load_yaml(args.profiles)
     ai_doc = CP.load_yaml(args.ai_models) if args.ai_models.exists() else None
+    role_doc = CP.load_yaml(args.ai_role) if args.ai_role.exists() else None
     result = CP.analyse(pins_doc, profiles_doc, ai_doc)
     if result["errors"]:
         for err in result["errors"]:
@@ -193,7 +244,7 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         release = release or str(existing.get("release", ""))
     release = release or git_release(args.main)
-    text = render(build_manifest(pins_doc, profiles_doc, ai_doc, release))
+    text = render(build_manifest(pins_doc, profiles_doc, ai_doc, release, role_doc))
 
     if args.check:
         if args.out.read_text(encoding="utf-8") != text:

@@ -6,7 +6,8 @@ it privately so it can be fixed before it is public.
 
 ## How to report
 
-Use **GitHub private vulnerability reporting**: open the repository's **Security** tab and choose
+Use **GitHub private vulnerability reporting**: open the repository's **Security** tab
+(<https://github.com/TheColtonWilliams/airlock_forensics/security>) and choose
 **Report a vulnerability**. Only the maintainers see the report. There is no personal email
 address for reports.
 

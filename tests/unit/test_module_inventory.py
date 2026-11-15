@@ -247,3 +247,92 @@ def test_vss_header_bytes() -> None:
     block[within : within + len(head)] = head
     assert inventory.parse_vss_header(bytes(block), within) == (True, 0x1E0000)
     assert inventory.parse_vss_header(bytes(4096), within) == (False, None)
+
+
+# ---------------------------------------------------------------------------------------------
+# Bounded mode: the Dissect cross-check has a file-count limit and a time budget (scale).
+# ---------------------------------------------------------------------------------------------
+
+
+def test_dissect_plan_and_settings(airlock_env: Path) -> None:
+    lim = inventory.DissectLimits(max_files=100, budget_s=3600)
+    assert inventory.dissect_plan(100, lim) == ""
+    assert "more than the limit of 100" in inventory.dissect_plan(101, lim)
+    # 300 000 files at 57 ms is about 4.75 h: over the default limit and budget.
+    assert "limit of 50000" in inventory.dissect_plan(300_000, inventory.DissectLimits())
+    budget_only = inventory.DissectLimits(max_files=0, budget_s=60)
+    assert "time budget of 1 min" in inventory.dissect_plan(5000, budget_only)
+    assert inventory.dissect_plan(5000, inventory.DissectLimits(max_files=0, budget_s=0)) == ""
+    # Defaults, then airlock.conf.json, then the run options.
+    assert inventory.dissect_limits({}) == inventory.DissectLimits()
+    conf = airlock_env / "etc" / "airlock.conf.json"
+    conf.write_text(json.dumps({"inventory": {"dissect_max_files": 7}}), encoding="utf-8")
+    got = inventory.dissect_limits({})
+    assert (got.max_files, got.budget_s, got.source) == (7, 3600.0, str(conf))
+    got = inventory.dissect_limits({"dissect_budget_s": 5})
+    assert (got.max_files, got.budget_s, got.source) == (7, 5.0, "run options")
+    assert inventory.dissect_limits({"dissect_max_files": "x"}).max_files == 7  # bad value ignored
+
+
+def test_dissect_crosscheck_skipped_above_limit(
+    image: tuple[Path, dict], tmp_path: Path, airlock_env: Path
+) -> None:
+    """A small threshold leaves Dissect out; TSK stays complete; the limit is stated."""
+    from evidence_report.render import coverage_limits  # noqa: PLC0415
+
+    img, truth = image
+    run = tmp_path / "run"
+    events: list[dict[str, Any]] = []
+    ctx, rows = make_ctx(img, run, "inventory", options={"preset": "quick", "dissect_max_files": 2})
+    object.__setattr__(ctx, "log", lambda event, **f: events.append({"event": event, **f}))
+    res = inventory.MODULE.run(ctx)
+    assert res.status == "ok", res.reason
+    entries = [r for r in rows if r["artifact_type"] == "file_entry"]
+    assert {r["parser"] for r in entries} <= {"tsk", "mftecmd"}  # no Dissect rows
+    for path in truth["deleted"] + truth["live"]:
+        assert any(r.get("path") == path and r["parser"] == "tsk" for r in entries), path
+    assert not (run / "modules" / "inventory" / "dissect-mft.jsonl").exists()
+    limit = [r for r in rows if r["artifact_type"] == "coverage_limit"]
+    assert len(limit) == 1 and limit[0]["category"] == "xval"
+    assert (
+        "Coverage limit" in limit[0]["message"]
+        and "more than the limit of 2" in (limit[0]["message"])
+    )
+    summary = next(r for r in rows if r["artifact_type"] == "xval_summary")
+    assert "dissect: left out (coverage limit)" in summary["text"]
+    assert res.counts["dissect_crosscheck_limited"] == 1
+    assert res.counts["dissect_crosscheck_files"] > 2
+    marker = run / "modules" / "inventory" / "dissect-mft.jsonl.limited"
+    assert json.loads(marker.read_text(encoding="utf-8"))["max_files"] == 2
+    ev = [e for e in events if e["event"] == "coverage_limit"]
+    assert len(ev) == 1 and ev[0]["parser"] == "dissect"
+    # What the runner puts in run.json reaches the report's limitations section.
+    lines = coverage_limits({"module_events": {"inventory": [{"ts": "x", **ev[0]}]}})
+    assert lines and lines[0].startswith("inventory, inventory cross-check: ")
+    # The users module does not run the same whole-target query either.
+    from forensic_analyze import extract  # noqa: PLC0415
+    from forensic_analyze.modules import users  # noqa: PLC0415
+
+    uctx, _ = make_ctx(img, run, "users")
+    assert extract.dissect_mft_limit(run)["files"] == res.counts["dissect_crosscheck_files"]
+    dis, why = users.dissect_owner_table(uctx, uctx.target.volumes[0])
+    assert dis is None and why.startswith("left out (coverage limit")
+
+
+def test_dissect_crosscheck_stopped_at_budget(
+    image: tuple[Path, dict], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    img, truth = image
+    stubs = tmp_path / "stubs"
+    stub_tool(stubs, "target-query", "import time\nprint('{}')\ntime.sleep(30)\n")
+    monkeypatch.setenv("PATH", f"{stubs}:/usr/bin:/bin")
+    opts = {"preset": "quick", "dissect_max_files": 0, "dissect_budget_s": 1}
+    res, rows = run_inventory(img, tmp_path / "run", options=opts)
+    assert res.status == "ok", res.reason
+    limit = [r for r in rows if r["artifact_type"] == "coverage_limit"]
+    assert len(limit) == 1 and "time budget" in limit[0]["message"]
+    assert not (tmp_path / "run" / "modules" / "inventory" / "dissect-mft.jsonl").exists()
+    entries = [r for r in rows if r["artifact_type"] == "file_entry"]
+    for path in truth["deleted"]:
+        assert any(r.get("path") == path and r["parser"] == "tsk" for r in entries), path
+    assert not [r for r in rows if r["artifact_type"] == "parser_error"]

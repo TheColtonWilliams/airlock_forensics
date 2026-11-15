@@ -448,12 +448,13 @@ def owner_resolver(ctx: ModuleContext, volume: Volume) -> Callable[[MftRecord], 
 
 
 def dissect_query(
-    ctx: ModuleContext, functions: list[str], dest: Path
+    ctx: ModuleContext, functions: list[str], dest: Path, *, timeout: float | None = None
 ) -> subprocess.CompletedProcess[str] | None:
     """Run Dissect's ``target-query -j`` over the whole target into ``dest`` (JSON lines).
 
     Returns None when ``target-query`` is not installed. An earlier complete output (a
     ``<dest>.done`` marker beside it) is reused, so several modules can share one run.
+    ``timeout`` (seconds) bounds the call; past it ``ctx.tool`` raises ``ToolError``.
     """
     done = dest.with_name(dest.name + ".done")
     if dest.exists() and done.exists():
@@ -462,10 +463,28 @@ def dissect_query(
         return None
     dest.parent.mkdir(parents=True, exist_ok=True)
     argv = ["target-query", "--no-cache", "-q", *functions, "-j", str(ctx.target.path)]
-    cp = ctx.tool(argv, stdout_path=dest)
+    cp = ctx.tool(argv, stdout_path=dest, timeout=timeout)
     if cp.returncode == 0:
         done.write_text("ok\n", encoding="utf-8")
     return cp
+
+
+DISSECT_MFT = "dissect-mft.jsonl"
+DISSECT_LIMIT_SUFFIX = ".limited"
+
+
+def dissect_mft_limit(run_dir: Path) -> dict[str, Any] | None:
+    """The inventory's record of leaving Dissect's MFT pass out of this run (a coverage limit:
+    too many files for the time it takes), or None. Other modules that would run the same
+    whole-target query (``users``) read it so they do not spend the time the inventory saved."""
+    path = run_dir / "modules" / "inventory" / (DISSECT_MFT + DISSECT_LIMIT_SUFFIX)
+    if not path.is_file():
+        return None
+    try:
+        data = jsonio.load_json(path)
+    except (OSError, ValueError):
+        return {"reason": "the inventory left Dissect's MFT pass out of this run"}
+    return data if isinstance(data, dict) else {"reason": str(data)}
 
 
 def tool_dir(ctx: ModuleContext, path: Path) -> Path:

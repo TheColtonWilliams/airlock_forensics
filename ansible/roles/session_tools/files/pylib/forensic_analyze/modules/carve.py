@@ -3,8 +3,9 @@
 For each volume with a known filesystem:
 
 1. ``blkls`` copies the unallocated clusters into ``modules/carve/export/unalloc-v<N>.blkls``
-   (after checking the output drive has room: for NTFS the exact free space comes from
-   ``$Bitmap``, otherwise the volume size is assumed).
+   after checking the output drive has room (for NTFS the exact free space comes from
+   ``$Bitmap``, otherwise the volume size is assumed). The copy is deleted when carving of
+   that volume ends; its SHA-256 is kept in the ``unallocated_copy`` row.
 2. PhotoRec carves images, video, audio, and documents from that copy into
    ``modules/carve/carved/v<N>/`` (``/cmd`` with the whole copy, paranoid mode, the file
    families below only).
@@ -13,9 +14,17 @@ For each volume with a known filesystem:
 
 Carved files are listed in ``modules/carve/carved.jsonl`` in the inventory index format
 (``volume_index`` -1, ``inode`` "", ``carved_path`` relative to the run folder,
-``source_volume``, ``offset_bytes`` in the unallocated copy) so the image, video, and audio
-modules pick them up with ``inventory_index.iter_files(run_dir, include_carved=True)``. Both
-``export/`` and ``carved/`` are removed by the end-of-run purge (4C.19).
+``source_volume``, ``offset_bytes`` in the unallocated copy).
+
+4. Because this module runs after the media modules, it then hands its carved files to them
+   (``media.process_carved``): images and videos are screened in place, and any carved image
+   or video that is flagged, cannot be screened, or is of a type the screening step does not
+   read is deleted at once (plan 4B.17), with a ``carved_media_removed`` row that keeps its
+   hashes; its ``carved.jsonl`` line is marked ``removed``. Cleared images and videos, audio,
+   and documents get the same metadata, transcript, and description rows as live files.
+   Screening runs whatever the preset's module list: it is a safety step, not an analysis.
+
+Both ``export/`` and ``carved/`` are removed by the end-of-run purge (4C.19).
 """
 
 from __future__ import annotations
@@ -27,9 +36,9 @@ from pathlib import Path
 from typing import Any
 
 from airlock_common import hashing
-from forensic_analyze import extract
+from forensic_analyze import extract, media
 from forensic_analyze.api import Module, ModuleContext, ModuleResult, Volume, sorted_rows
-from forensic_analyze.inventory_index import carved_path, write_index
+from forensic_analyze.inventory_index import carved_path, iter_files, write_index
 
 VERSION = "carve 1"
 GIB = 1024**3
@@ -148,7 +157,10 @@ def carve_volume(
     rows.append(
         _row(
             artifact_type="unallocated_copy",
-            message=f"Volume {vol.index}: unallocated space copied for carving ({size} bytes).",
+            message=(
+                f"Volume {vol.index}: unallocated space copied for carving ({size} bytes); "
+                "the copy is deleted when carving ends."
+            ),
             source_tool="sleuthkit",
             tool_version=ctx.tool_version("blkls"),
             parser="tsk.blkls",
@@ -159,17 +171,24 @@ def carve_volume(
         )
     )
     counts["unallocated_bytes"] += size
-    if size == 0:
+    try:
+        if size == 0:
+            return rows
+        if shutil.which("photorec"):
+            rows.extend(_photorec(ctx, vol, unalloc, counts, index_lines))
+        else:
+            rows.append(_missing("photorec", vol, "PhotoRec (testdisk package) is not installed"))
+        if shutil.which("bulk_extractor"):
+            rows.extend(_bulk(ctx, vol, unalloc, counts))
+        else:
+            rows.append(_missing("bulk_extractor", vol, "bulk_extractor is not installed"))
         return rows
-    if shutil.which("photorec"):
-        rows.extend(_photorec(ctx, vol, unalloc, counts, index_lines))
-    else:
-        rows.append(_missing("photorec", vol, "PhotoRec (testdisk package) is not installed"))
-    if shutil.which("bulk_extractor"):
-        rows.extend(_bulk(ctx, vol, unalloc, counts))
-    else:
-        rows.append(_missing("bulk_extractor", vol, "bulk_extractor is not installed"))
-    return rows
+    finally:
+        # The raw copy of unallocated space can hold anything, including media that screening
+        # would remove. It is deleted as soon as carving ends; its SHA-256 stays in the row
+        # above, and blkls on the evidence recreates it byte for byte.
+        unalloc.unlink(missing_ok=True)
+        ctx.log("unallocated_copy_deleted", volume=vol.index, sha256=digest, size_bytes=size)
 
 
 def _missing(tool: str, vol: Volume, why: str) -> dict[str, Any]:
@@ -303,6 +322,23 @@ def _bulk(ctx: ModuleContext, vol: Volume, unalloc: Path, counts: Counter[str]) 
     return rows
 
 
+def screen_carved(ctx: ModuleContext, counts: Counter[str]) -> dict[str, str]:
+    """Run the media modules over the carved files; returns ``{carved_path: why}`` removed."""
+    from forensic_analyze.modules import audio, documents, images, video  # noqa: PLC0415
+
+    if not any(True for _ in iter_files(ctx.run_dir, include_carved=True, volume_index=-1)):
+        return {}
+    for k, v in media.process_carved(
+        ctx, [images.MODULE, video.MODULE, audio.MODULE, documents.MODULE]
+    ).items():
+        counts[f"media_{k}"] += v
+    return {
+        str(e.get("carved_path")): str(e["removed"])
+        for e in iter_files(ctx.run_dir, include_carved=True, volume_index=-1)
+        if e.get("removed")
+    }
+
+
 class Carve(Module):
     name = "carve"
     title = "Carving unallocated space"
@@ -334,6 +370,17 @@ class Carve(Module):
                     )
                 )
         write_index(carved_path(ctx.run_dir), index_lines)
+        try:
+            removed = screen_carved(ctx, counts)
+        except media.Escalated as exc:
+            return ModuleResult("failed", str(exc), dict(sorted(counts.items())))
+        for r in rows:
+            rel = str(r.get("path", ""))[1:]
+            if r.get("artifact_type") == "carved_file" and rel in removed:
+                r["message"] += (
+                    f" Deleted after screening ({removed[rel]}); see the carved_media_removed row."
+                )
+                r["source_record"] = None
         ordered = sorted_rows(
             [{k: v for k, v in r.items() if v is not None} for r in rows],
             "inode_ref",

@@ -17,6 +17,8 @@ bash_files() {
   git ls-files -co --exclude-standard -z \
     | while IFS= read -r -d '' f; do
         [[ -f "$f" ]] || continue
+        # Jinja templates (*.j2) are not valid bash until Ansible renders them.
+        [[ "$f" == *.j2 ]] && continue
         if head -n1 -- "$f" 2>/dev/null | grep -Eq '^#!(/usr/bin/env bash|/bin/bash)'; then
           printf '%s\0' "$f"
         fi

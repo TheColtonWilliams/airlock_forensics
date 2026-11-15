@@ -15,9 +15,11 @@ There are two ways to make an AIRLOCK drive. Both end with the same drive.
 * **BitLocker and Secure Boot:** if the PC you will boot is protected by BitLocker, changing
   Secure Boot or other firmware settings can start BitLocker recovery on its next normal boot.
   Have its BitLocker recovery key before you change anything. Use the one-time boot menu (the
-  key shown on screen at power-on) rather than changing the boot order. AIRLOCK is built to
-  boot with Secure Boot on, but a PC that trusts only the newer 2023 Microsoft certificate may
-  refuse it; see [hardware-matrix.md](hardware-matrix.md).
+  key shown on screen at power-on) rather than changing the boot order. Read
+  [the BitLocker and Secure Boot warning](hardware-matrix.md#before-you-change-anything-on-a-pc-with-bitlocker)
+  before you touch the firmware settings. AIRLOCK is built to boot with Secure Boot on, but a
+  PC that trusts only the newer 2023 Microsoft certificate may refuse it; see
+  [hardware-matrix.md](hardware-matrix.md).
 * **Write blocker:** connect every evidence drive through a hardware write blocker, ideally one
   with a published NIST CFTT test report. AIRLOCK's software read-only policy is a second layer
   only. It is not a write blocker.
@@ -30,7 +32,7 @@ You need: Linux on an x86_64 computer, virtualisation (KVM) turned on, about 80 
 space, an internet connection, and a few hours.
 
 ```
-git clone <AIRLOCK repository URL> airlock
+git clone https://github.com/TheColtonWilliams/airlock_forensics.git airlock
 cd airlock
 sudo ./make-usb.sh
 ```
@@ -67,7 +69,8 @@ How the drive is checked, and what `scripts/flash.sh` refuses: [flashing.md](fla
 
 ### 1. Download
 
-From the project's release page, download into one folder:
+From the project's [release page](https://github.com/TheColtonWilliams/airlock_forensics/releases),
+download into one folder:
 
 * `airlock-<version>.raw.zst` (the base image)
 * `SHA256SUMS`

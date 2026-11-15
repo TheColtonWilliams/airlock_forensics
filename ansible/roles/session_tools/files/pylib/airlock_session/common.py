@@ -1,9 +1,9 @@
 """Shared pieces of the session helpers: errors, root checks, config, target description.
 
-Paths come from :mod:`airlock_common.paths`. Three test-only overrides are read here because
-they name kernel interfaces, not AIRLOCK folders: ``AIRLOCK_SYSFS`` (default ``/sys``),
-``AIRLOCK_PROCFS`` (default ``/proc``), and ``AIRLOCK_RUN_DIR`` (default ``/run/airlock``, the
-folder ``airlock-setro`` reads its ``rw-allow`` markers from).
+Paths come from :mod:`airlock_common.paths`, including ``run_dir()`` and ``rw_allow_dir()``
+(``AIRLOCK_RUN_DIR``, default ``/run/airlock``; ``airlock-setro`` reads ``rw-allow`` there).
+Two test-only overrides are read here because they name kernel interfaces, not AIRLOCK
+folders: ``AIRLOCK_SYSFS`` (default ``/sys``) and ``AIRLOCK_PROCFS`` (default ``/proc``).
 """
 
 from __future__ import annotations
@@ -36,10 +36,6 @@ def sysfs() -> Path:
 
 def procfs() -> Path:
     return Path(os.environ.get("AIRLOCK_PROCFS") or "/proc")
-
-
-def run_dir() -> Path:
-    return Path(os.environ.get("AIRLOCK_RUN_DIR") or "/run/airlock")
 
 
 def is_root() -> bool:

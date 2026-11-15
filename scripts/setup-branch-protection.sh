@@ -98,7 +98,7 @@ if ((!dry_run)); then
 fi
 if [[ -z "$repo" ]]; then
   if ((dry_run)) && ! command -v gh >/dev/null 2>&1; then
-    repo="OWNER/airlock"
+    repo="TheColtonWilliams/airlock_forensics"
   else
     repo="$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null)" ||
       die "could not tell which GitHub repository this is. Pass --repo OWNER/NAME."
