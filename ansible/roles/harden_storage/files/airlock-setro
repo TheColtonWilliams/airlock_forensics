@@ -10,10 +10,17 @@
 #   airlock-setro --all    apply the policy to every sd*, nvme*, mmcblk*, and vd* device
 #   airlock-setro --check  list every such device with its state; exit 1 if one that should
 #                          be read-only is writable
+#   airlock-setro --forget NAME
+#                          delete the unlock marker of disk NAME (the udev rule runs this
+#                          when a disk is removed)
 #
 # Every device on the disk that holds / is left writable: ASSETS and OUTPUT live there.
-# A device or disk named by a file in /run/airlock/rw-allow/ (written by
-# evidence-unlock-output) is left alone. If the disk holding / cannot be worked out, every
+# A disk unlocked by evidence-unlock-output is left alone while its marker
+# /run/airlock/rw-allow/<disk> matches the drive now holding that name: the marker carries
+# identity_sha256, a hash of the disk's sysfs diskseq, wwid, serial, and size, and the hash is
+# worked out again here. A marker that does not match (another drive got the name), cannot be
+# read, or has no identity is ignored and deleted, and the device is set read-only. /run is a
+# tmpfs, so no marker survives a reboot. If the disk holding / cannot be worked out, every
 # device is set read-only (fail closed).
 #
 # Each decision is logged to the session log (airlock_log); if that is not available yet
@@ -157,16 +164,88 @@ read_ro() {
   if [[ -r "$f" ]]; then tr -d '[:space:]' <"$f"; else printf 'unknown'; fi
 }
 
-# decision NAME DISK: exempt_boot_disk | unlocked | readonly
+# ---------------------------------------------------------------- unlock markers
+# id_field DIR REL...: the first readable file of DIR/REL with white space and NUL bytes
+# removed. evidence-unlock-output (airlock_session.unlock.drive_identity) reads the same files
+# the same way, so both sides hash the same bytes.
+id_field() {
+  local dir="$1" rel
+  shift
+  for rel in "$@"; do
+    if [[ -r "$dir/$rel" ]]; then
+      LC_ALL=C tr -d '\000\t\n\v\f\r ' <"$dir/$rel" 2>/dev/null || true
+      return 0
+    fi
+  done
+}
+
+# drive_identity DISK: sha256 of "diskseq=..\nwwid=..\nserial=..\nsize=..\n" from sysfs.
+# diskseq is new on every attach, so a re-plugged or different drive never matches. Fails
+# when the disk has no diskseq, wwid, or serial (nothing tells it apart from the next drive).
+drive_identity() {
+  local dir="$SYSFS/class/block/$1" seq wwid serial size
+  seq="$(id_field "$dir" diskseq)"
+  wwid="$(id_field "$dir" wwid device/wwid)"
+  serial="$(id_field "$dir" serial device/serial)"
+  size="$(id_field "$dir" size)"
+  [[ -n "$seq$wwid$serial" ]] || return 1
+  printf 'diskseq=%s\nwwid=%s\nserial=%s\nsize=%s\n' "$seq" "$wwid" "$serial" "$size" |
+    sha256sum | cut -d' ' -f1
+}
+
+# marker_identity FILE: the identity_sha256 a marker records (top-level JSON key, one per line).
+marker_identity() {
+  local line
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^[[:space:]]*\"identity_sha256\":[[:space:]]*\"([0-9a-f]{64})\",?[[:space:]]*$ ]]; then
+      printf '%s\n' "${BASH_REMATCH[1]}"
+      return 0
+    fi
+  done <"$1"
+  return 1
+}
+
+# marker_state DISK: none | valid | stale (a marker for another drive, or one that cannot be
+# checked).
+marker_state() {
+  local marker="$RUN_DIR/rw-allow/$1" want have
+  if [[ ! -e "$marker" && ! -L "$marker" ]]; then
+    printf 'none\n'
+    return 0
+  fi
+  if [[ -f "$marker" && ! -L "$marker" ]] && want="$(marker_identity "$marker" 2>/dev/null)" &&
+    have="$(drive_identity "$1")" && [[ "$want" == "$have" ]]; then
+    printf 'valid\n'
+  else
+    printf 'stale\n'
+  fi
+}
+
+# drop_marker DISK REASON: delete a marker that must not be honoured, and log it.
+drop_marker() {
+  local marker="$RUN_DIR/rw-allow/$1"
+  if [[ -e "$marker" || -L "$marker" ]]; then
+    if rm -f -- "$marker"; then
+      log ro_policy_marker_removed disk="$1" reason="$2"
+    else
+      log ro_policy_marker_remove_failed disk="$1" reason="$2"
+    fi
+  fi
+}
+
+# decision NAME DISK: exempt_boot_disk | unlocked | readonly | readonly_stale_marker.
+# Only a marker named after the whole disk counts (evidence-unlock-output refuses partitions).
 decision() {
-  local name="$1" disk="$2"
+  local disk="$2"
   if [[ "$BOOT_STATE" == known ]] && is_boot_disk "$disk"; then
     printf 'exempt_boot_disk\n'
-  elif [[ -e "$RUN_DIR/rw-allow/$name" || -e "$RUN_DIR/rw-allow/$disk" ]]; then
-    printf 'unlocked\n'
-  else
-    printf 'readonly\n'
+    return 0
   fi
+  case "$(marker_state "$disk")" in
+    valid) printf 'unlocked\n' ;;
+    stale) printf 'readonly_stale_marker\n' ;;
+    *) printf 'readonly\n' ;;
+  esac
 }
 
 # Device names the udev rule matches (sd*, nvme*, mmcblk*, vd*). Hidden NVMe multipath
@@ -198,6 +277,10 @@ apply_one() {
   fi
   disk="$(parent_disk "$name")"
   choice="$(decision "$name" "$disk")"
+  if [[ "$choice" == readonly_stale_marker ]]; then
+    drop_marker "$disk" identity_mismatch
+    choice="readonly"
+  fi
   if [[ "$choice" == readonly ]]; then
     if ! "$BLOCKDEV" --setro "$DEV_DIR/$name"; then
       log ro_policy device="$DEV_DIR/$name" disk="$disk" decision=setro_failed \
@@ -249,9 +332,23 @@ check_all() {
   return 0
 }
 
+# forget NAME: a disk went away; its unlock ends with it.
+forget() {
+  if ! valid_name "$1"; then
+    echo "$TOOL: '$1' is not a block device name. Pass a kernel name such as sdc." >&2
+    return 2
+  fi
+  drop_marker "$1" removed
+  return 0
+}
+
 main() {
+  if (($# == 2)) && [[ "$1" == --forget ]]; then
+    forget "$2"
+    return
+  fi
   if (($# != 1)); then
-    echo "$TOOL: give one device name, --all, or --check. Run '$TOOL --help' for details." >&2
+    echo "$TOOL: give one device name, --all, --check, or --forget NAME. Run '$TOOL --help' for details." >&2
     return 2
   fi
   case "$1" in

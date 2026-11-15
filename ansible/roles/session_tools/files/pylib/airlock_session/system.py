@@ -263,17 +263,21 @@ def readonly_flags() -> dict[str, Any]:
     """The read-only flag of every disk and partition, and which ones are writable."""
     tree = devices.lsblk()
     boot = devices.boot_disk(tree)
-    rw_allow = paths.rw_allow_dir()
+    # Imported here: unlock imports this package's common module, and only this check needs it.
+    from airlock_session.unlock import marker_valid  # noqa: PLC0415
+
     rows: list[dict[str, Any]] = []
     writable: list[str] = []
     for top in tree:
         if top.type not in {"disk", "loop"} or top.name.startswith(("zram", "ram")):
             continue
         is_boot = boot is not None and top.name == boot.name
+        # Same rule as airlock-setro: only a whole-disk marker written for the drive that holds
+        # this name now counts; a marker left by an earlier drive does not.
+        unlocked = top.type == "disk" and marker_valid(top.name)
         for d in top.walk():
             flag = readonly_flag(d.name)
             ro = d.ro if flag is None else flag
-            unlocked = (rw_allow / d.name).exists() or (rw_allow / top.name).exists()
             rows.append(
                 {
                     "name": d.name,

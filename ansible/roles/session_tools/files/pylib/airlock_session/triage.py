@@ -236,15 +236,19 @@ def run(args: argparse.Namespace) -> int:
             print("Hashing (reads the whole target once) ...", flush=True)
         rec = hashcmd.hash_target(info, hashcmd.algorithms(False), tool=TOOL)
         summary["hashes"] = rec["hashes"]
+        summary["hash_complete"] = rec.get("complete", True)
+        summary["hash_bytes_read"] = rec.get("bytes_read")
     if not args.no_dissect:
         summary["dissect"] = run_dissect(info, args.timeout)
 
     log(TOOL, "triage_done", **{k: v for k, v in summary.items() if k != "target"})
+    # A hash that did not cover the whole target is not a valid record: exit non-zero.
+    rc = 0 if summary.get("hash_complete", True) else 1
     if args.json:
         print(jsonio.dumps(summary))
-        return 0
+        return rc
     _print_summary(summary)
-    return 0
+    return rc
 
 
 def _print_summary(summary: dict[str, Any]) -> None:

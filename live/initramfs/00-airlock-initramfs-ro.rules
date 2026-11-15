@@ -1,0 +1,9 @@
+# AIRLOCK live ISO (task 7.2): software read-only policy inside the initramfs. This is not a write
+# blocker: it sets the kernel read-only flag, which filesystem drivers honour and root can clear.
+# Every sd*, nvme*, mmcblk*, and vd* disk and partition the kernel finds while the initramfs runs is
+# set read-only as it appears, before casper can mount it or run anything on it. Numbered 00 so this
+# RUN entry is queued first. After the switch to the live root, the harden_storage role's
+# 00-forensic-ro.rules and airlock-setro apply the policy (the live root is an overlay, so no disk is
+# exempt there).
+# Test: tests/unit/test_repo_meta.py; the live boot test in live/README.md
+ACTION=="add|change", SUBSYSTEM=="block", KERNEL=="sd*|nvme*|mmcblk*|vd*", RUN+="/sbin/blockdev --setro $devnode"

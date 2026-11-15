@@ -266,11 +266,51 @@ def _rules(name: str) -> list[str]:
 
 
 def test_readonly_rule_covers_every_disk_family() -> None:
-    (rule,) = _rules("99-forensic-ro.rules")
+    rule, forget = _rules("00-forensic-ro.rules")
     assert 'SUBSYSTEM=="block"' in rule
     assert 'KERNEL=="sd*|nvme*|mmcblk*|vd*"' in rule
     assert 'RUN+="/usr/local/sbin/airlock-setro %k"' in rule
     assert 'ACTION=="add|change"' in rule
+    # A removed disk loses its unlock marker, so the next drive given its name is read-only.
+    assert 'ACTION=="remove"' in forget and 'ENV{DEVTYPE}=="disk"' in forget
+    assert 'KERNEL=="sd*|nvme*|mmcblk*|vd*"' in forget
+    assert 'RUN+="/usr/local/sbin/airlock-setro --forget %k"' in forget
+
+
+def _rule_number(name: str) -> int:
+    match = re.match(r"^(\d+)-", name)
+    assert match, name
+    return int(match.group(1))
+
+
+def test_readonly_rule_runs_before_package_rules() -> None:
+    """udev runs RUN entries in the order rules add them: the policy must be queued first.
+
+    69-bcache.rules (bcache-register), the multipath and open-iscsi rules, and any rule a package
+    adds later all sort after 00-, so airlock-setro has set the flag before they act.
+    """
+    files = sorted(p.name for p in (ROLE / "files").glob("*-forensic-ro.rules"))
+    assert files == ["00-forensic-ro.rules"], "exactly one read-only rule file, numbered 00"
+    task = yaml.safe_load((ROLE / "tasks" / "readonly_udev.yml").read_text(encoding="utf-8"))
+    installed = [t["ansible.builtin.copy"]["dest"] for t in task if "ansible.builtin.copy" in t]
+    assert "/etc/udev/rules.d/00-forensic-ro.rules" in installed
+    assert not any("99-forensic-ro" in d for d in installed)
+    defaults = yaml.safe_load((ROLE / "defaults" / "main.yml").read_text(encoding="utf-8"))
+    # The old late copy is removed from images built before the move.
+    assert "99-forensic-ro.rules" in defaults["harden_storage_readonly_rule_old_names"]
+    removal = [t for t in task if "ansible.builtin.file" in t]
+    assert removal and removal[0]["ansible.builtin.file"]["state"] == "absent"
+    for masked in defaults["harden_storage_udev_rules_masked"]:
+        assert _rule_number(masked) > _rule_number("00-forensic-ro.rules"), masked
+    assert _rule_number("00-forensic-ro.rules") < 60  # before 60-persistent-storage and bcache
+    # Stacked-storage activation is off: bcache-tools purged and its rule masked; multipath
+    # and open-iscsi rules masked and their daemons masked.
+    assert "bcache-tools" in defaults["harden_storage_activation_packages_absent"]
+    for rule in ("69-bcache.rules", "56-dm-mpath.rules", "60-multipath.rules"):
+        assert rule in defaults["harden_storage_udev_rules_masked"], rule
+    assert "70-open-iscsi.rules" in defaults["harden_storage_udev_rules_masked"]
+    for unit in ("iscsid.service", "iscsid.socket", "open-iscsi.service", "multipathd.service"):
+        assert unit in defaults["harden_storage_daemon_masked_units"], unit
 
 
 def test_sg_rule_is_root_only_and_final() -> None:
@@ -288,7 +328,7 @@ def test_udev_rules_verify() -> None:
     if probe.returncode != 0:
         pytest.skip("udevadm has no verify command (systemd older than 254)")
     files = [
-        str(ROLE / "files" / n) for n in ("99-forensic-ro.rules", "99-airlock-sg-root-only.rules")
+        str(ROLE / "files" / n) for n in ("00-forensic-ro.rules", "99-airlock-sg-root-only.rules")
     ]
     res = subprocess.run(
         ["udevadm", "verify", "--resolve-names=never", *files],

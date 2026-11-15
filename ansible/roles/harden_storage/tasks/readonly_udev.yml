@@ -1,5 +1,7 @@
 # Control 3.2: software read-only policy. A udev rule runs airlock-setro on every sd*, nvme*, mmcblk*, vd*
-# disk and partition; the helper runs blockdev --setro on all of them except the disk holding /.
+# disk and partition; the helper runs blockdev --setro on all of them except the disk holding / and a disk
+# unlocked for output whose marker matches the drive. The rule is numbered 00 so its RUN entry goes before
+# any package rule's (69-bcache.rules' bcache-register, for example); a removed disk loses its marker.
 # Test: tests/functional/test_udev_ro.sh; tests/goss/storage.yaml (airlock-setro --check); tests/vm/test_automount.sh
 - name: Read-only policy | Install airlock-setro helper
   ansible.builtin.copy:
@@ -11,9 +13,18 @@
 
 - name: Read-only policy | Install udev rule
   ansible.builtin.copy:
-    src: 99-forensic-ro.rules
-    dest: /etc/udev/rules.d/99-forensic-ro.rules
+    src: 00-forensic-ro.rules
+    dest: /etc/udev/rules.d/00-forensic-ro.rules
     owner: root
     group: root
     mode: "0644"
+  notify: Harden storage | Reload udev rules
+
+# An image built before the rule moved to 00- has a 99- copy; two copies would run the helper twice and
+# keep the late position for one of them.
+- name: Read-only policy | Remove rule files under their old names
+  ansible.builtin.file:
+    path: "/etc/udev/rules.d/{{ item }}"
+    state: absent
+  loop: "{{ harden_storage_readonly_rule_old_names }}"
   notify: Harden storage | Reload udev rules

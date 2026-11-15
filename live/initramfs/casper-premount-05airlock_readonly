@@ -1,0 +1,74 @@
+#!/bin/sh
+# AIRLOCK live ISO (task 7.2): software read-only policy inside the initramfs. This is not a write
+# blocker: it sets the kernel read-only flag, which filesystem drivers honour and root can clear.
+#
+# Installed by live/build.sh as /etc/initramfs-tools/scripts/casper-premount/05airlock_readonly.
+# casper runs casper-premount scripts before it looks for the live medium, so every sd*, nvme*,
+# mmcblk*, and vd* disk and partition is read-only before casper mounts anything. The live medium
+# is included on purpose: it is an ISO 9660 image that casper mounts read-only, nopersistent keeps
+# casper from writing to it, and setting every disk avoids guessing which one is the medium.
+# Disks that appear later are covered by 00-airlock-initramfs-ro.rules in the initramfs, and after
+# the switch to the live root by the harden_storage role's udev rule and airlock-setro.
+# If a device cannot be set read-only the boot stops (panic); leaving the emergency shell retries.
+# Overrides for tests: AIRLOCK_SYSFS (default /sys), AIRLOCK_DEV_DIR (default /dev),
+# AIRLOCK_BLOCKDEV (default /sbin/blockdev).
+# Test: tests/unit/test_repo_meta.py (runs this script against a fake sysfs)
+PREREQ=""
+prereqs() {
+  echo "$PREREQ"
+}
+case "$1" in
+  prereqs)
+    prereqs
+    exit 0
+    ;;
+esac
+
+SYSFS="${AIRLOCK_SYSFS:-/sys}"
+DEV_DIR="${AIRLOCK_DEV_DIR:-/dev}"
+BLOCKDEV="${AIRLOCK_BLOCKDEV:-/sbin/blockdev}"
+
+if [ -z "${AIRLOCK_SYSFS:-}" ] && [ -r /scripts/functions ]; then
+  # shellcheck source=/dev/null
+  . /scripts/functions
+  # Let udev finish with the disks found so far; later ones meet the initramfs udev rule.
+  udevadm settle --timeout=30 >/dev/null 2>&1 || true
+fi
+
+FAILED=""
+COUNT=0
+set_all_readonly() {
+  FAILED=""
+  COUNT=0
+  for path in "$SYSFS"/class/block/*; do
+    [ -e "$path" ] || continue
+    name="${path##*/}"
+    case "$name" in
+      sd* | nvme* | mmcblk* | vd*) ;;
+      *) continue ;;
+    esac
+    # Hidden NVMe multipath paths (nvmeXcYnZ) have no device node; the namespace node covers them.
+    case "$name" in
+      nvme*c*n*) [ -e "$DEV_DIR/$name" ] || continue ;;
+    esac
+    if [ -e "$DEV_DIR/$name" ] && "$BLOCKDEV" --setro "$DEV_DIR/$name" &&
+      [ "$(cat "$path/ro" 2>/dev/null)" = 1 ]; then
+      COUNT=$((COUNT + 1))
+    else
+      FAILED="$FAILED $name"
+    fi
+  done
+  [ -z "$FAILED" ]
+}
+
+until set_all_readonly; do
+  msg="AIRLOCK could not set$FAILED read-only before looking for the live medium. Unplug every disk except the AIRLOCK medium and boot again."
+  if command -v panic >/dev/null 2>&1; then
+    panic "$msg"
+  else
+    echo "airlock: $msg" >&2
+    exit 1
+  fi
+done
+echo "airlock: $COUNT disk device(s) set read-only before the live medium search"
+exit 0

@@ -105,19 +105,41 @@ file:
     exists: true
     filetype: symlink
     linked-to: /dev/null
+  /etc/systemd/system/iscsid.service:
+    title: '3A.2: iscsid.service masked (no iSCSI activation)'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/iscsid.socket:
+    title: '3A.2: iscsid.socket masked (no iSCSI activation)'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/systemd/system/open-iscsi.service:
+    title: '3A.2: open-iscsi.service masked (no iSCSI activation)'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
   /usr/local/sbin/airlock-setro:
     title: '3.2: software read-only policy helper installed'
     exists: true
     mode: "0755"
     owner: root
     filetype: file
-  /etc/udev/rules.d/99-forensic-ro.rules:
-    title: '3.2: software read-only udev rule installed'
+  /etc/udev/rules.d/00-forensic-ro.rules:
+    title: '3.2: software read-only udev rule installed early (00-), so its RUN goes before any package rule'
     exists: true
     filetype: file
     contents:
       - '/KERNEL=="sd\*\|nvme\*\|mmcblk\*\|vd\*"/'
       - '/RUN\+="\/usr\/local\/sbin\/airlock-setro %k"/'
+      - '/ACTION=="remove".*RUN\+="\/usr\/local\/sbin\/airlock-setro --forget %k"/'
+  /etc/udev/rules.d/99-forensic-ro.rules:
+    title: '3.2: no late (99-) copy of the read-only udev rule is left'
+    exists: false
+  /usr/lib/udev/rules.d/69-bcache.rules:
+    title: '3A.2: bcache-tools udev rule (bcache-register) not installed'
+    exists: false
   /etc/systemd/system-generators/systemd-gpt-auto-generator:
     title: '3.4: systemd-gpt-auto-generator masked'
     exists: true
@@ -141,6 +163,26 @@ file:
     exists: true
   /etc/udev/rules.d/85-hdparm.rules:
     title: '3A.2: hdparm udev rule (spin-down and power commands) masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/udev/rules.d/69-bcache.rules:
+    title: '3A.2: bcache udev rule (registers bcache devices, replays their journal) masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/udev/rules.d/56-dm-mpath.rules:
+    title: '3A.2: multipath device-mapper udev rule masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/udev/rules.d/60-multipath.rules:
+    title: '3A.2: multipath path-claiming udev rule masked'
+    exists: true
+    filetype: symlink
+    linked-to: /dev/null
+  /etc/udev/rules.d/70-open-iscsi.rules:
+    title: '3A.2: open-iscsi udev rule (starts iscsid for iSCSI disks) masked'
     exists: true
     filetype: symlink
     linked-to: /dev/null
@@ -215,6 +257,15 @@ service:
   e2scrub_reap.service:
     title: '3A.2: e2scrub_reap.service not running'
     running: false
+  iscsid.service:
+    title: '3A.2: iscsid.service not running'
+    running: false
+  iscsid.socket:
+    title: '3A.2: iscsid.socket not running'
+    running: false
+  open-iscsi.service:
+    title: '3A.2: open-iscsi.service not running'
+    running: false
 package:
   sg3-utils-udev:
     title: '3A.4: package sg3-utils-udev not installed'
@@ -224,6 +275,9 @@ package:
     installed: false
   sdparm:
     title: '3A.4: package sdparm not installed'
+    installed: false
+  bcache-tools:
+    title: '3A.2: package bcache-tools not installed (no bcache registration of attached disks)'
     installed: false
 command:
   'kernel command line':
@@ -251,6 +305,11 @@ command:
       - '/writable=0$/'
     timeout: 30000
   # {{ end }}
+  'unlock markers on tmpfs':
+    title: '3.2: /run (unlock markers in /run/airlock/rw-allow) is a tmpfs, so no marker survives a reboot'
+    exec: findmnt -n -o FSTYPE --mountpoint /run
+    exit-status: 0
+    stdout: ['/^tmpfs$/']
   'no swap':
     title: '3.3, 3.8: no swap is active, even with a swap-type partition attached'
     exec: 'test -z "$(swapon --show --noheadings)"'

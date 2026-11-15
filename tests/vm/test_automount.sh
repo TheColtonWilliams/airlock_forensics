@@ -22,7 +22,6 @@ for tool in lsblk findmnt blockdev udevadm swapon dd; do
   command -v "$tool" >/dev/null 2>&1 || fail "'$tool' is missing from the image"
 done
 
-RUN_DIR="${AIRLOCK_RUN_DIR:-/run/airlock}"
 TMP="$(mktemp -d)"
 trap 'rm -rf -- "$TMP"' EXIT
 
@@ -39,7 +38,8 @@ echo "boot disk: $boot_disk; checking: ${disks[*]}"
 # Members of a disk: the disk and each of its partitions.
 members() { lsblk -n -l -o NAME "/dev/$1"; }
 
-unlocked() { [[ -e "$RUN_DIR/rw-allow/$1" || -e "$RUN_DIR/rw-allow/$2" ]]; }
+# A disk counts as unlocked only when airlock-setro itself says so (marker bound to this drive).
+unlocked() { airlock-setro --check 2>/dev/null | grep -qx "unlocked $1 disk=$2"; }
 
 check_disk() {
   local disk="$1" label="$2" dev mounts

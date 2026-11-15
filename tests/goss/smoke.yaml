@@ -17,7 +17,7 @@ file:
     exists: true
     contents:
       - '/"version": /'
-  /etc/udev/rules.d/99-forensic-ro.rules:
+  /etc/udev/rules.d/00-forensic-ro.rules:
     title: '2A.6: the software read-only policy rule is installed'
     exists: true
   /var/lib/airlock/firstboot.done:

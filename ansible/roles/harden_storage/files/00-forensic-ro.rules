@@ -3,7 +3,14 @@
 #
 # Every sd*, nvme*, mmcblk*, and vd* disk and partition is passed to airlock-setro, which runs
 # blockdev --setro on it unless it is on the disk that holds / (ASSETS and OUTPUT live there and
-# OUTPUT must stay writable). The helper logs each decision to the session log.
+# OUTPUT must stay writable) or is a disk unlocked for output whose marker matches the drive.
+# The helper logs each decision to the session log.
 # "change" is included so a re-read partition table cannot leave a new partition writable.
+# The file is numbered 00 so its RUN entry is queued before any package rule's RUN entry
+# (69-bcache.rules' bcache-register, for example): udev runs RUN programs in the order the rules
+# added them, so the policy acts before anything else touches the disk.
+# When a disk goes away its unlock marker is deleted, so the next drive that gets the same name
+# starts read-only.
 # Test: tests/functional/test_udev_ro.sh, tests/goss/storage.yaml, tests/vm/test_automount.sh
 ACTION=="add|change", SUBSYSTEM=="block", KERNEL=="sd*|nvme*|mmcblk*|vd*", RUN+="/usr/local/sbin/airlock-setro %k"
+ACTION=="remove", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", KERNEL=="sd*|nvme*|mmcblk*|vd*", RUN+="/usr/local/sbin/airlock-setro --forget %k"

@@ -70,6 +70,9 @@ loop_ro() {
 loop_rw() {
   LOOP="$(losetup -f --show "$1")"
   _analyze_loops+=("$LOOP")
+  # A loop device keeps a read-only flag set by an earlier user (the software read-only policy
+  # test sets it) after detach; clear it so this really is a writable device.
+  blockdev --setrw "$LOOP"
 }
 
 # write_test_modules DIR: test-only modules, then export AIRLOCK_EXTRA_MODULES.

@@ -1,0 +1,28 @@
+#!/bin/sh
+# AIRLOCK live ISO (task 7.2): initramfs-tools hook, installed by live/build.sh as
+# /etc/initramfs-tools/hooks/airlock-readonly. It puts blockdev and 00-airlock-initramfs-ro.rules
+# into the initramfs, so every disk the kernel finds while the initramfs runs is set read-only
+# as it appears (the casper-premount script 05airlock_readonly covers the ones already there).
+# Test: tests/unit/test_repo_meta.py (content); the live boot test in live/README.md
+PREREQ=""
+prereqs() {
+  echo "$PREREQ"
+}
+case "$1" in
+  prereqs)
+    prereqs
+    exit 0
+    ;;
+esac
+
+# shellcheck source=/dev/null
+. /usr/share/initramfs-tools/hook-functions
+
+rule=/usr/share/airlock/initramfs/00-airlock-initramfs-ro.rules
+if [ ! -r "$rule" ]; then
+  echo "airlock-readonly hook: $rule is missing; rerun live/build.sh" >&2
+  exit 1
+fi
+copy_exec /sbin/blockdev /sbin
+mkdir -p "${DESTDIR}/lib/udev/rules.d"
+cp "$rule" "${DESTDIR}/lib/udev/rules.d/00-airlock-initramfs-ro.rules"

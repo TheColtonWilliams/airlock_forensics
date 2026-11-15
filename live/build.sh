@@ -4,6 +4,11 @@
 # Ansible roles as the installed image: a chroot hook (live/hooks/0500-airlock-site.hook.chroot)
 # runs ansible/site.yml inside the live system with airlock_target=live, so hardening is applied
 # and re-applied last exactly as on the installed drive (decision log 2026-11-15, task 7.1).
+# casper's initramfs is kept off every other disk: the kernel command line names the medium by
+# its ISO volume label (live-media=/dev/disk/by-label/<label>) and turns persistence off
+# (nopersistent); live/initramfs sets every disk read-only before casper looks for the medium;
+# and live/hooks/0600-airlock-casper.hook.chroot removes casper's swapon and stops casper
+# scanning other disks, then rebuilds and checks the initramfs.
 #
 # Usage: sudo live/build.sh [options]
 #   --out DIR        output folder (default: output/airlock-live-<version>)
@@ -27,6 +32,8 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 prog="live/build.sh"
 main_vars="$repo_root/ansible/group_vars/all/main.yml"
 hook_src="$repo_root/live/hooks/0500-airlock-site.hook.chroot"
+casper_hook_src="$repo_root/live/hooks/0600-airlock-casper.hook.chroot"
+initramfs_src="$repo_root/live/initramfs"
 
 out_dir=""
 snapshot=""
@@ -72,6 +79,10 @@ if ((!config_only)) && [[ "$(id -u)" -ne 0 ]]; then
   die "building the ISO needs root. Rerun with sudo, or use --config-only to only write the configuration."
 fi
 [[ -f "$hook_src" ]] || die "the chroot hook $hook_src is missing. Check out the whole repository."
+[[ -f "$casper_hook_src" ]] || die "the chroot hook $casper_hook_src is missing. Check out the whole repository."
+for f in casper-premount-05airlock_readonly initramfs-hook-airlock-readonly 00-airlock-initramfs-ro.rules; do
+  [[ -f "$initramfs_src/$f" ]] || die "$initramfs_src/$f is missing. Check out the whole repository."
+done
 
 # Settings from main.yml, one per line, read by Python so no value is parsed by the shell.
 mapfile -t settings < <(python3 - "$main_vars" <<'PY'
@@ -96,6 +107,11 @@ cmdline="${settings[4]}"
 [[ -n "$snapshot" ]] || snapshot="${settings[2]}"
 [[ "$version" =~ ^[0-9A-Za-z.+~-]+$ ]] || die "airlock_version '$version' in main.yml has characters a file name cannot have."
 [[ "$release" =~ ^[a-z]+$ ]] || die "ubuntu_release '$release' in main.yml is not a release code name."
+# The ISO volume label is how casper finds its medium (live-media=/dev/disk/by-label/<label>).
+# ISO 9660 keeps at most 32 characters; a cut label would not match, so refuse instead.
+iso_label="AIRLOCK_LIVE_${version//[^0-9A-Za-z]/_}"
+((${#iso_label} <= 32)) || die "the ISO volume label $iso_label is longer than 32 characters. Shorten airlock_version in main.yml."
+live_cmdline="boot=casper live-media=/dev/disk/by-label/$iso_label nopersistent $cmdline"
 
 if [[ "$use_snapshot" == "true" ]]; then
   [[ "$snapshot" =~ ^[0-9]{8}T[0-9]{6}Z$ ]] || die "apt_snapshot '$snapshot' is not YYYYMMDDTHHMMSSZ. Fix main.yml or pass --snapshot."
@@ -136,8 +152,8 @@ lb_config=(
   --parent-mirror-binary-security "$mirror"
   --apt-recommends false
   --apt-source-archives false
-  --bootappend-live "boot=casper $cmdline"
-  --iso-volume "AIRLOCK_LIVE_${version//[^0-9A-Za-z]/_}"
+  --bootappend-live "$live_cmdline"
+  --iso-volume "$iso_label"
   --iso-application "AIRLOCK live"
   --memtest none
   --source false
@@ -188,6 +204,17 @@ mkdir -p -- "$work/config/package-lists" "$work/config/hooks"
 printf '%s\n' ansible-core python3 python3-apt python3-yaml sudo ca-certificates \
   >"$work/config/package-lists/airlock.list.chroot"
 install -m 0755 -- "$hook_src" "$work/config/hooks/0500-airlock-site.hook.chroot"
+install -m 0755 -- "$casper_hook_src" "$work/config/hooks/0600-airlock-casper.hook.chroot"
+
+# The initramfs read-only policy (live/initramfs): every disk read-only before casper looks for
+# the medium. 0600-airlock-casper.hook.chroot checks they are in the rebuilt initramfs.
+ichroot="$work/config/includes.chroot"
+install -D -m 0755 -- "$initramfs_src/casper-premount-05airlock_readonly" \
+  "$ichroot/etc/initramfs-tools/scripts/casper-premount/05airlock_readonly"
+install -D -m 0755 -- "$initramfs_src/initramfs-hook-airlock-readonly" \
+  "$ichroot/etc/initramfs-tools/hooks/airlock-readonly"
+install -D -m 0644 -- "$initramfs_src/00-airlock-initramfs-ro.rules" \
+  "$ichroot/usr/share/airlock/initramfs/00-airlock-initramfs-ro.rules"
 
 if ((config_only)); then
   log "configuration written to $work (mirror $mirror). Build it with: sudo live/build.sh --force --out $out_dir"

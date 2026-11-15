@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from airlock_common import jsonio, proc, ui
+from airlock_common import hashing, jsonio, proc, ui
 from airlock_session import common, hashcmd, mount, start, system, triage, unlock
 
 REPO = Path(__file__).resolve().parents[2]
@@ -329,10 +329,20 @@ def test_readonly_flags(tmp_path: Path, monkeypatch) -> None:
     assert names == ["sda", "sda1", "sdb", "sdb1"]
     marker = tmp_path / "run" / "rw-allow"
     marker.mkdir(parents=True)
+    # A marker with no identity (or one left by another drive) does not count.
     (marker / "sdb").write_text("{}")
+    assert system.readonly_flags()["writable_unexpected"] == ["/dev/sdb"]
+    (sysfs_dir := tmp_path / "sys" / "class" / "block" / "sdb").joinpath("serial").write_text(
+        "EV1\n"
+    )
+    _fields, ident = unlock.drive_identity("sdb")
+    assert ident is not None
+    (marker / "sdb").write_text(f'{{\n  "identity_sha256": "{ident}"\n}}\n')
     flags = system.readonly_flags()
     assert flags["writable_unexpected"] == []
     assert all(d["unlocked_for_output"] for d in flags["devices"] if d["disk"] == "sdb")
+    sysfs_dir.joinpath("serial").write_text("OTHER\n")  # another drive now holds the name
+    assert system.readonly_flags()["writable_unexpected"] == ["/dev/sdb"]
 
 
 def test_rfkill_and_network(tmp_path: Path, monkeypatch) -> None:
@@ -535,6 +545,11 @@ def test_run_dir_from_paths(monkeypatch) -> None:
 def _unlock_env(airlock_env: Path, tmp_path: Path, monkeypatch, *, fail: bool = False) -> list:
     """Root, the fake tree, and a blockdev stand-in that flips the fake sysfs ro flags."""
     sysfs = fake_tree(tmp_path, monkeypatch)
+    sdb = sysfs / "class" / "block" / "sdb"
+    (sdb / "diskseq").write_text("9\n")
+    (sdb / "device").mkdir()
+    (sdb / "device" / "serial").write_text("SB  \n")
+    (sdb / "size").write_text("1048576000\n")
     monkeypatch.setattr(common.os, "geteuid", lambda: 0)
     calls: list = []
 
@@ -564,6 +579,74 @@ def test_unlock_writes_and_removes_rw_allow_marker(
     assert unlock.main(["/dev/sdb", "--lock"]) == 0
     assert not marker.exists()
     assert ("--setro", "/dev/sdb1") in calls
+
+
+def test_drive_identity_matches_the_setro_hash(tmp_path: Path, monkeypatch) -> None:
+    """The hash airlock-setro recomputes: sysfs values with white space and NUL removed."""
+    sysfs = tmp_path / "sys"
+    d = sysfs / "class" / "block" / "sdc"
+    (d / "device").mkdir(parents=True)
+    (d / "diskseq").write_text("42\n")
+    (d / "device" / "wwid").write_text("t10.ATA     Disk  X\n\x00")
+    (d / "size").write_text("2048\n")
+    monkeypatch.setenv("AIRLOCK_SYSFS", str(sysfs))
+    fields, identity = unlock.drive_identity("sdc")
+    assert fields == {"diskseq": "42", "wwid": "t10.ATADiskX", "serial": "", "size": "2048"}
+    want = hashlib.sha256(b"diskseq=42\nwwid=t10.ATADiskX\nserial=\nsize=2048\n").hexdigest()
+    assert identity == want
+    # The disk's own wwid file wins over device/wwid (NVMe keeps it there).
+    (d / "wwid").write_text("eui.0011\n")
+    assert unlock.drive_identity("sdc")[0]["wwid"] == "eui.0011"
+    # Nothing that tells it apart from the next drive: no identity.
+    for f in (d / "diskseq", d / "wwid", d / "device" / "wwid"):
+        f.unlink()
+    assert unlock.drive_identity("sdc")[1] is None
+
+
+def test_unlock_marker_is_bound_to_the_drive(
+    airlock_env: Path, tmp_path: Path, monkeypatch
+) -> None:
+    """Finding: a marker keyed only by kernel name unlocked the next drive given that name."""
+    _unlock_env(airlock_env, tmp_path, monkeypatch)
+    sdb = tmp_path / "sys" / "class" / "block" / "sdb"
+    marker = tmp_path / "run" / "rw-allow" / "sdb"
+    assert unlock.main(["/dev/sdb", "--confirm", "sdb"]) == 0
+    data = json.loads(marker.read_text(encoding="utf-8"))
+    assert data["identity_sha256"] == unlock.drive_identity("sdb")[1]
+    assert data["drive_identity"]["serial"] == "SB"
+    assert last(airlock_env, "output_unlocked")["identity_sha256"] == data["identity_sha256"]
+    assert unlock.marker_valid("sdb")
+    # Another drive is plugged in and named sdb: new diskseq, other serial.
+    (sdb / "diskseq").write_text("10\n")
+    (sdb / "device" / "serial").write_text("OTHER\n")
+    assert not unlock.marker_valid("sdb")
+    # The same drive plugged in again (new diskseq only) does not match either.
+    (sdb / "device" / "serial").write_text("SB\n")
+    assert not unlock.marker_valid("sdb")
+    # A marker without the identity line, or a symlink, never counts.
+    marker.write_text("{}\n", encoding="utf-8")
+    assert not unlock.marker_valid("sdb")
+    assert not unlock.marker_valid("../sdb")
+
+
+def test_unlock_warning_says_unplug_ends_the_unlock() -> None:
+    text = unlock.WARNING.format(path="/dev/sdc", desc="x")
+    assert "once it is unplugged" in text
+    assert "any drive that later gets the name /dev/sdc start read-only" in text
+    assert "until reboot" not in text
+
+
+def test_unlock_refuses_a_drive_with_no_identity(
+    airlock_env: Path, tmp_path: Path, monkeypatch
+) -> None:
+    calls = _unlock_env(airlock_env, tmp_path, monkeypatch)
+    sdb = tmp_path / "sys" / "class" / "block" / "sdb"
+    (sdb / "diskseq").unlink()
+    (sdb / "device" / "serial").unlink()
+    assert unlock.main(["/dev/sdb", "--confirm", "sdb"]) == 1
+    assert calls == []
+    assert not (tmp_path / "run" / "rw-allow" / "sdb").exists()
+    assert last(airlock_env, "unlock_refused")["reason"] == "no_drive_identity"
 
 
 def test_unlock_failure_leaves_no_marker(airlock_env: Path, tmp_path: Path, monkeypatch) -> None:
@@ -659,6 +742,55 @@ def test_hash_target_logs(airlock_env: Path, tmp_path: Path) -> None:
     assert logged["hashes"] == rec["hashes"]
     assert logged["target"]["kind"] == "image"
     assert events(airlock_env)[:2] == ["session_start", "session_implicit"]
+    assert (rec["bytes_read"], rec["expected_bytes"], rec["complete"]) == (7000, 7000, True)
+    assert logged["bytes_read"] == 7000 and "warning" not in logged
+    assert "evidence_hash_size_mismatch" not in events(airlock_env)
+
+
+def test_hash_counted_returns_bytes_hashed(tmp_path: Path) -> None:
+    f = tmp_path / "b.raw"
+    f.write_bytes(b"x" * 10_000)
+    digests, n = hashing.hash_file_counted(f, ("sha256",))
+    assert n == 10_000 and digests["sha256"] == hashlib.sha256(b"x" * 10_000).hexdigest()
+    assert hashing.hash_file_counted(f, ("sha256",), limit=4096)[1] == 4096
+    assert hashing.hash_file(f, ("sha256",)) == digests
+
+
+@pytest.mark.parametrize("change", [b"more", None])
+def test_hash_target_records_bytes_actually_hashed(
+    airlock_env: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    change: bytes | None,
+) -> None:
+    """Finding 16: an image that grows or shrinks while it is hashed is not logged as whole."""
+    img = tmp_path / "growing.raw"
+    img.write_bytes(b"airlock" * 1000)
+    info = common.describe_target(str(img))
+    if change is None:
+        img.write_bytes(b"airlock" * 500)  # shrank (or a read ended early)
+    else:
+        with img.open("ab") as fh:
+            fh.write(change)  # still being written by an imager
+    data = img.read_bytes()
+    rec = hashcmd.hash_target(info, hashcmd.algorithms(False))
+    assert rec["bytes_read"] == len(data) != info.size_bytes
+    assert rec["expected_bytes"] == 7000 and rec["complete"] is False
+    assert rec["hashes"]["sha256"] == hashlib.sha256(data).hexdigest()
+    logged = last(airlock_env, "evidence_hash")
+    assert logged["bytes_read"] == len(data) and logged["complete"] is False
+    assert "changed size" in logged["warning"]
+    mismatch = last(airlock_env, "evidence_hash_size_mismatch")
+    assert (mismatch["bytes_read"], mismatch["expected_bytes"]) == (len(data), 7000)
+    assert "WARNING" in capsys.readouterr().err
+    # The command exits 1 and says so, in both output forms.
+    monkeypatch.setattr(common, "describe_target", lambda _a: info)
+    monkeypatch.setattr(hashcmd, "describe_target", lambda _a: info)
+    assert hashcmd.main([str(img)]) == 1
+    assert "does not cover the whole target" in capsys.readouterr().out
+    assert hashcmd.main(["--json", str(img)]) == 1
+    assert json.loads(capsys.readouterr().out)["complete"] is False
 
 
 def test_log_renames_reserved_fields(airlock_env: Path) -> None:

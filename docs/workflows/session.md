@@ -90,8 +90,10 @@ second drive (instead of the AIRLOCK `OUTPUT` partition):
     sudo evidence-unlock-output /dev/sdc --lock   # read-only again
 
 It refuses the AIRLOCK drive itself and partitions, and refuses without the typed
-confirmation (`--yes` does not skip it). It writes a marker in `/run/airlock/rw-allow/` so the
-udev policy leaves the drive writable until reboot or unplug, and logs the drive's model,
+confirmation (`--yes` does not skip it). It writes a marker in `/run/airlock/rw-allow/`, bound
+to that drive's identity (serial, WWN, attach sequence number and size), so the udev policy
+leaves that drive writable until it is unplugged, re-locked, or the computer restarts; a
+different drive that later gets the same name starts read-only. It logs the drive's model,
 serial, and size. **The log records the change; it does not prevent mistakes** (surviving
 risk 1). Never unlock an evidence drive.
 

@@ -34,6 +34,12 @@ done
 for name in sda sda1 sdb sdb1 sdb2; do
   echo 1 >"$FS/class/block/$name/ro"
 done
+# Identity files, as the kernel has them: diskseq (new on every attach), serial or wwid, size.
+echo 7 >"$FS/class/block/sda/diskseq"
+echo 9 >"$FS/class/block/sdb/diskseq"
+mkdir -p "$FS/class/block/sdb/device"
+printf 'OUT123   \n' >"$FS/class/block/sdb/device/serial"
+echo 976773168 >"$FS/class/block/sdb/size"
 echo 0 >"$FS/class/block/sda/ro"
 echo 0 >"$FS/class/block/sda1/ro"
 cat >"$TEST_TMP/lsblk.json" <<'JSON'
@@ -135,6 +141,85 @@ grep -q '"decision":"unlocked"' "$LOG" ||
 run setro --check
 assert_eq "$RC" 0 "airlock-setro --check accepts the unlocked drive: $OUT"
 assert_contains "$OUT" "unlocked sdb1 disk=sdb" "check lists sdb1 as unlocked"
+grep -Eq '^  "identity_sha256": "[0-9a-f]{64}",$' "$AIRLOCK_RUN_DIR/rw-allow/sdb" ||
+  fail "marker records the drive identity: $(cat "$AIRLOCK_RUN_DIR/rw-allow/sdb")"
+# Python (evidence-unlock-output) and bash (airlock-setro) hash the same identity.
+py_id="$(AIRLOCK_SYSFS="$FS" python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); from airlock_session import unlock; print(unlock.drive_identity("sdb")[1])' "$PYLIB")"
+assert_contains "$(cat "$AIRLOCK_RUN_DIR/rw-allow/sdb")" "$py_id" "marker holds the Python identity"
+AIRLOCK_SYSFS="$FS" python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); from airlock_session import unlock; sys.exit(0 if unlock.marker_valid("sdb") else 1)' "$PYLIB" ||
+  fail "marker_valid accepts the marker for the drive that wrote it"
+cp -- "$AIRLOCK_RUN_DIR/rw-allow/sdb" "$TEST_TMP/marker.sdb"
+
+# The unlocked drive is unplugged without --lock and a different drive is plugged in; the
+# kernel gives it the same name. The kernel starts it writable, with a new diskseq and its own
+# serial. The leftover marker must not make it writable: airlock-setro sets it read-only and
+# deletes the marker (finding: a marker keyed only by kernel name).
+for name in sdb sdb1 sdb2; do echo 0 >"$FS/class/block/$name/ro"; done
+echo 10 >"$FS/class/block/sdb/diskseq"
+echo 'EVID999' >"$FS/class/block/sdb/device/serial"
+: >"$CALLS"
+for name in sdb sdb1 sdb2; do
+  run setro "$name"
+  assert_eq "$RC" 0 "airlock-setro $name on the replacement drive: $OUT"
+  assert_eq "$(cat "$FS/class/block/$name/ro")" 1 "replacement $name read-only despite the old marker"
+  grep -qx -- "--setro /dev/$name" "$CALLS" || fail "blockdev --setro /dev/$name not run"
+done
+assert_no_file "$AIRLOCK_RUN_DIR/rw-allow/sdb" "stale marker deleted"
+grep -q '"event":"ro_policy_marker_removed"' "$LOG" || fail "stale marker removal logged"
+grep '"event":"ro_policy_marker_removed"' "$LOG" | tail -n 1 | grep -q '"reason":"identity_mismatch"' ||
+  fail "stale marker removal gives the reason"
+
+# Same serial, plugged in again (new diskseq): still read-only. --check does not count a
+# stale marker as an unlock either, and leaves the file alone.
+echo 'OUT123' >"$FS/class/block/sdb/device/serial"
+echo 11 >"$FS/class/block/sdb/diskseq"
+cp -- "$TEST_TMP/marker.sdb" "$AIRLOCK_RUN_DIR/rw-allow/sdb"
+echo 0 >"$FS/class/block/sdb1/ro"
+run setro --check
+assert_eq "$RC" 1 "--check fails: the re-plugged drive is writable and its marker is stale"
+assert_contains "$OUT" "rw sdb1 disk=sdb" "--check lists sdb1 as writable, not unlocked"
+assert_file "$AIRLOCK_RUN_DIR/rw-allow/sdb" "--check changes nothing"
+AIRLOCK_SYSFS="$FS" python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); from airlock_session import unlock; sys.exit(1 if unlock.marker_valid("sdb") else 0)' "$PYLIB" ||
+  fail "marker_valid rejects a marker written for an earlier attach"
+run setro sdb1
+assert_eq "$(cat "$FS/class/block/sdb1/ro")" 1 "re-plugged drive read-only"
+assert_no_file "$AIRLOCK_RUN_DIR/rw-allow/sdb" "stale marker deleted on the udev event"
+
+# A marker with no identity (older format, or hand-made) is not honoured.
+echo '{"device": "/dev/sdb"}' >"$AIRLOCK_RUN_DIR/rw-allow/sdb"
+echo 0 >"$FS/class/block/sdb/ro"
+run setro sdb
+assert_eq "$(cat "$FS/class/block/sdb/ro")" 1 "marker without identity ignored"
+assert_no_file "$AIRLOCK_RUN_DIR/rw-allow/sdb" "marker without identity deleted"
+
+# The udev remove rule runs --forget: the marker goes with the drive.
+echo '{}' >"$AIRLOCK_RUN_DIR/rw-allow/sdb"
+run setro --forget sdb
+assert_eq "$RC" 0 "--forget: $OUT"
+assert_no_file "$AIRLOCK_RUN_DIR/rw-allow/sdb" "--forget deletes the marker"
+grep '"event":"ro_policy_marker_removed"' "$LOG" | tail -n 1 | grep -q '"reason":"removed"' ||
+  fail "--forget logged"
+run setro --forget ../sdb
+assert_eq "$RC" 2 "--forget refuses a path"
+
+# The drive is unlocked again for the rest of the test (new attach, so a new unlock).
+for name in sdb sdb1 sdb2; do echo 1 >"$FS/class/block/$name/ro"; done
+run fake "$CMD" /dev/sdb --confirm sdb
+assert_eq "$RC" 0 "unlock after re-plugging: $OUT"
+
+# A drive that reports no diskseq, wwid, or serial cannot be told apart from the next one.
+mv "$FS/class/block/sdb/diskseq" "$TEST_TMP/diskseq.sdb"
+mv "$FS/class/block/sdb/device/serial" "$TEST_TMP/serial.sdb"
+rm -f "$AIRLOCK_RUN_DIR/rw-allow/sdb"
+: >"$CALLS"
+run fake "$CMD" /dev/sdb --confirm sdb
+assert_eq "$RC" 1 "no drive identity: refused"
+assert_contains "$OUT" "no disk sequence number, WWN, or serial" "no-identity message"
+assert_no_file "$AIRLOCK_RUN_DIR/rw-allow/sdb" "no marker without an identity"
+[[ ! -s "$CALLS" ]] || fail "blockdev ran for a drive with no identity: $(cat "$CALLS")"
+grep -q '"reason":"no_drive_identity"' "$LOG" || fail "no-identity refusal logged"
+mv "$TEST_TMP/diskseq.sdb" "$FS/class/block/sdb/diskseq"
+mv "$TEST_TMP/serial.sdb" "$FS/class/block/sdb/device/serial"
 
 # /dev/sdb typed in full also counts as the name.
 : >"$CALLS"
@@ -186,8 +271,16 @@ if losetup -f >/dev/null 2>&1 && command -v blockdev >/dev/null 2>&1; then
   assert_eq "$RC" 1 "real device: refused without confirmation"
   assert_eq "$(blockdev --getro "$loop")" 1 "real device still read-only"
   run "$CMD" "$loop" --confirm "$name"
+  if [[ ! -e "/sys/class/block/$name/diskseq" ]]; then
+    # Kernels before 5.15 have no diskseq; a loop device has no serial either.
+    assert_eq "$RC" 1 "real device without diskseq refused: $OUT"
+    detach
+    pass "evidence-unlock-output refuses without confirmation, unlocks one drive, logs it, relocks"
+  fi
   assert_eq "$RC" 0 "real device unlocked: $OUT"
   assert_eq "$(blockdev --getro "$loop")" 0 "real device writable"
+  grep -Eq '"identity_sha256": "[0-9a-f]{64}"' "$AIRLOCK_RUN_DIR/rw-allow/$name" ||
+    fail "real device marker records the identity"
   run "$CMD" "$loop" --lock
   assert_eq "$RC" 0 "real device locked: $OUT"
   assert_eq "$(blockdev --getro "$loop")" 1 "real device read-only again"

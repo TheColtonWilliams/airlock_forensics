@@ -8,15 +8,26 @@ name back (or passes ``--confirm NAME``). ``--yes`` never skips that confirmatio
 It writes a marker ``<run dir>/rw-allow/<kernel name of the disk>`` (``airlock_common.paths``
 ``rw_allow_dir()``: ``AIRLOCK_RUN_DIR``, default ``/run/airlock``) so a later udev ``change``
 event, which re-runs ``airlock-setro`` from the harden_storage role, leaves the drive and its
-partitions writable. Then it runs ``blockdev --setrw`` and logs model, serial, and size. If the
-drive stays read-only the marker is removed again (fail closed). Surviving risk 1: the log
-records the change; it does not prevent a mistake. ``--lock`` undoes it: the marker goes first,
-then ``blockdev --setro`` runs again.
+partitions writable. The marker is bound to the drive, not only its name: it records
+``identity_sha256``, the SHA-256 of the disk's sysfs ``diskseq``, ``wwid``, ``serial`` and
+``size`` (:func:`drive_identity`). ``airlock-setro`` works the hash out again and ignores and
+deletes a marker that does not match, so a drive that later gets the same kernel name (the
+next one plugged in) starts read-only. ``diskseq`` is new each time a disk is attached, so the
+same drive plugged in again is read-only too. The udev rule also deletes the marker when the
+disk is removed, and ``/run`` is a tmpfs, so nothing survives a reboot. A drive with none of
+``diskseq``, ``wwid`` or ``serial`` cannot be told apart from the next one and is refused.
+Then it runs ``blockdev --setrw`` and logs model, serial, and size. If the drive stays
+read-only the marker is removed again (fail closed). Surviving risk 1: the log records the
+change; it does not prevent a mistake. ``--lock`` undoes it: the marker goes first, then
+``blockdev --setro`` runs again.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
+import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +40,7 @@ from airlock_session.common import (
     readonly_flag,
     require_root,
     run_main,
+    sysfs,
 )
 
 TOOL = "evidence-unlock-output"
@@ -38,9 +50,22 @@ WARNING = (
     "Anything on this PC can then change it. Use this only for a drive that will hold case "
     "output, never for an evidence drive.\n"
     "The change is recorded in the session log. The log records it; it does not prevent "
-    "mistakes. Unplugging the drive, or evidence-unlock-output --lock {path}, makes it "
-    "read-only again."
+    "mistakes.\n"
+    "The unlock belongs to this drive only while it stays plugged in: once it is unplugged, "
+    "it and any drive that later gets the name {path} start read-only. "
+    "evidence-unlock-output --lock {path} makes it read-only now."
 )
+
+# Identity fields, in hash order, and the sysfs files each is read from (first readable wins).
+# airlock-setro (harden_storage role) reads the same files the same way; keep them in step.
+IDENTITY_FIELDS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("diskseq", ("diskseq",)),
+    ("wwid", ("wwid", "device/wwid")),
+    ("serial", ("serial", "device/serial")),
+    ("size", ("size",)),
+)
+_STRIP = b"\x00\t\n\x0b\x0c\r "
+_MARKER_ID = re.compile(r'^\s*"identity_sha256":\s*"([0-9a-f]{64})",?\s*$', re.M)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -112,6 +137,54 @@ def _blockdev(flag: str, dev_path: str) -> None:
     proc.run(["blockdev", flag, dev_path], timeout=30)
 
 
+def _id_field(base: Path, rels: tuple[str, ...]) -> bytes:
+    for rel in rels:
+        path = base / rel
+        if os.access(path, os.R_OK):
+            try:
+                data = path.read_bytes()
+            except OSError:
+                data = b""
+            return data.translate(None, _STRIP)
+    return b""
+
+
+def drive_identity(name: str) -> tuple[dict[str, str], str | None]:
+    """The identity fields of whole disk ``name`` from sysfs, and their SHA-256.
+
+    The hash is over ``diskseq=..\\nwwid=..\\nserial=..\\nsize=..\\n`` with white space and
+    NUL bytes removed from each value, exactly as ``airlock-setro`` computes it. It is None when
+    the disk has no ``diskseq``, ``wwid`` or ``serial``: nothing would tell it apart from the
+    next drive given the same name.
+    """
+    base = sysfs() / "class" / "block" / name
+    raw = {field: _id_field(base, rels) for field, rels in IDENTITY_FIELDS}
+    fields = {k: v.decode("utf-8", "replace") for k, v in raw.items()}
+    if not (raw["diskseq"] or raw["wwid"] or raw["serial"]):
+        return fields, None
+    canon = b"".join(k.encode() + b"=" + raw[k] + b"\n" for k, _ in IDENTITY_FIELDS)
+    return fields, hashlib.sha256(canon).hexdigest()
+
+
+def marker_valid(name: str) -> bool:
+    """True when ``rw-allow/<name>`` exists and was written for the drive now called ``name``.
+
+    The same test ``airlock-setro`` applies; a marker left by another drive does not count.
+    """
+    if not name or "/" in name or name in {".", ".."}:
+        return False
+    marker = paths.rw_allow_dir() / name
+    if marker.is_symlink() or not marker.is_file():
+        return False
+    try:
+        text = marker.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return False
+    match = _MARKER_ID.search(text)
+    current = drive_identity(name)[1]
+    return bool(match) and current is not None and match.group(1) == current
+
+
 def run(args: argparse.Namespace) -> int:
     require_root(TOOL)
     open_session_log(TOOL)
@@ -159,9 +232,26 @@ def run(args: argparse.Namespace) -> int:
         )
 
     marker = marker_path(disk)
+    id_fields, identity = drive_identity(disk.name)
+    if identity is None:
+        log(TOOL, "unlock_refused", reason="no_drive_identity", drive_identity=id_fields, **record)
+        raise CommandError(
+            f"not unlocked: {disk.path} reports no disk sequence number, WWN, or serial, so a "
+            "drive plugged in later under the same name could not be told apart from it. "
+            "Nothing was changed. Use a different drive for output."
+        )
     marker.parent.mkdir(parents=True, exist_ok=True)
     # The marker goes first: a udev "change" event during --setrw must not re-lock the drive.
-    jsonio.dump_json(marker, {"ts": timeutil.iso(), "tool": TOOL, **record})
+    jsonio.dump_json(
+        marker,
+        {
+            "ts": timeutil.iso(),
+            "tool": TOOL,
+            "identity_sha256": identity,
+            "drive_identity": id_fields,
+            **record,
+        },
+    )
     members = disk.walk()
     try:
         for d in members:
@@ -182,6 +272,8 @@ def run(args: argparse.Namespace) -> int:
         "output_unlocked",
         confirmed_via=via,
         marker=str(marker),
+        identity_sha256=identity,
+        drive_identity=id_fields,
         note="Logging is not enforcement (surviving risk 1).",
         **record,
     )

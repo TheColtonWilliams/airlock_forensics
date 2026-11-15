@@ -162,6 +162,12 @@ sleep 1
 mkdir -p "$AIRLOCK_RUN_DIR/rw-allow"
 echo '{}' >"$AIRLOCK_RUN_DIR/rw-allow/sdb"
 run "$CMD" --authority-ack --clock-ok --write-blocker no --yes </dev/null
+assert_contains "$OUT" "/dev/sdb is writable" "a marker with no drive identity is not an unlock"
+sleep 1
+echo EV1 >"$FS/class/block/sdb/serial"
+ident="$(python3 -c 'from airlock_session import unlock; print(unlock.drive_identity("sdb")[1])')"
+printf '{\n  "identity_sha256": "%s"\n}\n' "$ident" >"$AIRLOCK_RUN_DIR/rw-allow/sdb"
+run "$CMD" --authority-ack --clock-ok --write-blocker no --yes </dev/null
 assert_eq "$RC" 0 "session start with an unlocked output drive: $OUT"
 assert_not_contains "$OUT" "/dev/sdb is writable" "unlocked output drive is expected"
 LOG4="$(readlink -f "$SESS/current.log")"

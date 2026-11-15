@@ -1,8 +1,10 @@
-# Control 3A.2: no SMART self-tests, spin-down, or power commands sent to attached disks.
-# smartd is masked in storage_daemons_masked.yml; package udev rules that send commands (hdparm) are
-# overridden by links to /dev/null in /etc/udev/rules.d.
-# Test: tests/goss/storage.yaml (85-hdparm.rules linked to /dev/null)
-- name: Disk commands | Mask package udev rules that send disk commands
+# Control 3A.2: no SMART self-tests, spin-down, or power commands sent to attached disks, and no stacked
+# storage (bcache, multipath, iSCSI) activated on them. smartd, multipathd, and iscsid are masked in
+# storage_daemons_masked.yml; package udev rules that send commands (hdparm) or register stacked storage
+# (bcache, multipath, open-iscsi) are overridden by links to /dev/null in /etc/udev/rules.d, and
+# bcache-tools is purged (its initramfs hook carries 69-bcache.rules into the initramfs too).
+# Test: tests/goss/storage.yaml (each rule linked to /dev/null, bcache-tools not installed)
+- name: Disk commands | Mask package udev rules that send disk commands or activate stacked storage
   ansible.builtin.file:
     src: /dev/null
     dest: "/etc/udev/rules.d/{{ item }}"
@@ -10,3 +12,10 @@
     force: true
   loop: "{{ harden_storage_udev_rules_masked }}"
   notify: Harden storage | Reload udev rules
+
+- name: Disk commands | Remove packages that activate stacked storage
+  ansible.builtin.apt:
+    name: "{{ harden_storage_activation_packages_absent }}"
+    state: absent
+    purge: true
+  notify: Harden storage | Rebuild initramfs

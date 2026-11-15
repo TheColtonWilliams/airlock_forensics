@@ -8,9 +8,12 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 ROLE="$REPO_ROOT/ansible/roles/harden_storage/files"
 HELPER="$ROLE/airlock-setro"
-RULE="$ROLE/99-forensic-ro.rules"
+RULE="$ROLE/00-forensic-ro.rules"
 assert_file "$HELPER"
 assert_file "$RULE"
+# The rule is numbered 00 so its RUN entry is queued before any package rule's (69-bcache.rules'
+# bcache-register, for example). No late 99- copy may be left beside it.
+assert_no_file "$ROLE/99-forensic-ro.rules" "no 99- copy of the read-only rule"
 
 export AIRLOCK_PYLIB="$PYLIB"
 export AIRLOCK_LOG_LIB="$REPO_ROOT/ansible/roles/session_tools/files/lib/airlock-log.sh"
@@ -23,6 +26,9 @@ assert_contains "$rule_line" 'SUBSYSTEM=="block"' "rule matches block devices"
 assert_contains "$rule_line" 'KERNEL=="sd*|nvme*|mmcblk*|vd*"' "rule matches every disk family"
 assert_contains "$rule_line" 'ACTION=="add|change"' "rule runs on add and change"
 assert_contains "$rule_line" 'RUN+="/usr/local/sbin/airlock-setro %k"' "rule calls the helper with the kernel name"
+forget_line="$(grep '^ACTION=="remove"' "$RULE")"
+assert_contains "$forget_line" 'ENV{DEVTYPE}=="disk"' "remove rule matches whole disks"
+assert_contains "$forget_line" 'RUN+="/usr/local/sbin/airlock-setro --forget %k"' "remove rule deletes the unlock marker"
 if grep -qi 'write.blocker' "$RULE" && ! grep -qi 'not a write blocker' "$RULE"; then
   fail "the rule file calls the policy a write blocker"
 fi
@@ -170,10 +176,29 @@ run "$HELPER" sda5
 assert_eq "$(ro_of sda5)" 1 "no boot disk: sda5 read-only"
 assert_eq "$(log_field "$(last_log)" boot_disk)" none "no boot disk logged"
 
-# 9. A disk unlocked by evidence-unlock-output (marker in /run/airlock/rw-allow) is left alone.
+# 9. A disk unlocked by evidence-unlock-output (marker in /run/airlock/rw-allow) is left alone
+# while the marker's identity matches the drive now called sdc.
 export AIRLOCK_SETRO_ROOT_DEV=sda5
-mkdir -p "$AIRLOCK_RUN_DIR/rw-allow"
-touch "$AIRLOCK_RUN_DIR/rw-allow/sdc"
+mkdir -p "$AIRLOCK_RUN_DIR/rw-allow" "$FS/class/block/sdc/device"
+echo 21 >"$FS/class/block/sdc/diskseq"
+echo 'naa.5000c500a1b2c3d4' >"$FS/class/block/sdc/device/wwid"
+echo 'OUTPUT-SERIAL-1' >"$FS/class/block/sdc/device/serial"
+echo 1953525168 >"$FS/class/block/sdc/size"
+# write_marker DISK: the marker evidence-unlock-output writes (its own identity code).
+write_marker() {
+  python3 - "$PYLIB" "$1" "$AIRLOCK_RUN_DIR/rw-allow/$1" <<'PY_MARKER'
+import sys
+
+sys.path.insert(0, sys.argv[1])
+from airlock_common import jsonio
+from airlock_session import unlock
+
+fields, identity = unlock.drive_identity(sys.argv[2])
+assert identity, "fake disk has no identity"
+jsonio.dump_json(sys.argv[3], {"identity_sha256": identity, "drive_identity": fields})
+PY_MARKER
+}
+write_marker sdc
 reset_ro
 run "$HELPER" sdc1
 assert_eq "$RC" 0 "unlocked: $OUT"
@@ -181,7 +206,74 @@ assert_eq "$(ro_of sdc1)" 0 "unlocked disk stays writable"
 assert_eq "$(log_field "$(last_log)" decision)" unlocked "unlocked decision logged"
 run "$HELPER" --check
 assert_contains "$OUT" "unlocked sdc1 disk=sdc" "--check reports unlocked"
-rm -f "$AIRLOCK_RUN_DIR/rw-allow/sdc"
+# A marker named after a partition never counts (evidence-unlock-output only unlocks disks).
+mv "$AIRLOCK_RUN_DIR/rw-allow/sdc" "$AIRLOCK_RUN_DIR/rw-allow/sdc1"
+reset_ro
+run "$HELPER" sdc1
+assert_eq "$(ro_of sdc1)" 1 "partition-named marker ignored"
+rm -f "$AIRLOCK_RUN_DIR/rw-allow/sdc1"
+
+# 9b. sdc is unplugged without --lock (no remove event seen) and another drive is plugged in
+# and named sdc. Different serial, new diskseq: the leftover marker is ignored and deleted and
+# the new drive is read-only.
+write_marker sdc
+reset_ro
+echo 22 >"$FS/class/block/sdc/diskseq"
+echo 'naa.5000c500ffffffff' >"$FS/class/block/sdc/device/wwid"
+echo 'EVIDENCE-SERIAL-2' >"$FS/class/block/sdc/device/serial"
+run "$HELPER" sdc
+assert_eq "$RC" 0 "replacement sdc: $OUT"
+assert_eq "$(ro_of sdc)" 1 "replacement drive under the old name is read-only"
+assert_no_file "$AIRLOCK_RUN_DIR/rw-allow/sdc" "stale marker deleted"
+python3 -c 'import json,sys; sys.exit(0 if any(json.loads(l).get("event") == "ro_policy_marker_removed" and json.loads(l).get("reason") == "identity_mismatch" for l in open(sys.argv[1])) else 1)' "$LOG" \
+  || fail "stale marker removal was not logged"
+run "$HELPER" sdc1
+assert_eq "$(ro_of sdc1)" 1 "replacement partition read-only"
+run "$HELPER" --check
+assert_contains "$OUT" "ro sdc1 disk=sdc" "--check: replacement partition read-only"
+assert_not_contains "$OUT" "unlocked sdc" "--check: replacement not reported as unlocked"
+
+# 9c. The same drive plugged in again gets a new diskseq: read-only too.
+write_marker sdc
+reset_ro
+echo 23 >"$FS/class/block/sdc/diskseq"
+run "$HELPER" sdc1
+assert_eq "$(ro_of sdc1)" 1 "re-plugged drive (new diskseq) read-only"
+
+# 9d. A marker with no identity, an unreadable one, or a symlink is not honoured.
+for bad in '{}' '{"identity_sha256": "short"}'; do
+  printf '%s\n' "$bad" >"$AIRLOCK_RUN_DIR/rw-allow/sdc"
+  reset_ro
+  run "$HELPER" sdc
+  assert_eq "$(ro_of sdc)" 1 "marker '$bad' ignored"
+  assert_no_file "$AIRLOCK_RUN_DIR/rw-allow/sdc" "marker '$bad' deleted"
+done
+write_marker sdc
+mv "$AIRLOCK_RUN_DIR/rw-allow/sdc" "$TEST_TMP/real-marker"
+ln -s "$TEST_TMP/real-marker" "$AIRLOCK_RUN_DIR/rw-allow/sdc"
+reset_ro
+run "$HELPER" sdc
+assert_eq "$(ro_of sdc)" 1 "symlinked marker ignored"
+
+# 9e. A disk with no diskseq, wwid, or serial never matches a marker.
+write_marker sdc
+mv "$FS/class/block/sdc/diskseq" "$TEST_TMP/sdc.diskseq"
+mv "$FS/class/block/sdc/device" "$TEST_TMP/sdc.device"
+reset_ro
+run "$HELPER" sdc
+assert_eq "$(ro_of sdc)" 1 "disk without identity read-only despite a marker"
+mv "$TEST_TMP/sdc.diskseq" "$FS/class/block/sdc/diskseq"
+mv "$TEST_TMP/sdc.device" "$FS/class/block/sdc/device"
+
+# 9f. --forget (the udev remove rule) deletes the marker of a disk that went away.
+write_marker sdc
+run "$HELPER" --forget sdc
+assert_eq "$RC" 0 "--forget: $OUT"
+assert_no_file "$AIRLOCK_RUN_DIR/rw-allow/sdc" "--forget deleted the marker"
+run "$HELPER" --forget sdc
+assert_eq "$RC" 0 "--forget with no marker is fine"
+run "$HELPER" --forget ../x
+assert_eq "$RC" 2 "--forget refuses a path"
 
 # 10. blockdev failure: non-zero exit, one line saying what failed, logged.
 reset_ro
@@ -236,6 +328,9 @@ part2() {
   LOOP_EVID="$evidev"
   # The stub blockdev from part 1 is first on PATH; part 2 uses the real one.
   sys_path="${PATH#"$STUB_DIR:"}"
+  # A loop device keeps a read-only flag from an earlier run after detach; start both writable.
+  PATH="$sys_path" blockdev --setrw "$bootdev"
+  PATH="$sys_path" blockdev --setrw "$evidev"
   [[ -n "$REAL_BLOCKDEV" ]] || fail "real: blockdev not found"
   bname="${bootdev##*/}"
   ename="${evidev##*/}"
@@ -263,4 +358,4 @@ part2() {
 }
 part2
 
-pass "airlock-setro and 99-forensic-ro.rules"
+pass "airlock-setro and 00-forensic-ro.rules"

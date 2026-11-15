@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# live-build chroot hook (task 7.2): keep casper's initramfs off every disk but the live medium.
+# Runs inside the live system's chroot after 0500-airlock-site.hook.chroot. live/build.sh puts the
+# files from live/initramfs into the chroot (config/includes.chroot) and the kernel command line
+# names the medium (live-media=/dev/disk/by-label/<ISO volume label>) and turns persistence off
+# (nopersistent). This hook:
+#  1. diverts casper-bottom/13swap out of the initramfs scripts, so casper never runs swapon on a
+#     swap partition it finds on an attached disk (swapping writes to that disk);
+#  2. sets LIVEMEDIA_TIMEOUT in /etc/casper.conf, so casper never falls back to scanning and
+#     mounting every disk when the named medium is slow to appear (casper 1.498 reads this
+#     setting only from casper.conf, not from the command line; the initramfs copies the file);
+#  3. checks the read-only premount script, initramfs hook, and udev rule are in place;
+#  4. rebuilds the initramfs and checks the result holds all of the above.
+# Any failure stops the build. Test: tests/unit/test_repo_meta.py (config stage and content); the
+# live boot test in live/README.md.
+set -euo pipefail
+
+scripts=/usr/share/initramfs-tools/scripts
+swap_script="$scripts/casper-bottom/13swap"
+divert_dir=/usr/share/airlock/casper-diverted
+casper_conf=/etc/casper.conf
+# casper tries the medium once a second for 60 seconds; a timeout of 60 means autodetection
+# (scanning every disk) never starts. With no medium found casper stops the boot instead.
+livemedia_timeout=60
+premount=/etc/initramfs-tools/scripts/casper-premount/05airlock_readonly
+ihook=/etc/initramfs-tools/hooks/airlock-readonly
+rule=/usr/share/airlock/initramfs/00-airlock-initramfs-ro.rules
+
+die() {
+  printf 'airlock-casper-hook: %s\n' "$*" >&2
+  exit 1
+}
+
+[[ -f "$scripts/casper" && -d "$scripts/casper-bottom" ]] ||
+  die "casper is not installed in the chroot. live/build.sh must use --initramfs casper."
+
+# 1. No swapon from the initramfs.
+mkdir -p -- "$divert_dir"
+if [[ "$(dpkg-divert --truename "$swap_script")" != "$divert_dir/13swap" ]]; then
+  dpkg-divert --local --rename --divert "$divert_dir/13swap" --add "$swap_script" ||
+    die "could not divert $swap_script."
+fi
+[[ ! -e "$swap_script" ]] || die "$swap_script is still in place after the divert."
+if grep -lE '(^|[^[:alnum:]_])swapon([^[:alnum:]_]|$)' "$scripts"/casper-bottom/* "$scripts"/casper-premount/* 2>/dev/null; then
+  die "a casper script above still runs swapon. Divert it as 13swap is, then rebuild."
+fi
+
+# 2. Never scan other disks for the medium.
+touch -- "$casper_conf"
+sed -i '/LIVEMEDIA_TIMEOUT=/d' -- "$casper_conf"
+printf 'export LIVEMEDIA_TIMEOUT="%s"\n' "$livemedia_timeout" >>"$casper_conf"
+
+# 3. The read-only pieces from live/initramfs.
+[[ -x "$premount" ]] || die "$premount is missing or not executable. Rerun live/build.sh."
+[[ -x "$ihook" ]] || die "$ihook is missing or not executable. Rerun live/build.sh."
+[[ -r "$rule" ]] || die "$rule is missing. Rerun live/build.sh."
+
+# 4. Rebuild with the real update-initramfs (live-build may divert it during the chroot stage).
+uirf="$(dpkg-divert --truename /usr/sbin/update-initramfs)"
+[[ -x "$uirf" ]] || die "update-initramfs is missing from the chroot."
+if compgen -G '/boot/initrd.img-*' >/dev/null; then
+  "$uirf" -u -k all || die "update-initramfs failed."
+else
+  "$uirf" -c -k all || die "update-initramfs failed."
+fi
+
+found=0
+for img in /boot/initrd.img-*; do
+  [[ -f "$img" ]] || continue
+  found=1
+  tmp="$(mktemp -d)"
+  unmkinitramfs "$img" "$tmp" || die "could not unpack $img to check it."
+  root="$tmp"
+  [[ -d "$tmp/main" ]] && root="$tmp/main"
+  [[ -x "$root/scripts/casper-premount/05airlock_readonly" ]] ||
+    die "$img has no casper-premount/05airlock_readonly."
+  [[ ! -e "$root/scripts/casper-bottom/13swap" ]] || die "$img still has casper-bottom/13swap."
+  if grep -rlE '(^|[^[:alnum:]_])swapon([^[:alnum:]_]|$)' "$root/scripts/casper-bottom" 2>/dev/null; then
+    die "$img: a casper-bottom script above still runs swapon."
+  fi
+  [[ -f "$root/lib/udev/rules.d/00-airlock-initramfs-ro.rules" ||
+    -f "$root/usr/lib/udev/rules.d/00-airlock-initramfs-ro.rules" ]] ||
+    die "$img has no 00-airlock-initramfs-ro.rules."
+  [[ -x "$root/sbin/blockdev" || -x "$root/usr/sbin/blockdev" ]] || die "$img has no blockdev."
+  grep -qx "export LIVEMEDIA_TIMEOUT=\"$livemedia_timeout\"" "$root/etc/casper.conf" 2>/dev/null ||
+    die "$img: etc/casper.conf does not set LIVEMEDIA_TIMEOUT."
+  rm -rf -- "$tmp"
+done
+((found)) || die "no initramfs in /boot after update-initramfs."
+printf 'airlock-casper-hook: initramfs checked (no swapon, disks read-only before the medium search)\n'

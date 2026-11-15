@@ -43,6 +43,14 @@ harden_storage_daemon_masked_units:
   - e2scrub_all.timer
   - e2scrub_all.service
   - e2scrub_reap.service
+  - iscsid.service
+  - iscsid.socket
+  - open-iscsi.service
+
+# Task 3.2: the software read-only udev rule is 00-forensic-ro.rules, numbered 00 so udev queues its
+# RUN entry before any package rule's RUN entry. Copies under these old names are removed.
+harden_storage_readonly_rule_old_names:
+  - 99-forensic-ro.rules
 
 # Tasks 3.3, 3.4, 3A.1: entries that must be on the kernel command line.
 # The image role writes them from airlock_kernel_cmdline (group_vars/all/main.yml) into this file.
@@ -64,7 +72,19 @@ harden_storage_sg_packages_absent:
   - sg3-utils
   - sdparm
 
-# Task 3A.2: package udev rules that send commands to new disks (spin-down, APM).
+# Task 3A.2: package udev rules that send commands to new disks (spin-down, APM) or activate
+# stacked storage on them (bcache registration replays a cache journal and flushes dirty data into
+# the backing disk; multipath claims paths; open-iscsi starts iscsid for iSCSI disks).
 # Each is overridden by a same-named link to /dev/null in /etc/udev/rules.d.
 harden_storage_udev_rules_masked:
   - 85-hdparm.rules
+  - 69-bcache.rules
+  - 56-dm-mpath.rules
+  - 60-multipath.rules
+  - 70-open-iscsi.rules
+
+# Task 3A.2: packages that activate stacked storage on attached disks. ubuntu-server-minimal pulls
+# in bcache-tools; nothing AIRLOCK runs needs it. Purging it also takes its initramfs hook (and the
+# 69-bcache.rules copy inside the initramfs) away, so the initramfs is rebuilt.
+harden_storage_activation_packages_absent:
+  - bcache-tools
