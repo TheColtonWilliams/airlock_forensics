@@ -1,0 +1,252 @@
+{
+  "$id": "https://airlock.invalid/schema/finding-1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "derivation": {
+            "const": "ai_generated"
+          }
+        },
+        "required": [
+          "derivation"
+        ]
+      },
+      "then": {
+        "required": [
+          "model_sha256",
+          "prompt_sha256"
+        ]
+      }
+    }
+  ],
+  "description": "One row of findings.jsonl. Field meanings: docs/schema.md. Checked by the stdlib validator in forensic_analyze/findings.py.",
+  "properties": {
+    "allocated": {
+      "description": "True if the file's metadata entry is allocated; false if deleted or unallocated.",
+      "type": "boolean"
+    },
+    "artifact_type": {
+      "description": "What kind of record produced the row; snake_case by convention, e.g. file_entry, usn_delete, recycle_bin_entry.",
+      "minLength": 1,
+      "type": "string"
+    },
+    "category": {
+      "description": "Broad analysis category.",
+      "enum": [
+        "inventory",
+        "recycle_bin",
+        "deletion",
+        "users",
+        "malware",
+        "hash",
+        "images",
+        "video",
+        "audio",
+        "documents",
+        "timeline",
+        "carve",
+        "system",
+        "xval"
+      ],
+      "type": "string"
+    },
+    "confidence": {
+      "description": "Confidence from 0 to 1, when the producing tool gives one.",
+      "maximum": 1,
+      "minimum": 0,
+      "type": "number"
+    },
+    "datetime": {
+      "description": "Event time, ISO 8601 with a Z suffix, up to 9 fraction digits.",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$",
+      "type": "string"
+    },
+    "derivation": {
+      "description": "observed: read directly from a record; inferred: an interpretation by code; ai_generated: produced by a model.",
+      "enum": [
+        "observed",
+        "inferred",
+        "ai_generated"
+      ],
+      "type": "string"
+    },
+    "evidence_id": {
+      "description": "Exhibit or target identifier from the run.",
+      "minLength": 1,
+      "type": "string"
+    },
+    "evidence_sha256": {
+      "description": "SHA-256 of the target device or image, taken before the run.",
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "filename": {
+      "description": "Last path component, display-safe (escaped).",
+      "format": "x-display-safe",
+      "type": "string"
+    },
+    "finding_id": {
+      "description": "Stable ID assigned at merge, F-000001 onwards in module order.",
+      "pattern": "^F-[0-9]{6,}$",
+      "type": "string"
+    },
+    "hashset_name": {
+      "description": "Name of the hash set that matched.",
+      "minLength": 1,
+      "type": "string"
+    },
+    "hashset_version": {
+      "description": "Version or date of the hash set that matched.",
+      "minLength": 1,
+      "type": "string"
+    },
+    "inode_ref": {
+      "description": "Metadata address, recommended form v<volume>:<entry>-<sequence>.",
+      "minLength": 1,
+      "type": "string"
+    },
+    "label": {
+      "description": "Class label, signature, or rule name from a classifier or scanner.",
+      "minLength": 1,
+      "type": "string"
+    },
+    "match_algorithm": {
+      "description": "Algorithm that produced a hash or signature match, e.g. sha256, md5, ssdeep, yara, clamav.",
+      "minLength": 1,
+      "type": "string"
+    },
+    "md5": {
+      "description": "MD5 of the file content, lower-case hex.",
+      "pattern": "^[0-9a-f]{32}$",
+      "type": "string"
+    },
+    "message": {
+      "description": "One-line plain description of the finding.",
+      "minLength": 1,
+      "type": "string"
+    },
+    "model_id": {
+      "description": "Model name and quantisation, for rows a model produced.",
+      "minLength": 1,
+      "type": "string"
+    },
+    "model_sha256": {
+      "description": "SHA-256 of the model file.",
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "owner_sid": {
+      "description": "Owner account SID, never a person.",
+      "pattern": "^S-1-[0-9]+(-[0-9]+)*$",
+      "type": "string"
+    },
+    "parser": {
+      "description": "Parser or code path inside the tool, e.g. fls, mftecmd, dissect.ntfs.",
+      "minLength": 1,
+      "type": "string"
+    },
+    "path": {
+      "description": "Full path, display-safe (escaped). Raw bytes are in path_b64 when escaping changed anything.",
+      "format": "x-display-safe",
+      "type": "string"
+    },
+    "path_b64": {
+      "description": "Standard base64 of the raw path bytes.",
+      "pattern": "^[A-Za-z0-9+/]*={0,2}$",
+      "type": "string"
+    },
+    "prompt_sha256": {
+      "description": "SHA-256 of the fixed prompt file.",
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "run_id": {
+      "description": "Run identifier R-<YYYYMMDDTHHMMSSZ>-<6 hex>.",
+      "pattern": "^R-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{6}$",
+      "type": "string"
+    },
+    "score": {
+      "description": "Numeric score from a classifier or matcher.",
+      "type": "number"
+    },
+    "sensitive_flag": {
+      "description": "True if a classifier score passed the examiner's threshold.",
+      "type": "boolean"
+    },
+    "sha256": {
+      "description": "SHA-256 of the file content, lower-case hex.",
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "size_bytes": {
+      "description": "Size in bytes.",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "source_record": {
+      "description": "Where the raw record is: a path relative to the run folder, then # and a record locator.",
+      "pattern": "^(?!/)(?!(?:[^#]*/)?\\.\\.(?:/|#|$))[^#]+(?:#.+)?$",
+      "type": "string"
+    },
+    "source_tool": {
+      "description": "Tool that produced the record, e.g. sleuthkit, MFTECmd, dissect.",
+      "minLength": 1,
+      "type": "string"
+    },
+    "text": {
+      "description": "Longer text: an extract, transcript excerpt, or description.",
+      "type": "string"
+    },
+    "threshold": {
+      "description": "Threshold the score was compared against.",
+      "type": "number"
+    },
+    "timestamp_desc": {
+      "description": "What the datetime means, e.g. Creation Time, Deletion Time (Timesketch column).",
+      "minLength": 1,
+      "type": "string"
+    },
+    "tool_version": {
+      "description": "Version of source_tool as reported by the tool.",
+      "minLength": 1,
+      "type": "string"
+    },
+    "tz_basis": {
+      "description": "utc: recorded in UTC; local_with_offset: local time converted with a known offset; local_unknown_offset: local time, offset unknown.",
+      "enum": [
+        "utc",
+        "local_unknown_offset",
+        "local_with_offset"
+      ],
+      "type": "string"
+    },
+    "xval_status": {
+      "description": "Cross-validation result between two parsers.",
+      "enum": [
+        "agree",
+        "disagree",
+        "single_source"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "finding_id",
+    "run_id",
+    "evidence_id",
+    "evidence_sha256",
+    "category",
+    "artifact_type",
+    "message",
+    "derivation",
+    "source_tool",
+    "tool_version",
+    "parser"
+  ],
+  "title": "AIRLOCK finding",
+  "type": "object"
+}
