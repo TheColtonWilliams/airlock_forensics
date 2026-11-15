@@ -304,7 +304,7 @@ def test_build_workflow_jobs() -> None:
     assert set(jobs) == {"build", "make-usb-loop", "provision"}
     text = run_text(wf)
     assert "/dev/kvm" in text and "ACCEL=tcg" in text
-    assert "scripts/build.sh --accel" in text
+    assert "scripts/build.sh --dev --accel" in text  # CI has no release signing key
     assert "--firmware uefi,uefi-sb,bios" in text
     assert jobs["build"]["timeout-minutes"] == 360
     uploads = [s for s in jobs["build"]["steps"] if "upload-artifact" in s.get("uses", "")]
