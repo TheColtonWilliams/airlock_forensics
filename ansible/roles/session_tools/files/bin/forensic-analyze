@@ -1,0 +1,10 @@
+#!/usr/bin/python3
+"""forensic-analyze: guided analysis of one drive or image (docs/workflows/guided-analysis.md)."""
+
+import os
+import sys
+
+sys.path.insert(0, os.environ.get("AIRLOCK_PYLIB", "/opt/airlock/lib/python"))
+from forensic_analyze.cli import main
+
+raise SystemExit(main())
