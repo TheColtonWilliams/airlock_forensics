@@ -1,11 +1,14 @@
 """Module ``audio`` (task 4C.10): export, metadata, faster-whisper transcript, text summary.
 
 Audio is not screened by the image classifiers (they see pictures, not sound). Each file is
-exported read-only, read by mediainfo and ffprobe, transcribed by faster-whisper ``small`` on
-the CPU (``airlock_ai.audio``, sandboxed, no network), and the transcript is summarised by the
-local model with the fixed ``summarize_transcript`` prompt. Transcript and summary are
-AI-generated; the transcript is evidence-derived text and reaches the model only inside a
-delimited data block.
+exported read-only and read by mediainfo and ffprobe. A file that holds pictures or video
+despite its audio extension (a video stream, cover art, a picture renamed ``.m4a``) is screened
+like a video first and kept only if cleared; one ffprobe cannot read is not kept unless its
+first bytes show a picture, which is then screened. A kept file is transcribed by
+faster-whisper ``small`` on the CPU (``airlock_ai.audio``, sandboxed, no network), and the
+transcript is summarised by the local model with the fixed ``summarize_transcript`` prompt.
+Transcript and summary are AI-generated; the transcript is evidence-derived text and reaches
+the model only inside a delimited data block.
 """
 
 from __future__ import annotations
@@ -34,6 +37,14 @@ class AudioModule(media.MediaModule):
     def metadata(self, ctx: ModuleContext, item: media.MediaItem) -> None:
         media.mediainfo_ffprobe(ctx, item, "audio")
 
+    def content_route(self, ctx: ModuleContext, item: media.MediaItem) -> tuple[str, str]:
+        fp = item.meta.get("ffprobe") if item.meta else None
+        if isinstance(fp, dict):
+            return media.av_route(fp)
+        if media.sniff(media.need_path(item)) == "image":
+            return "image", "ffprobe could not read it and its first bytes are a picture format"
+        return "unknown", "ffprobe could not read it, so it could not be confirmed as sound only"
+
     def metadata_rows(self, ctx: ModuleContext, item: media.MediaItem) -> list[dict[str, Any]]:
         if not item.meta_record:
             return []
@@ -55,6 +66,8 @@ class AudioModule(media.MediaModule):
     ) -> list[dict[str, Any] | DescribeResult]:
         """The transcript needs only the speech model, not the description server."""
         path = media.need_path(item)
+        if item.route == "image":
+            return []  # a picture under an audio name: screened and kept, nothing to transcribe
         work = ctx.workdir / "ai-work"
         wav = work / f"audio-{item.sha256[:16]}.wav"
         try:
@@ -76,7 +89,7 @@ class AudioModule(media.MediaModule):
     def describe(
         self, ctx: ModuleContext, item: media.MediaItem, d: Describer, counts: Counter[str]
     ) -> list[DescribeResult]:
-        tr = item.meta.get("_transcript")
+        tr = item.meta.get("_transcript") if item.meta else None
         if tr is None or not tr.text:
             return []
         return [

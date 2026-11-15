@@ -137,7 +137,7 @@ Views (every view is `SELECT *` from `findings`):
 | `v_recycle_bin` | `category = 'recycle_bin'` | Finding order. |
 | `v_media` | `category IN ('images', 'video', 'audio')` | Finding order. |
 | `v_hash_hits` | `category IN ('malware', 'hash')`: hits (`hash_hit`, `clamav_hit`, `yara_hit`) are `malware`; `nsrl_known_good`, `hashset_status` and `hash_triage_error` are `hash` | Finding order. |
-| `v_flags` | `sensitive_flag = 1`, or a classifier result: `label IS NOT NULL AND score IS NOT NULL` | Finding order. |
+| `v_flags` | Media screening rows only: `category IN ('images', 'video', 'audio', 'documents')` and an `artifact_type` starting `screen_` or equal to `carved_media_removed`, with `sensitive_flag = 1` or a classifier result (`label IS NOT NULL AND score IS NOT NULL`). Hash and malware hits (`ssdeep` similarity rows carry a label and a score too) are in `v_hash_hits`, never here. | Finding order. |
 | `v_disagreements` | `xval_status = 'disagree'` | Finding order. |
 
 ## `findings.csv` (4D.6, 4D.7)

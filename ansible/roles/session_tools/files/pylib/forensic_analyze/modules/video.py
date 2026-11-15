@@ -1,10 +1,13 @@
 """Module ``video`` (task 4C.9): export, mediainfo and ffprobe metadata, frame screening,
 and for cleared videos a transcript of the audio track and a description.
 
-Frame screening (``airlock_ai.video``): one frame every 2 s plus scene-change frames, each
-scored like an image; any flagged frame flags the video, and the flagged timestamps go in the
-screening row. Flagged and unscreened videos are deleted from the export folder at once; they
-are never transcribed or described. Frames are temporary and deleted right after scoring.
+Frame screening (``airlock_ai.video``): frames over the whole length (one every 2 s, or
+further apart for a video too long for the frame limit) plus scene-change frames and attached
+pictures, each scored like an image; any flagged frame flags the video, and the flagged
+timestamps and the covered span go in the screening row. A video whose frames do not cover its
+whole length is not cleared. Flagged and unscreened videos are deleted from the export folder
+at once; they are never transcribed or described. Frames are temporary and deleted right after
+scoring.
 """
 
 from __future__ import annotations
@@ -57,17 +60,17 @@ class VideoModule(media.MediaModule):
         for item in items:
             media.check_escalated(ctx)
             media.need_path(item)
+            fp = item.meta.get("ffprobe") if item.meta else None
             vs = aivideo.screen_video(
-                item.path.resolve(), item.sha256, run_tool, ctx.workdir / "screen", thr
+                item.path.resolve(),
+                item.sha256,
+                run_tool,
+                ctx.workdir / "screen",
+                thr,
+                probed=aivideo.probe_from_json(fp) if isinstance(fp, dict) else None,
             )
             item.screen = vs.result
-            times = ", ".join(f"{t:.1f} s" for t in vs.flagged_times)
-            note = f"{vs.frames_screened} frames screened"
-            if times:
-                note += f"; flagged at {times}"
-            if vs.frame_errors:
-                note += f"; {vs.frame_errors} frames could not be scored"
-            item.meta["screen_note"] = note
+            item.screen_note = vs.note()
 
     def kept_extras(
         self, ctx: ModuleContext, item: media.MediaItem, counts: Counter[str]
@@ -117,9 +120,6 @@ class VideoModule(media.MediaModule):
                 )
             )
         return out
-
-    def screen_extra(self, item: media.MediaItem) -> str:
-        return str(item.meta.get("screen_note", "")) if item.meta else ""
 
 
 MODULE = VideoModule()

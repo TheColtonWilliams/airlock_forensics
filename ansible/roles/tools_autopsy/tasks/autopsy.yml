@@ -1,7 +1,11 @@
 # Control 4.9: the Autopsy zip staged on ASSETS, checked against its pinned SHA-256, unpacked to
 # /opt/autopsy-<version>, and prepared with the zip's own unix_setup.sh (-j Java 17 home).
+# Autopsy starts its own Solr 8 search server (standalone, no ZooKeeper) while a case is open.
+# Solr 8 listens on every interface unless told otherwise, so its settings file in the zip
+# (autopsy-solr.in.sh) is made to bind it to 127.0.0.1; the launcher sets the same (launcher.yml).
 # Test: tests/goss/tools.yaml (autopsy-installed: bin/autopsy present and executable when
-# Autopsy is installed); tests/unit/test_tools_autopsy.py (pin checked before unpacking).
+# Autopsy is installed); tests/unit/test_tools_autopsy.py (pin checked before unpacking; the
+# search server is bound to loopback, and provisioning stops when the settings file is absent).
 - name: Autopsy | Refuse an unpinned zip (4.9)
   ansible.builtin.assert:
     that:
@@ -50,6 +54,37 @@
   environment:
     JAVA_HOME: "{{ tools_autopsy_java_home }}"
   register: tools_autopsy_setup
+  when: *tools_autopsy_zip_when
+
+- name: Autopsy | Find the search server settings files in the zip (4.9)
+  ansible.builtin.find:
+    paths: "{{ tools_autopsy_prefix }}"
+    patterns: "{{ tools_autopsy_solr_include_names }}"
+    recurse: true
+  register: tools_autopsy_solr_in
+  when: *tools_autopsy_zip_when
+
+- name: Autopsy | Stop if Autopsy's search server settings file is missing (4.9)
+  ansible.builtin.assert:
+    that:
+      - >-
+        tools_autopsy_solr_in.files | map(attribute='path') | map('basename')
+        | select('equalto', tools_autopsy_solr_include_names[0]) | list | length > 0
+    fail_msg: >-
+      {{ tools_autopsy_solr_include_names[0] }} was not found under {{ tools_autopsy_prefix }},
+      so its search server could not be bound to this computer only. Autopsy is not set up.
+    quiet: true
+  when: *tools_autopsy_zip_when
+
+- name: Autopsy | Bind the search server to this computer only (4.9)
+  ansible.builtin.blockinfile:
+    path: "{{ item.path }}"
+    marker: "# {mark} AIRLOCK: search server on 127.0.0.1 only (4.9)"
+    block: "{{ tools_autopsy_solr_bind }}"
+    insertafter: EOF
+  loop: "{{ tools_autopsy_solr_in.files }}"
+  loop_control:
+    label: "{{ item.path }}"
   when: *tools_autopsy_zip_when
 
 - name: Autopsy | Mark the setup as done (4.9)

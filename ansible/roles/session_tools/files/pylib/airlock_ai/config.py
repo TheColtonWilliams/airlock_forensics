@@ -73,6 +73,7 @@ DEFAULT_THRESHOLDS: dict[str, Any] = {
     "nudenet_classes": list(NUDENET_EXPOSED_CLASSES),
     "label_template": "a photo of {label}.",
     "video": {"frame_interval_s": 2, "scene_threshold": 0.4, "max_frames": 900},
+    "image": {"max_frames": 64},
     "note": (
         "Scores at or above a threshold flag the file. Lower is more cautious. "
         "See docs/workflows/media-screening.md."
@@ -132,6 +133,7 @@ class Thresholds:
     frame_interval_s: float
     scene_threshold: float
     max_frames: int
+    max_image_frames: int = 64
     source: str = "built-in defaults"
     sha256: str = ""
     raw: dict[str, Any] = field(default_factory=dict)
@@ -150,6 +152,7 @@ class Thresholds:
                 "scene_threshold": self.scene_threshold,
                 "max_frames": self.max_frames,
             },
+            "image": {"max_frames": self.max_image_frames},
             "source": self.source,
             "sha256": self.sha256,
         }
@@ -169,6 +172,12 @@ def _unit(value: Any, name: str) -> float:
     return v
 
 
+def _count(value: Any, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ConfigError(f"{name}: expected a whole number of 1 or more, got {value!r}")
+    return value
+
+
 def thresholds_from_dict(
     data: dict[str, Any], *, source: str = "built-in defaults", sha256: str = ""
 ) -> Thresholds:
@@ -177,7 +186,7 @@ def thresholds_from_dict(
         raise ConfigError("thresholds: expected a JSON object")
     merged = copy.deepcopy(DEFAULT_THRESHOLDS)
     for key, value in data.items():
-        if key in {"labels", "video"} and isinstance(value, dict):
+        if key in {"labels", "video", "image"} and isinstance(value, dict):
             merged[key].update(value)
         else:
             merged[key] = value
@@ -193,6 +202,8 @@ def thresholds_from_dict(
     interval = float(video.get("frame_interval_s", 2))
     if interval <= 0:
         raise ConfigError("video.frame_interval_s: must be above 0")
+    max_frames = _count(video.get("max_frames", 900), "video.max_frames")
+    max_image_frames = _count(merged["image"].get("max_frames", 64), "image.max_frames")
     template = str(merged.get("label_template", ""))
     if "{label}" not in template:
         raise ConfigError("label_template: must contain {label}")
@@ -203,7 +214,8 @@ def thresholds_from_dict(
         label_template=template,
         frame_interval_s=interval,
         scene_threshold=_unit(video.get("scene_threshold", 0.4), "video.scene_threshold"),
-        max_frames=int(video.get("max_frames", 900)),
+        max_frames=max_frames,
+        max_image_frames=max_image_frames,
         source=source,
         sha256=sha256,
         raw=merged,

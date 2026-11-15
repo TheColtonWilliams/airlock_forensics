@@ -43,6 +43,10 @@ BOOL_FEATURES: tuple[str, ...] = (
     "yara",
 )
 _RELEASE_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)(?:-(\d+)-g[0-9a-f]+)?")
+# Jinja2 delimiters (Ansible templates any string holding one). profile.json is unsigned and
+# ASSETS is writable from any computer, so text from it holding one is refused outright.
+TEMPLATE_MARKERS: tuple[str, ...] = ("{{", "{%", "{#")
+_PROFILE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 
 
 class AssetError(RuntimeError):
@@ -75,6 +79,12 @@ def _release_key(release: str) -> tuple[int, ...] | None:
     if not m:
         return None
     return tuple(int(g or 0) for g in m.groups())
+
+
+def is_older_release(candidate: str, trusted: str) -> bool:
+    """True when ``candidate`` is a parseable release older than the parseable ``trusted``."""
+    new, old = _release_key(candidate), _release_key(trusted)
+    return new is not None and old is not None and new < old
 
 
 @dataclass
@@ -125,22 +135,21 @@ def load_manifest_info() -> ManifestInfo:
             )
         elif candidate is None:
             notes.append(("manifest.json", "ASSETS manifest is signed but not a valid manifest"))
-        else:
-            old = _release_key(str((baked or {}).get("release", "")))
-            new = _release_key(str(candidate.get("release", "")))
-            if baked is not None and old is not None and new is not None and new < old:
-                notes.append(
-                    (
-                        "manifest.json",
-                        f"ASSETS manifest {candidate.get('release')} is older "
-                        f"than the trusted {baked.get('release')}; not used",
-                    )
+        elif baked is not None and is_older_release(
+            str(candidate.get("release", "")), str(baked.get("release", ""))
+        ):
+            notes.append(
+                (
+                    "manifest.json",
+                    f"ASSETS manifest {candidate.get('release')} is older "
+                    f"than the trusted {baked.get('release')}; not used",
                 )
-            else:
-                return ManifestInfo(
-                    candidate, "assets", on_assets, hashing.sha256_file(on_assets),
-                    str(candidate.get("release", "")), notes,
-                )  # fmt: skip
+            )
+        else:
+            return ManifestInfo(
+                candidate, "assets", on_assets, hashing.sha256_file(on_assets),
+                str(candidate.get("release", "")), notes,
+            )  # fmt: skip
     if baked is None:
         raise AssetError(
             f"no trusted manifest: {baked_path} is missing or damaged and ASSETS has no valid "
@@ -167,6 +176,67 @@ def read_profile() -> dict[str, Any] | None:
     except (OSError, ValueError):
         return None
     return data if isinstance(data, dict) else None
+
+
+def template_markup(value: Any, where: str = "") -> list[str]:
+    """Where in ``value`` (dotted paths, keys included) a string holds template markup."""
+    found: list[str] = []
+    if isinstance(value, str):
+        if any(m in value for m in TEMPLATE_MARKERS):
+            found.append(where or "(value)")
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            path = f"{where}.{key}" if where else str(key)
+            if any(m in str(key) for m in TEMPLATE_MARKERS):
+                found.append(path)
+            found += template_markup(item, path)
+    elif isinstance(value, list | tuple):
+        for i, item in enumerate(value):
+            found += template_markup(item, f"{where}[{i}]")
+    return found
+
+
+def sanitize_features(raw: Any) -> tuple[dict[str, Any], list[str], list[str]]:
+    """profile.json ``features`` checked against the fixed schema (contract section 6).
+
+    Returns (features, turned off, reasons). Boolean features must be JSON true or false;
+    ``ai_tiers`` must be a list of known tier names. A feature with any other value is turned
+    off and named; keys outside the schema are dropped. The result holds only booleans and
+    known tier names, so no text from profile.json survives in it.
+    """
+    if raw is None:
+        return {}, [], []
+    if not isinstance(raw, dict):
+        return {}, [], ["features is not an object; every feature is off"]
+    out: dict[str, Any] = {}
+    off: list[str] = []
+    reasons: list[str] = []
+    for name in BOOL_FEATURES:
+        if name not in raw:
+            continue
+        if isinstance(raw[name], bool):
+            out[name] = raw[name]
+        else:
+            out[name] = False
+            off.append(name)
+            reasons.append(f"features.{name} is not true or false; turned off")
+    if "ai_tiers" in raw:
+        tiers = raw["ai_tiers"]
+        if not isinstance(tiers, list):
+            reasons.append("features.ai_tiers is not a list; no AI tier is on")
+            tiers = []
+        good = [t for t in TIERS if t in tiers]
+        if any(not (isinstance(t, str) and t in TIERS) for t in tiers):
+            reasons.append("features.ai_tiers holds an unknown tier; it was dropped")
+        out["ai_tiers"] = good
+    return out, off, reasons
+
+
+def profile_name(raw: Any) -> str | None:
+    """The profile name when it is a plain name (letters, digits, ``_.-``), else None."""
+    if raw in (None, ""):
+        return ""
+    return str(raw) if isinstance(raw, str) and _PROFILE_NAME_RE.match(raw) else None
 
 
 def profile_sha256() -> str | None:
@@ -373,7 +443,7 @@ def verify_staged(*, deep: bool = True, for_apply: bool = False) -> AssetReport:
         info = load_manifest_info()
     except AssetError as exc:
         report.problems.append(("manifest.json", str(exc)))
-        feats = (profile or {}).get("features") or {}
+        feats, _, _ = sanitize_features((profile or {}).get("features"))
         report.disabled_features = sorted(
             [f"ai_{t}" for t in feats.get("ai_tiers") or []]
             + [k for k in BOOL_FEATURES if feats.get(k) is True]
@@ -388,12 +458,23 @@ def verify_staged(*, deep: bool = True, for_apply: bool = False) -> AssetReport:
              "on the host computer.")
         )  # fmt: skip
         return report
-    report.profile = str(profile.get("profile") or "")
-    report.features = dict(profile.get("features") or {})
+    marked = template_markup(profile)
+    if marked:
+        report.problems.append(
+            ("profile.json", f"holds template text ({len(marked)} value(s)); not used. Rerun the "
+             "fetcher on the host computer.")
+        )  # fmt: skip
+        return report
+    name = profile_name(profile.get("profile"))
+    if name is None:
+        report.problems.append(("profile.json", "the profile name is not a plain name; not used"))
+    report.profile = name or ""
+    report.features, feature_off, reasons = sanitize_features(profile.get("features"))
+    report.problems += [("profile.json", r) for r in reasons]
     manifest_files = {str(f.get("id")): f for f in info.manifest["files"] if isinstance(f, dict)}
     applied = None if for_apply else load_applied()
     staged, skipped, ids = _expected_ids(profile, info.manifest)
-    disabled: set[str] = set()
+    disabled: set[str] = set(feature_off)
     for aid in ids:
         entry = manifest_files.get(aid)
         if entry is None:

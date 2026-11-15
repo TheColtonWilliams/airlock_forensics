@@ -48,11 +48,17 @@ tools_ai_vulkan_packages:
   - vulkan-tools
 
 # Tools the AI path calls: ffmpeg (video frames, audio), poppler-utils (pdftotext, pdftoppm),
-# python3-venv (the two venvs).
+# python3-venv (the two venvs), and LibreOffice without a GUI for Office documents (4B.9:
+# airlock_ai/documents.py runs `soffice --headless --convert-to`; libreoffice-common, a
+# dependency of all three, provides /usr/bin/soffice). The -nogui variants leave out the
+# desktop front end; about 340 MB installed (decision log 2026-11-15).
 tools_ai_runtime_packages:
   - ffmpeg
   - poppler-utils
   - python3-venv
+  - libreoffice-writer-nogui
+  - libreoffice-calc-nogui
+  - libreoffice-impress-nogui
 
 # Task 4B.3: integrated GPUs share system RAM; the tier is capped at RAM minus this margin.
 tools_ai_integrated_ram_margin_gib: 8

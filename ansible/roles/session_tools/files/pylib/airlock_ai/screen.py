@@ -78,6 +78,9 @@ class RawScore:
     nudenet_classes: dict[str, float] = field(default_factory=dict)
     labels: dict[str, float] = field(default_factory=dict)
     error: str = ""
+    # Set when part of the file was not scored (more frames or pages than the limit). A file
+    # with this set is never cleared: it is flagged if a scored part flags, else an error.
+    incomplete: str = ""
 
 
 @dataclass
@@ -175,7 +178,11 @@ def decide(raw: RawScore, thresholds: cfgmod.Thresholds) -> tuple[str, str, list
             if label in cfgmod.VIOLENT_LABELS:
                 violent = True
     if not reasons:
+        if raw.incomplete:
+            return "error", "", [f"not fully screened: {raw.incomplete}"]
         return "cleared", "", []
+    if raw.incomplete:
+        reasons.append(f"not fully screened: {raw.incomplete}")
     category = "+".join(c for c, on in (("sexual", sexual), ("violent", violent)) if on)
     return "flagged", category, reasons
 
@@ -190,7 +197,8 @@ class StubBackend:
 
     Format: ``{"model_id": "...", "default": SCORE, "files": {"<sha256 or file name>": SCORE}}``
     where ``SCORE`` is ``{"nudity": 0.1, "labels": {"violence": 0.9, ...}}`` or
-    ``{"error": "text"}``. Labels left out score 0.
+    ``{"error": "text"}``. Labels left out score 0. ``"incomplete": "why"`` marks a file
+    whose frames were not all scored.
     """
 
     def __init__(self, spec_path: Path) -> None:
@@ -206,7 +214,11 @@ class StubBackend:
             return RawScore(error=str(entry["error"]))
         labels = {label: 0.0 for label in cfgmod.LABELS}
         labels.update({k: float(v) for k, v in entry.get("labels", {}).items()})
-        return RawScore(nudity=float(entry.get("nudity", 0.0)), labels=labels)
+        return RawScore(
+            nudity=float(entry.get("nudity", 0.0)),
+            labels=labels,
+            incomplete=str(entry.get("incomplete") or ""),
+        )
 
     def score(
         self, items: Sequence[tuple[Path, str]], thresholds: cfgmod.Thresholds
@@ -284,6 +296,7 @@ class TriageBackend:
                     "labels": list(cfgmod.LABELS),
                     "prompts": label_prompts(thresholds),
                     "nudenet_classes": list(thresholds.nudenet_classes),
+                    "max_image_frames": thresholds.max_image_frames,
                     "models": models,
                 },
             )
@@ -308,6 +321,7 @@ class TriageBackend:
                     nudenet_classes={k: float(v) for k, v in r.get("nudenet", {}).items()},
                     labels={k: float(v) for k, v in r.get("labels", {}).items()},
                     error=str(r.get("error") or ""),
+                    incomplete=str(r.get("incomplete") or ""),
                 )
             for f in (req_path, resp_path):
                 f.unlink(missing_ok=True)
@@ -408,7 +422,7 @@ def screen_paths(
                 model_sha256=out.model_sha256,
                 label_prompts_sha256=prompts_sha,
                 thresholds_sha256=thr.sha256,
-                error=raw_score.error,
+                error=raw_score.error or ("; ".join(reasons) if verdict == "error" else ""),
             )
     ordered = [results[k] for k in order]
     if out_csv is not None:

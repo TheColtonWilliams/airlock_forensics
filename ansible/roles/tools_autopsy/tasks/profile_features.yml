@@ -1,24 +1,12 @@
-# Control 4.9 (support): when provisioning, read which features were staged
-# (ASSETS/profile.json, contract section 6) unless forensic-provision passed them.
-# Test: tests/unit/test_tools_autopsy.py (install steps gated on the autopsy feature).
-- name: Profile | Look for profile.json on ASSETS (4.9)
-  ansible.builtin.stat:
-    path: "{{ airlock_assets_mount }}/profile.json"
-  register: tools_autopsy_profile_stat
-  when: airlock_phase == 'provision'
-
-- name: Profile | Read profile.json (4.9)
-  ansible.builtin.slurp:
-    src: "{{ airlock_assets_mount }}/profile.json"
-  register: tools_autopsy_profile_raw
-  when:
-    - airlock_phase == 'provision'
-    - tools_autopsy_features | length == 0
-    - tools_autopsy_profile_stat.stat.exists | default(false)
-
-- name: Profile | Set the staged features (4.9)
+# Control 4.9 (support): which features were staged comes only from forensic-provision
+# (airlock_profile_features), which first checks ASSETS/profile.json against a fixed schema:
+# real booleans, known AI tiers, unknown keys dropped, and any template text refused. The role
+# never reads profile.json itself: ASSETS is writable from any computer and profile.json is
+# not signed, so its text must never reach Ansible's templating. Only a real true turns
+# Autopsy on.
+# Test: tests/unit/test_tools_autopsy.py (install steps gated on the autopsy feature; the role
+# never reads profile.json); tests/unit/test_provision.py (templated profile values refused).
+- name: Profile | Take the staged features from forensic-provision (4.9)
   ansible.builtin.set_fact:
-    tools_autopsy_staged: >-
-      {{ tools_autopsy_features if tools_autopsy_features | length > 0 else
-         ((tools_autopsy_profile_raw.content | b64decode | from_json).features
-          if tools_autopsy_profile_raw.content is defined else {}) }}
+    tools_autopsy_staged:
+      autopsy: "{{ (tools_autopsy_features.autopsy | default(false)) is sameas true }}"

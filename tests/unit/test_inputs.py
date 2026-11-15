@@ -166,3 +166,28 @@ def test_casedb_missing_views(tmp_path: Path) -> None:
     con.close()
     with pytest.raises(inputs.InputError, match="lacks the views"):
         inputs.CaseDB(db)
+
+
+def test_flag_summary_is_media_screening_only(run_dir: Path, tmp_path: Path) -> None:
+    """An ssdeep hit has a label and a score; it never counts as a media screening flag, even
+    in a case.sqlite built by an older release whose ``v_flags`` still holds it (finding 10)."""
+    old = tmp_path / "old-case.sqlite"
+    old.write_bytes((run_dir / "case.sqlite").read_bytes())
+    con = sqlite3.connect(old)
+    con.execute(
+        "UPDATE findings SET category = 'malware', artifact_type = 'hash_hit', "
+        "label = 'ssdeep-known-sample', score = 0.97, sensitive_flag = NULL "
+        "WHERE rowid = (SELECT MIN(rowid) FROM findings WHERE category = 'deletion')"
+    )
+    con.execute("DROP VIEW v_flags")
+    con.execute(
+        "CREATE VIEW v_flags AS SELECT * FROM findings WHERE sensitive_flag = 1 "
+        "OR (label IS NOT NULL AND score IS NOT NULL) ORDER BY rowid"
+    )
+    con.commit()
+    assert con.execute("SELECT COUNT(*) FROM v_flags WHERE category = 'malware'").fetchone()[0]
+    con.close()
+    with inputs.CaseDB(old) as db:
+        flags = db.flag_summary()
+    assert {f["category"] for f in flags} == {"images"}
+    assert {(f["label"], f["flagged"]) for f in flags} == {("neutral", 0), ("violence", 1)}

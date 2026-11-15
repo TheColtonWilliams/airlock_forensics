@@ -1,11 +1,71 @@
-# Control 1.5: base packages from the Ubuntu archive (dated snapshot, 6.1). The apt cache
-# is refreshed in the image build only; on first boot (provision phase) there is no network
-# and every package is already installed.
-# Test: tests/goss/base.yaml (base-packages).
+# Control 1.5: base packages from the Ubuntu archive (dated snapshot, 6.1). The apt index is
+# refreshed and the packages installed in the image build only. On first boot, at import and
+# at update (provision phase) there is no network: the role only checks that every package is
+# already there, so apt never tries to reach the archive (hard rule 1).
+# Control 4.9 (support): Java 17 and the libraries optional Autopsy needs are installed in
+# every image build, whether or not Autopsy is, so a profile that turns Autopsy on later can
+# install it offline from ASSETS (decision log 2026-11-15). tools_autopsy checks for them.
+# Test: tests/goss/base.yaml (base-packages); tests/unit/test_offline_phase.py (nothing that
+# fetches can run when provisioning; Autopsy's prerequisites are on every image);
+# tests/unit/test_tools_autopsy.py (the two Autopsy package lists are the same).
 
 - name: Install the base packages (1.5)
   ansible.builtin.apt:
     name: "{{ base_packages }}"
     state: present
-    update_cache: "{{ airlock_phase == 'image' }}"
+    update_cache: true
     cache_valid_time: 3600
+  when: airlock_phase == 'image'
+
+- name: Install Java 17 and the libraries optional Autopsy needs (1.5, 4.9)
+  ansible.builtin.apt:
+    name: "{{ base_autopsy_prerequisites }}"
+    state: present
+  when: airlock_phase == 'image'
+  vars:
+    # Same list as tools_autopsy_packages (tools_autopsy/defaults/main.yml); a unit test keeps
+    # them equal. Java 17 per Autopsy 4.23.1's Running_Linux_OSX.md, PhotoRec for its
+    # unix_setup.sh, the Depends of the Sleuth Kit Java .deb, and the media viewer libraries.
+    base_autopsy_prerequisites:
+      - openjdk-17-jre
+      - testdisk
+      - unzip
+      - libafflib-dev
+      - libewf-dev
+      - libvhdi-dev
+      - libvmdk-dev
+      - libsqlite3-dev
+      - libc3p0-java
+      - libde265-0
+      - libheif1
+      - libpq5
+      - libgstreamer1.0-0
+      - gstreamer1.0-plugins-base
+      - gstreamer1.0-plugins-good
+      - gstreamer1.0-libav
+      - gstreamer1.0-gtk3
+
+- name: Ask dpkg which base packages are installed, offline (1.5)
+  ansible.builtin.command:
+    argv: "{{ base_dpkg_query + base_packages }}"
+  vars:
+    base_dpkg_query: [dpkg-query, -W, "-f=${Package} ${db:Status-Status}\\n"]
+  register: base_packages_dpkg
+  changed_when: false
+  failed_when: false
+  when: airlock_phase != 'image'
+
+- name: Check every base package is already installed (1.5)
+  ansible.builtin.assert:
+    that:
+      - base_packages_missing | length == 0
+    fail_msg: >-
+      This image is missing {{ base_packages_missing | join(', ') }}. Provisioning never
+      downloads packages. Reflash the drive with a released image.
+    quiet: true
+  vars:
+    base_packages_installed: >-
+      {{ base_packages_dpkg.stdout_lines | select('search', ' installed$')
+         | map('regex_replace', ' installed$', '') | list }}
+    base_packages_missing: "{{ base_packages | reject('in', base_packages_installed) | list }}"
+  when: airlock_phase != 'image'

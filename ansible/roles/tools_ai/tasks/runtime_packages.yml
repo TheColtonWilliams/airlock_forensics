@@ -1,7 +1,11 @@
 # Control 4B.7, 4B.9: tools the AI helpers call on the running system: ffmpeg (video frames,
-# audio track), poppler-utils (pdftotext, pdftoppm), python3-venv (classifier and speech venvs).
-# Test: tests/goss/ai.yaml (ai-runtime-packages).
-- name: AI runtime | Install ffmpeg, poppler-utils, python3-venv (4B.7, 4B.9)
+# audio track), poppler-utils (pdftotext, pdftoppm), python3-venv (classifier and speech venvs),
+# and headless LibreOffice (writer, calc, impress -nogui; `soffice --headless --convert-to` for
+# Office documents). The image build installs them; the provision phase runs the same task
+# under the same conditions and finds them installed (tests/unit/test_offline_phase.py).
+# Test: tests/goss/ai.yaml (packages, 'soffice runs'); tests/unit/test_tools_roles.py
+# (test_ai_document_tools_are_installed_and_checked).
+- name: AI runtime | Install ffmpeg, poppler-utils, python3-venv, headless LibreOffice (4B.7, 4B.9)
   ansible.builtin.apt:
     name: "{{ tools_ai_runtime_packages }}"
     state: present

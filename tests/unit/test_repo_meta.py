@@ -213,6 +213,132 @@ def test_decision_log_records_live_build_and_ci_licences() -> None:
         assert lic in log
 
 
+# ------------------------------------------------------------------ licence coverage (2B.18, 6.6)
+
+ROLES_DIR = REPO / "ansible" / "roles"
+APT_MODULES = {"apt", "ansible.builtin.apt"}
+REMOVED_LIST = re.compile(r"_absent|unwanted")
+ONE_VAR = re.compile(r"^\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}$")
+
+
+def _yaml_nodes(node: Any) -> Any:
+    if isinstance(node, list):
+        for item in node:
+            yield from _yaml_nodes(item)
+    elif isinstance(node, dict):
+        yield node
+        for value in node.values():
+            yield from _yaml_nodes(value)
+
+
+def installed_packages() -> dict[str, str]:
+    """Every Ubuntu package a role installs, mapped to where it is named: each ``*_packages``
+    list and ``*_package`` value in a role's defaults (not the lists of packages removed), the
+    desktop package in group_vars, and every package an apt task names literally or through a
+    variable set on the task itself."""
+    found: dict[str, str] = {}
+    sources = [
+        *sorted(ROLES_DIR.glob("*/defaults/main.yml")),
+        REPO / "ansible/group_vars/all/main.yml",
+    ]
+    for path in sources:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        for key, value in data.items():
+            if REMOVED_LIST.search(key):
+                continue
+            if key.endswith("_packages") and isinstance(value, list):
+                names = value
+            elif key.endswith("_package") and isinstance(value, str):
+                names = [value]
+            else:
+                continue
+            for name in names:
+                if isinstance(name, str) and "{{" not in name:
+                    found.setdefault(name, f"{path.relative_to(REPO)}: {key}")
+    for path in sorted(ROLES_DIR.glob("*/tasks/*.yml")):
+        for task in _yaml_nodes(yaml.safe_load(path.read_text(encoding="utf-8"))):
+            mod = next((m for m in APT_MODULES if isinstance(task.get(m), dict)), None)
+            if mod is None or task[mod].get("state") in {"absent", "purged"}:
+                continue
+            name = task[mod].get("name", task[mod].get("pkg"))
+            if isinstance(name, str) and (m := ONE_VAR.match(name)):
+                name = (task.get("vars") or {}).get(m.group(1))
+            names = [name] if isinstance(name, str) else (name or [])
+            for pkg in names:
+                if isinstance(pkg, str) and "{{" not in pkg:
+                    found.setdefault(pkg, str(path.relative_to(REPO)))
+    return found
+
+
+def licences_text_outside_pins_table() -> str:
+    text = read("docs/licenses.md")
+    start = text.index("<!-- pins-table:start -->")
+    end = text.index("<!-- pins-table:end -->")
+    return text[:start] + text[end:]
+
+
+def missing_from(names: Any, text: str) -> list[str]:
+    return sorted(
+        n for n in names if not re.search(rf"(?<![\w.+-]){re.escape(n)}(?![\w.+-])", text)
+    )
+
+
+def test_licence_coverage_check_sees_role_packages_and_flags_gaps() -> None:
+    """The check below must find the packages it is meant to cover, or it proves nothing."""
+    pkgs = installed_packages()
+    for pkg in (
+        "dc3dd",
+        "guymager",
+        "openjdk-17-jre",
+        "vulkan-tools",
+        "poppler-utils",
+        "libreoffice-writer-nogui",
+        "qemu-guest-agent",
+        "nftables",
+        "ubuntu-desktop-minimal",
+        "linux-generic-hwe-24.04",
+    ):
+        assert pkg in pkgs, pkg
+    for removed in ("openssh-server", "snapd", "clamav-daemon", "linux-virtual", "sg3-utils"):
+        assert removed not in pkgs, removed
+    assert missing_from(["dc3dd", "zlib1g"], "| dc3dd | 7 | GPL |\n| zlib1g-dev | 1 | Zlib |") == [
+        "zlib1g"
+    ]
+
+
+def test_licences_doc_lists_every_installed_package() -> None:
+    """docs/licenses.md claims every component; each package a role installs needs a row
+    (outside the generated pins table)."""
+    pkgs = installed_packages()
+    missing = missing_from(pkgs, licences_text_outside_pins_table())
+    assert not missing, "docs/licenses.md has no licence row for: " + ", ".join(
+        f"{p} ({pkgs[p]})" for p in missing
+    )
+
+
+def test_licences_doc_lists_every_baked_venv_package() -> None:
+    """Every package of the pinned Python closures baked into the image (Plaso, Dissect,
+    usncarve and their build backend) is named with its licence."""
+    names: set[str] = set()
+    for req in sorted(ROLES_DIR.glob("*/files/*requirements.txt")):
+        names |= set(re.findall(r"^([A-Za-z0-9_.-]+)==", req.read_text(encoding="utf-8"), re.M))
+    assert {"plaso", "dissect", "dissect-target", "bencode-py", "usncarve"} <= names
+    missing = missing_from(names, licences_text_outside_pins_table())
+    assert not missing, f"docs/licenses.md has no licence for venv packages: {missing}"
+
+
+def test_decision_log_records_ai_package_licences() -> None:
+    """Hard rule 10: the tools_ai archive packages and LibreOffice have a licence decision."""
+    log = flat("docs/decision-log.md")
+    for text in (
+        "vulkan-tools (Apache-2.0",
+        "poppler-utils (GPL-2.0 or GPL-3.0",
+        "libreoffice-writer-nogui, libreoffice-calc-nogui and libreoffice-impress-nogui (MPL-2.0",
+        "openjdk-17-jre`, GPL-2.0 with the Classpath exception",
+    ):
+        assert text in log, text
+
+
 def test_scaffold_files() -> None:
     """Tasks 0.2, 0.6, 0.10: licence, decision log seeded from Part 4, editor and git settings,
     pre-commit hooks."""
@@ -645,6 +771,23 @@ def test_live_build_config_stage(tmp_path: Path) -> None:
     assert "ansible-core" in (cfg / "package-lists" / "airlock.list.chroot").read_text(
         encoding="utf-8"
     )
+    # casper is kept off every other disk: medium named by label, no persistence search.
+    append = re.search(r'^LB_BOOTAPPEND_LIVE="([^"]*)"', binary, re.M)
+    assert append, binary
+    label = re.search(r'^LB_ISO_VOLUME="([^"]*)"', binary, re.M)
+    assert label, binary
+    words = append.group(1).split()
+    assert f"live-media=/dev/disk/by-label/{label.group(1)}" in words
+    assert "nopersistent" in words and "boot=casper" in words
+    casper_hook = cfg / "hooks" / "0600-airlock-casper.hook.chroot"
+    assert casper_hook.read_bytes() == (LIVE / "hooks" / casper_hook.name).read_bytes()
+    assert os.access(casper_hook, os.X_OK)
+    ichroot = cfg / "includes.chroot"
+    for rel, src in LIVE_INITRAMFS_FILES.items():
+        assert (ichroot / rel).read_bytes() == (LIVE / "initramfs" / src).read_bytes(), rel
+    assert os.access(
+        ichroot / "etc/initramfs-tools/scripts/casper-premount/05airlock_readonly", os.X_OK
+    )
     # An existing output folder is refused without --force.
     res = subprocess.run(
         ["bash", str(REPO / "live" / "build.sh"), "--config-only", "--out", str(out)],
@@ -653,6 +796,214 @@ def test_live_build_config_stage(tmp_path: Path) -> None:
         check=False,
     )
     assert res.returncode == 1 and "--force" in res.stderr
+
+
+LIVE = REPO / "live"
+LIVE_INITRAMFS_FILES = {
+    "etc/initramfs-tools/scripts/casper-premount/05airlock_readonly": (
+        "casper-premount-05airlock_readonly"
+    ),
+    "etc/initramfs-tools/hooks/airlock-readonly": "initramfs-hook-airlock-readonly",
+    "usr/share/airlock/initramfs/00-airlock-initramfs-ro.rules": "00-airlock-initramfs-ro.rules",
+}
+
+
+def _stub_lb(tmp_path: Path) -> tuple[dict[str, str], Path]:
+    """A PATH with an ``lb`` that records its arguments, one per line (no live-build needed)."""
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    record = tmp_path / "lb-args"
+    lb = bindir / "lb"
+    lb.write_text(f'#!/bin/sh\nprintf "%s\\n" "$@" > "{record}"\n', encoding="utf-8")
+    lb.chmod(0o755)
+    env = dict(os.environ, PATH=f"{bindir}:{os.environ.get('PATH', '')}")
+    return env, record
+
+
+def test_live_cmdline_names_the_medium_and_disables_persistence(tmp_path: Path) -> None:
+    """Finding: casper scanned, mounted, and ran swapon on every attached disk.
+
+    The live kernel command line must name the medium by its ISO label (casper then never scans
+    other disks) and carry nopersistent; the initramfs pieces must be staged for the chroot.
+    """
+    env, record = _stub_lb(tmp_path)
+    out = tmp_path / "live"
+    res = subprocess.run(
+        ["bash", str(LIVE / "build.sh"), "--config-only", "--out", str(out)],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    assert res.returncode == 0, res.stdout + res.stderr
+    args = record.read_text(encoding="utf-8").splitlines()
+    assert args[0] == "config"
+    label = args[args.index("--iso-volume") + 1]
+    assert re.fullmatch(r"AIRLOCK_LIVE_[0-9A-Za-z_]+", label) and len(label) <= 32
+    words = args[args.index("--bootappend-live") + 1].split()
+    assert words[0] == "boot=casper"
+    assert f"live-media=/dev/disk/by-label/{label}" in words
+    assert "nopersistent" in words
+    assert "persistent" not in words
+    shared = yaml.safe_load(read("ansible/group_vars/all/main.yml"))["airlock_kernel_cmdline"]
+    for entry in shared:
+        assert entry in words, entry
+    assert args[args.index("--initramfs") + 1] == "casper"
+    cfg = out / "lb" / "config"
+    assert os.access(cfg / "hooks" / "0600-airlock-casper.hook.chroot", os.X_OK)
+    for rel, src in LIVE_INITRAMFS_FILES.items():
+        assert (cfg / "includes.chroot" / rel).read_bytes() == (
+            LIVE / "initramfs" / src
+        ).read_bytes(), rel
+
+
+def test_live_build_refuses_a_label_iso9660_would_cut(tmp_path: Path) -> None:
+    env, _ = _stub_lb(tmp_path)
+    repo = tmp_path / "repo"
+    shutil.copytree(LIVE, repo / "live")
+    shutil.copytree(REPO / "ansible" / "group_vars", repo / "ansible" / "group_vars")
+    main = repo / "ansible" / "group_vars" / "all" / "main.yml"
+    data = main.read_text(encoding="utf-8")
+    data = re.sub(
+        r"^airlock_version:.*$", 'airlock_version: "1.2.3-averyveryverylongtag"', data, flags=re.M
+    )
+    main.write_text(data, encoding="utf-8")
+    res = subprocess.run(
+        ["bash", str(repo / "live" / "build.sh"), "--config-only", "--out", str(tmp_path / "o")],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    assert res.returncode == 1
+    assert "longer than 32 characters" in res.stderr
+
+
+def _premount_sysfs(tmp_path: Path, names: list[str]) -> tuple[Path, Path]:
+    sysfs = tmp_path / "sys"
+    dev = tmp_path / "dev"
+    (sysfs / "class" / "block").mkdir(parents=True)
+    dev.mkdir()
+    for name in names:
+        d = sysfs / "class" / "block" / name
+        d.mkdir()
+        (d / "ro").write_text("0\n")
+        if not re.fullmatch(r"nvme\d+c\d+n\d+", name):
+            (dev / name).write_text("")
+    return sysfs, dev
+
+
+def _run_premount(
+    tmp_path: Path, sysfs: Path, dev: Path, fail: str = ""
+) -> subprocess.CompletedProcess:
+    blockdev = tmp_path / "blockdev"
+    blockdev.write_text(
+        "#!/bin/sh\n"
+        f'printf "%s\\n" "$*" >> "{tmp_path}/calls"\n'
+        'name="${2##*/}"\n'
+        f'[ "$name" = "{fail}" ] && exit 1\n'
+        f'[ "$1" = --setro ] && echo 1 > "{sysfs}/class/block/$name/ro"\n'
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    blockdev.chmod(0o755)
+    env = dict(
+        os.environ,
+        AIRLOCK_SYSFS=str(sysfs),
+        AIRLOCK_DEV_DIR=str(dev),
+        AIRLOCK_BLOCKDEV=str(blockdev),
+    )
+    return subprocess.run(
+        ["sh", str(LIVE / "initramfs" / "casper-premount-05airlock_readonly")],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+
+
+def test_live_premount_sets_every_disk_readonly(tmp_path: Path) -> None:
+    names = ["sda", "sda1", "sdb", "sdb2", "nvme0n1", "nvme0n1p1", "nvme0c0n1", "mmcblk0", "vda"]
+    names += ["loop0", "sr0", "dm-0", "zram0"]
+    sysfs, dev = _premount_sysfs(tmp_path, names)
+    res = _run_premount(tmp_path, sysfs, dev)
+    assert res.returncode == 0, res.stdout + res.stderr
+    for name in ["sda", "sda1", "sdb", "sdb2", "nvme0n1", "nvme0n1p1", "mmcblk0", "vda"]:
+        assert (sysfs / "class" / "block" / name / "ro").read_text().strip() == "1", name
+    for name in ["loop0", "sr0", "dm-0", "zram0", "nvme0c0n1"]:
+        assert (sysfs / "class" / "block" / name / "ro").read_text().strip() == "0", name
+    assert "8 disk device(s) set read-only" in res.stdout
+    prereqs = subprocess.run(
+        ["sh", str(LIVE / "initramfs" / "casper-premount-05airlock_readonly"), "prereqs"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert prereqs.returncode == 0 and prereqs.stdout.strip() == ""
+
+
+def test_live_premount_fails_closed(tmp_path: Path) -> None:
+    sysfs, dev = _premount_sysfs(tmp_path, ["sda", "sdb", "sdb1"])
+    res = _run_premount(tmp_path, sysfs, dev, fail="sdb1")
+    assert res.returncode == 1
+    assert "could not set sdb1 read-only" in res.stderr
+    # A disk with no device node cannot be set read-only either: stop, do not skip it.
+    (dev / "sdb1").unlink()
+    res = _run_premount(tmp_path, sysfs, dev)
+    assert res.returncode == 1 and "sdb1" in res.stderr
+
+
+def test_live_initramfs_pieces() -> None:
+    rule = (LIVE / "initramfs" / "00-airlock-initramfs-ro.rules").read_text(encoding="utf-8")
+    (line,) = [x for x in rule.splitlines() if x.strip() and not x.startswith("#")]
+    assert 'ACTION=="add|change"' in line and 'SUBSYSTEM=="block"' in line
+    assert 'KERNEL=="sd*|nvme*|mmcblk*|vd*"' in line
+    assert 'RUN+="/sbin/blockdev --setro $devnode"' in line
+    assert "not a write blocker" in re.sub(r"[\s#]+", " ", rule)
+    ihook = (LIVE / "initramfs" / "initramfs-hook-airlock-readonly").read_text(encoding="utf-8")
+    assert "copy_exec /sbin/blockdev /sbin" in ihook
+    assert '"${DESTDIR}/lib/udev/rules.d/00-airlock-initramfs-ro.rules"' in ihook
+    premount = (LIVE / "initramfs" / "casper-premount-05airlock_readonly").read_text(
+        encoding="utf-8"
+    )
+    assert "panic" in premount and "not a write blocker" in re.sub(r"[\s#]+", " ", premount)
+    hook = (LIVE / "hooks" / "0600-airlock-casper.hook.chroot").read_text(encoding="utf-8")
+    # casper's swapon script is diverted out of the initramfs, and the result is checked.
+    assert 'dpkg-divert --local --rename --divert "$divert_dir/13swap" --add "$swap_script"' in hook
+    assert "scripts=/usr/share/initramfs-tools/scripts\n" in hook
+    assert 'swap_script="$scripts/casper-bottom/13swap"' in hook
+    assert 'die "$img still has casper-bottom/13swap."' in hook
+    # casper 1.498 reads LIVEMEDIA_TIMEOUT only from casper.conf; 60 s means no disk scan.
+    assert "livemedia_timeout=60" in hook
+    assert "export LIVEMEDIA_TIMEOUT=" in hook and "casper_conf=/etc/casper.conf" in hook
+    # The real update-initramfs is used and every piece is checked in the rebuilt image.
+    assert "dpkg-divert --truename /usr/sbin/update-initramfs" in hook
+    for piece in ("05airlock_readonly", "00-airlock-initramfs-ro.rules", "blockdev"):
+        assert piece in hook
+    for script in (
+        LIVE / "hooks" / "0600-airlock-casper.hook.chroot",
+        LIVE / "initramfs" / "casper-premount-05airlock_readonly",
+        LIVE / "initramfs" / "initramfs-hook-airlock-readonly",
+    ):
+        assert os.access(script, os.X_OK), script
+    readme = flat("live/README.md")
+    assert "swapon --show" in readme and "live-media=" in readme
+
+
+@pytest.mark.skipif(shutil.which("shellcheck") is None, reason="needs shellcheck")
+def test_live_initramfs_scripts_pass_shellcheck() -> None:
+    """scripts/lint.sh only picks up bash scripts; these run under the initramfs /bin/sh."""
+    files = [
+        str(LIVE / "initramfs" / "casper-premount-05airlock_readonly"),
+        str(LIVE / "initramfs" / "initramfs-hook-airlock-readonly"),
+    ]
+    res = subprocess.run(
+        ["shellcheck", "-x", "-S", "style", "-s", "sh", *files],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert res.returncode == 0, res.stdout + res.stderr
 
 
 def test_live_build_refuses_bad_usage() -> None:

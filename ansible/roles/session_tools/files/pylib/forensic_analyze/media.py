@@ -9,7 +9,12 @@ go through the same flow from the ``carve`` module, see below):
    (SHA-256, MD5), and read its metadata (exiftool, mediainfo, ffprobe) in the sandbox;
 3. images and videos: screen it (``airlock_ai.screen`` / ``airlock_ai.video``). A cleared
    file moves to ``export/``; a flagged file, or one that could not be screened, is deleted at
-   once: it is never kept, copied on, shown, or sent to a model (task 4B.17);
+   once: it is never kept, copied on, shown, or sent to a model (task 4B.17). Audio and
+   documents are not screened, so their modules check the content type first
+   (:meth:`MediaModule.content_route`: ffprobe streams, exiftool MIME type, magic bytes). A
+   file whose content is a picture or video despite its extension goes through the same
+   screening; one whose type cannot be confirmed is deleted with a "not screened (content
+   type mismatch)" row;
 4. describe what was kept with the local model (``airlock_ai.describe``), if a tier is staged;
 5. emit rows: observed metadata rows, AI-generated screening rows (score, label, threshold,
    sensitive_flag, model and prompt SHA-256), AI-generated description rows. Rows never carry
@@ -46,8 +51,9 @@ from typing import Any
 
 from airlock_ai import AI_LABEL, escalate, llm
 from airlock_ai import config as aicfg
+from airlock_ai import video as aivideo
 from airlock_ai.describe import Describer, DescribeResult
-from airlock_ai.screen import ScreenResult
+from airlock_ai.screen import ScreenError, ScreenResult, screen_paths
 from airlock_common import hashing, proc
 from forensic_analyze import extract
 from forensic_analyze.api import Module, ModuleContext, ModuleResult, Volume
@@ -94,6 +100,11 @@ class MediaItem:
     removed: str = ""  # carved only: why the carved file was deleted (4B.17)
     screen_failure: str = ""  # carved only: why the screening step could not run
     screen: ScreenResult | None = None
+    screen_note: str = ""  # extra text for the screening row (frames, covered span)
+    # Content-type check of an unscreened module: "" (content matches), "image" or "video"
+    # (screen it as that), or "unknown" (not screened: deleted). ``route_reason`` says why.
+    route: str = ""
+    route_reason: str = ""
     meta: dict[str, Any] = field(default_factory=dict)
     meta_record: str = ""
     extra_rows: list[dict[str, Any]] = field(default_factory=list)
@@ -335,23 +346,32 @@ def exif_datetime(meta: dict[str, Any], key: str, offset_key: str) -> tuple[str,
 # ---------------------------------------------------------------------------------------------
 
 
+def _join(*parts: str) -> str:
+    return "; ".join(p for p in parts if p)
+
+
 def screening_rows(
     item: MediaItem, res: ScreenResult, category: str, thr: aicfg.Thresholds, *, extra: str = ""
 ) -> list[dict[str, Any]]:
     """Two AI-generated rows: the nudity detector and the zero-shot labels."""
     base = base_row(item, category)
     if res.verdict == "error":
+        if item.route:
+            why = f"content type mismatch: {item.route_reason}"
+        elif "not fully screened" in res.error:
+            why = "not every frame or page could be screened"
+        else:
+            why = "the classifiers could not score it"
         return [
             {
                 **base,
                 "artifact_type": "screen_error",
-                "message": "Not screened (the classifiers could not score it); not kept, not "
-                "described.",
+                "message": f"Not screened ({why}); not kept, not described.",
                 "derivation": "observed",
                 "source_tool": "evidence-screen",
                 "tool_version": res.backend or "unknown",
                 "parser": "airlock_ai.screen",
-                "text": (res.error or "; ".join(res.reasons))[:500] or None,
+                "text": _join(res.error or "; ".join(res.reasons), extra)[:500] or None,
             }
         ]
     if res.flagged:
@@ -592,8 +612,17 @@ class MediaModule(Module):
         return []
 
     def screen_extra(self, item: MediaItem) -> str:
-        """Extra text for the screening row (video: frames screened, flagged timestamps)."""
-        return ""
+        """Extra text for the screening row (video: frames screened, covered span, flagged
+        timestamps; a routed file: why it was screened)."""
+        parts = [item.screen_note]
+        if item.route:
+            parts.insert(0, f"content type mismatch: {item.route_reason}; screened as {item.route}")
+        return "; ".join(x for x in parts if x)
+
+    def content_route(self, ctx: ModuleContext, item: MediaItem) -> tuple[str, str]:
+        """Unscreened modules: ``(route, reason)`` from the file's real content type (see
+        :class:`MediaItem`). ``("", "")`` keeps the file unscreened, as its extension says."""
+        return "", ""
 
     def extra_pass(self, ctx: ModuleContext, counts: Counter[str]) -> None:
         """Anything after the main pass (thumbnail caches)."""
@@ -714,15 +743,22 @@ class MediaModule(Module):
                 continue
             counts["exported"] += 1
             self.metadata(ctx, item)
+            if not self.screened:
+                item.route, item.route_reason = self.content_route(ctx, item)
         live = [i for i in batch if not i.error]
         if self.screened and live:
             self._screen(ctx, live, thr)
+        routed = [i for i in live if i.route]
+        if routed:
+            counts["content_mismatch"] += len(routed)
+            screen_routed(ctx, routed, thr)
         for item in live:
             check_escalated(ctx)
             res = item.screen
-            if not self.screened or (res is not None and res.cleared):
+            must_clear = self.screened or bool(item.route)
+            if not must_clear or (res is not None and res.cleared):
                 keep(item, export_dir)
-                counts["cleared" if self.screened else "kept"] += 1
+                counts["cleared" if must_clear else "kept"] += 1
             else:
                 why = "flagged" if res is not None and res.flagged else "not_screened"
                 if item.carved:
@@ -762,7 +798,7 @@ class MediaModule(Module):
             return
         for row in self.metadata_rows(ctx, item):
             ctx.emit(row)
-        if self.screened and item.screen is not None:
+        if item.screen is not None:
             extra = self.screen_extra(item)
             for row in screening_rows(item, item.screen, self.category, thr, extra=extra):
                 ctx.emit(row)
@@ -791,6 +827,168 @@ class MediaModule(Module):
             ctx.emit(description_row(item, res, self.category))
 
 
+def _not_screened(item: MediaItem, why: str) -> ScreenResult:
+    return ScreenResult(str(item.path or ""), item.sha256, "error", error=f"not screened: {why}")
+
+
+def screen_routed(ctx: ModuleContext, items: Sequence[MediaItem], thr: aicfg.Thresholds) -> None:
+    """Screen files an unscreened module found to hold pictures or video (``item.route``).
+
+    Sets ``item.screen`` on each. Fails closed: a file that could not be screened gets an
+    ``error`` verdict, so it is deleted like any unscreened picture."""
+    run_tool = ctx_runner(ctx)
+    work = ctx.workdir / "screen"
+    imgs = [i for i in items if i.route == "image" and i.path is not None]
+    for item in items:
+        if item.route not in {"image", "video"} or item.path is None:
+            item.screen = _not_screened(item, item.route_reason or "content type unknown")
+    if imgs:
+        check_escalated(ctx)
+        try:
+            results = screen_paths(
+                [i.path.resolve() for i in imgs if i.path is not None],
+                None,
+                thr,
+                run_tool=run_tool,
+                workdir=work,
+                known_sha256={str(i.path.resolve()): i.sha256 for i in imgs if i.path},
+            )
+            for item, res in zip(imgs, results, strict=True):
+                item.screen = res
+        except (ScreenError, aicfg.ConfigError, proc.ToolError, OSError) as exc:
+            for item in imgs:
+                item.screen = _not_screened(item, f"{type(exc).__name__}: {exc}"[:300])
+    for item in items:
+        if item.route != "video" or item.path is None:
+            continue
+        check_escalated(ctx)
+        try:
+            vs = aivideo.screen_video(item.path.resolve(), item.sha256, run_tool, work, thr)
+            item.screen = vs.result
+            item.screen_note = vs.note()
+        except (ScreenError, aicfg.ConfigError, proc.ToolError, OSError) as exc:
+            item.screen = _not_screened(item, f"{type(exc).__name__}: {exc}"[:300])
+
+
+# Magic bytes of picture formats, checked when no metadata tool could name the content type.
+_IMAGE_MAGIC: tuple[bytes, ...] = (
+    b"\xff\xd8\xff",  # JPEG
+    b"\x89PNG\r\n\x1a\n",
+    b"GIF87a",
+    b"GIF89a",
+    b"II*\x00",  # TIFF and TIFF-based raw formats
+    b"MM\x00*",
+    b"II+\x00",  # BigTIFF
+    b"MM\x00+",
+    b"8BPS",  # Photoshop
+    b"\x00\x00\x01\x00",  # ICO
+    b"\x00\x00\x00\x0cjP  ",  # JPEG 2000
+    b"\x00\x00\x00\x0cJXL ",
+    b"\xff\x0a",  # JPEG XL codestream
+)
+_IMAGE_BRANDS = frozenset({b"heic", b"heix", b"hevc", b"heim", b"heis", b"mif1", b"msf1", b"avif"})
+_AV_MAGIC: tuple[bytes, ...] = (
+    b"\x1a\x45\xdf\xa3",  # Matroska, WebM
+    b"FLV",
+    b"\x30\x26\xb2\x75",  # ASF (WMV, WMA)
+    b"\x00\x00\x01\xba",  # MPEG program stream
+    b"\x00\x00\x01\xb3",  # MPEG video
+    b"OggS",
+    b"ID3",
+    b"fLaC",
+    b"#!AMR",
+    b".RMF",
+)
+_DOC_MAGIC: tuple[bytes, ...] = (
+    b"%PDF",
+    b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",  # OLE compound file (doc, xls, ppt, wps)
+    b"PK\x03\x04",  # ZIP-based (docx, xlsx, pptx, odt, pages)
+    b"{\\rtf",
+    b"\xffWPC",  # WordPerfect
+)
+
+
+def sniff(path: Path) -> str:
+    """``image``, ``av`` (audio or video container), ``document``, ``text``, or ``""`` from the
+    first bytes of a file. Only used when exiftool and ffprobe could not name the type."""
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(4096)
+    except OSError:
+        return ""
+    checks: tuple[tuple[str, bool], ...] = (
+        ("image", head.startswith(_IMAGE_MAGIC)),
+        ("image", head[:4] == b"RIFF" and head[8:12] == b"WEBP"),
+        ("image", head[:2] == b"BM" and head[6:10] == b"\x00\x00\x00\x00" and len(head) >= 26),
+        ("image", re.match(rb"P[1-7][ \t\r\n]", head[:3]) is not None and len(head) > 3),
+        ("image", head[4:8] == b"ftyp" and head[8:12] in _IMAGE_BRANDS),
+        ("av", head[4:8] == b"ftyp"),
+        ("av", head[:4] in {b"RIFF", b"FORM"} or head.startswith(_AV_MAGIC)),
+        ("av", len(head) > 188 and head[0] == 0x47 and head[188] == 0x47),  # MPEG-TS
+        ("av", head[:2] in {b"\xff\xfb", b"\xff\xf3", b"\xff\xf2", b"\xff\xf1", b"\xff\xf9"}),
+        ("document", head.startswith(_DOC_MAGIC)),
+        ("text", _looks_like_text(head)),
+    )
+    return next((kind for kind, hit in checks if hit), "")
+
+
+def _looks_like_text(head: bytes) -> bool:
+    if not head:
+        return True
+    if head.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return True  # UTF-16 with a byte order mark
+    text = head.decode("utf-8", "ignore")
+    if len(text.encode("utf-8")) < len(head) - 4:
+        return False  # not UTF-8 (a few bytes may be a character cut at the end)
+    control = sum(1 for ch in text if ord(ch) < 32 and ch not in "\t\n\r\f")
+    return control <= len(text) // 50
+
+
+def av_route(fp: Any) -> tuple[str, str]:
+    """Route for a file ffprobe read: ``video`` when it holds any video or picture stream."""
+    if not isinstance(fp, dict):
+        return "unknown", "ffprobe could not read it"
+    pics = moving = 0
+    for s in fp.get("streams") or []:
+        if not isinstance(s, dict) or s.get("codec_type") != "video":
+            continue
+        disp = s.get("disposition") if isinstance(s.get("disposition"), dict) else {}
+        if int(disp.get("attached_pic", 0) or 0) == 1:
+            pics += 1
+        else:
+            moving += 1
+    fmt = fp.get("format") if isinstance(fp.get("format"), dict) else {}
+    name = str(fmt.get("format_name") or "unknown format")
+    if moving and (name.endswith("_pipe") or name == "image2"):
+        return "image", f"ffprobe reads it as a still picture ({name})"
+    if moving:
+        return "video", f"ffprobe found {moving} picture or video stream(s) ({name})"
+    if pics:
+        return "video", f"ffprobe found {pics} attached picture(s) ({name})"
+    return "", ""
+
+
+def ffprobe_json(ctx: ModuleContext, item: MediaItem) -> dict[str, Any] | None:
+    """ffprobe JSON for an item (raw output kept under ``metadata/``), or None."""
+    path = need_path(item)
+    out = ctx.workdir / "metadata" / f"{_safe_name(item)}.ffprobe.json"
+    fp = run_json_tool(
+        ctx,
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-print_format",
+            "json",
+            "-show_format",
+            "-show_streams",
+            str(path),
+        ],
+        out,
+    )
+    return fp if isinstance(fp, dict) else None
+
+
 def _plain(counts: Counter[str]) -> dict[str, int]:
     return {k: int(v) for k, v in sorted(counts.items())}
 
@@ -803,20 +1001,7 @@ def mediainfo_ffprobe(ctx: ModuleContext, item: MediaItem, sub: str) -> None:
     mi = run_json_tool(
         ctx, ["mediainfo", "--Output=JSON", str(item.path)], base / f"{stem}.mediainfo.json"
     )
-    fp = run_json_tool(
-        ctx,
-        [
-            "ffprobe",
-            "-v",
-            "error",
-            "-print_format",
-            "json",
-            "-show_format",
-            "-show_streams",
-            str(item.path),
-        ],
-        base / f"{stem}.ffprobe.json",
-    )
+    fp = ffprobe_json(ctx, item)
     item.meta = {"mediainfo": mi, "ffprobe": fp, "kind": sub}
     if fp is not None:
         item.meta_record = f"modules/{ctx.module}/metadata/{stem}.ffprobe.json#format"

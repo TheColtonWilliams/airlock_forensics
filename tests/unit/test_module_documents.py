@@ -97,3 +97,39 @@ def test_text_extracted_without_a_model(run_dir: Path, monkeypatch):  # noqa: F8
     kinds = [r["artifact_type"] for r in rows]
     assert "document_text" in kinds and "ai_status" in kinds
     assert not any(r["derivation"] == "ai_generated" for r in rows)
+
+
+def test_pictures_under_document_names_are_screened(run_dir: Path, monkeypatch, tmp_path: Path):  # noqa: F811
+    """Finding 9: a picture renamed .txt or .docx is screened, never kept unscreened."""
+    blob = tmp_path / "blob.bin"
+    blob.write_bytes(bytes(range(256)) * 16)
+    note = tmp_path / "note.txt"
+    note.write_text("Meeting moved to Tuesday.\n", encoding="utf-8")
+    stage_inventory(
+        run_dir,
+        {
+            "/Docs/notes.txt": NEUTRAL / "shapes-squares.png",  # stub: flagged
+            "/Docs/photo.docx": NEUTRAL / "landscape.png",  # stub: cleared
+            "/Docs/blob.txt": blob,  # type unknown: not kept
+            "/Docs/real.txt": note,
+        },
+        monkeypatch,
+    )
+    ctx, rows = media_ctx(
+        run_dir, "documents", options={"preset": "standard", "ai_describe": False}
+    )
+    res = documents.MODULE.run(ctx)
+    assert res.status == "ok", res.reason
+    assert res.counts["content_mismatch"] == 3
+    assert (res.counts["kept"], res.counts["cleared"], res.counts["flagged"]) == (1, 1, 1)
+    assert res.counts["not_screened"] == 1
+    kept = sorted(p.name for p in (ctx.workdir / "export").iterdir() if p.is_file())
+    assert len(kept) == 2  # real.txt and the cleared picture
+    errs = {r["path"]: r for r in rows if r["artifact_type"] == "screen_error"}
+    assert set(errs) == {"/Docs/blob.txt"}
+    assert errs["/Docs/blob.txt"]["message"].startswith("Not screened (content type mismatch")
+    nud = {r["path"]: r for r in rows if r["artifact_type"] == "screen_nudity"}
+    assert nud["/Docs/notes.txt"]["sensitive_flag"] is True
+    assert nud["/Docs/photo.docx"]["sensitive_flag"] is False
+    text = {r["path"] for r in rows if r["artifact_type"].startswith("document_text")}
+    assert text == {"/Docs/real.txt"}  # screened pictures are never read as documents

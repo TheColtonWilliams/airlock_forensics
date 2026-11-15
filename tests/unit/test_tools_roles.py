@@ -239,6 +239,38 @@ def test_goss_versions_match_the_pins() -> None:
     assert "target-query --version" in GOSS_TEXT
 
 
+def test_ai_document_tools_are_installed_and_checked() -> None:
+    """4B.9: every program airlock_ai/documents.py runs is installed by tools_ai and checked by
+    goss in the image. soffice was called with no role installing it (review finding 17)."""
+    documents = (
+        ROLES / "session_tools" / "files" / "pylib" / "airlock_ai" / "documents.py"
+    ).read_text()
+    runtime = role_yaml("tools_ai", "defaults", "main.yml")["tools_ai_runtime_packages"]
+    ai_goss = yaml.safe_load((REPO / "tests" / "goss" / "ai.yaml").read_text())
+    # /usr/bin/soffice and /usr/bin/libreoffice come from libreoffice-common, a dependency of
+    # each -nogui package (one per Office format documents.py hands to soffice).
+    office = ["libreoffice-writer-nogui", "libreoffice-calc-nogui", "libreoffice-impress-nogui"]
+    provided_by = {
+        "pdftotext": ["poppler-utils"],
+        "pdftoppm": ["poppler-utils"],
+        "soffice": office,
+        "libreoffice": office,
+    }
+    called = set(re.findall(r'(?:\[\s*|proc\.which\()"([a-z0-9-]+)"', documents))
+    assert called == set(provided_by), f"documents.py calls {sorted(called)}: map each one here"
+    for program, pkgs in provided_by.items():
+        for pkg in pkgs:
+            assert pkg in runtime, f"tools_ai_runtime_packages lacks {pkg} ({program})"
+            assert ai_goss["package"].get(pkg) == {"installed": True}, pkg
+    # The GUI suite is not wanted; the -nogui core conflicts with it.
+    assert not any(re.fullmatch(r"libreoffice(-(core|writer|calc|impress))?", p) for p in runtime)
+    commands = ai_goss["command"]
+    assert "soffice --headless --version" in commands["soffice runs"]["exec"]
+    convert = commands["soffice converts a document"]["exec"]
+    for flag in ("--headless", "--norestore", "--convert-to txt:Text", "-env:UserInstallation="):
+        assert flag in convert and flag.split()[0] in documents, flag
+
+
 def test_ntfs3g_write_tools_are_diverted_and_checked() -> None:
     d = role_yaml("tools_filesystem", "defaults", "main.yml")
     tools = [Path(t).name for t in d["tools_filesystem_ntfs3g_write_tools"]]

@@ -2,6 +2,15 @@
 
 The licence of every third-party component AIRLOCK installs, downloads, or calls.
 
+Ubuntu package licences are read from each package's `/usr/share/doc/<package>/copyright` on
+noble (24.04), 2026-11-15; the first licence named is the one for `Files: *` (the bulk of the
+package), the rest are the parts the copyright file lists. Ubuntu packages pulled in only as
+dependencies of a package listed here carry their own copyright file in the image. "Version
+seen" is the noble candidate on that date; the image build installs what the dated snapshot
+(`apt_snapshot`) holds. `tests/unit/test_repo_meta.py` fails when a package any role installs
+(every `*_packages` list in a role's defaults, and every package an apt task names) has no row
+here.
+
 ## Called by forensic-analyze (Ubuntu 24.04 packages unless noted)
 
 | Component | Version seen (noble) | Licence |
@@ -14,12 +23,13 @@ The licence of every third-party component AIRLOCK installs, downloads, or calls
 | blktrace (optional) | 1.2.0 | GPL-2.0-or-later |
 | dissect.fve (`fve-dd`, PyPI) | 4.6 | AGPL-3.0-or-later (see surviving risk 8) |
 | sleuthkit (`fls`, `icat`, `ifind`, `blkls`, `blkcat`, `mactime`; NTFS modules) | 4.12.1 | CPL-1.0, IBM-PL-1.0, GPL-2.0-or-later (parts) |
-| dissect.target (`target-query`, PyPI; NTFS modules' second parser) | 3.25 | AGPL-3.0-or-later (see surviving risk 8) |
+| dissect.target (`target-query`, PyPI; NTFS modules' second parser) | 3.25 | AGPL-3.0-or-later (see surviving risk 8); the rest of the Dissect venv closure is listed under "Plaso and Dissect venvs" below |
 | libvshadow-utils (`vshadowinfo`; VSS check, 4C.29) | 20190323 | LGPL-3.0-or-later |
 | testdisk (`photorec`; carving, 4C.15) | 7.1 | GPL-2.0-or-later |
 | EZ Tools MFTECmd, RBCmd, LECmd, JLECmd (staged on ASSETS; optional second parsers) | pinned by the EZ Tools package | MIT (confirm per repository in 6.6, risk 7) |
 | bulk_extractor (optional, carving) | pinned by the carving package | MIT (with public-domain parts) |
-| Plaso `log2timeline`/`psort` (optional, timeline) | pinned by the timeline package | Apache-2.0 |
+| Plaso `log2timeline`/`psort` (optional, timeline) | pinned by the timeline package | Apache-2.0 (Plaso itself); its venv closure adds LGPL-3.0-or-later, MPL-2.0, PSF-2.0 and a BitTorrent Open Source Licence part: see "Plaso and Dissect venvs" below |
+| exiftool (`libimage-exiftool-perl`; media metadata, 4.7) | 12.76+dfsg-1 | Artistic-1.0-Perl OR GPL-1.0-or-later |
 
 ## Base image (role `base`; Ubuntu 24.04 packages from the 20261101 snapshot)
 
@@ -35,6 +45,17 @@ The licence of every third-party component AIRLOCK installs, downloads, or calls
 | exfatprogs | 1.2.2 | GPL-2.0-or-later |
 | gdisk (sgdisk) | 1.0.10 | GPL-2.0-or-later |
 | goss (`/opt/airlock/bin/goss`, provisioning self-test; fetched on the build host, pin `goss_linux_amd64`; also copied into test VMs) | 0.4.9 | Apache-2.0 |
+| python3-apt | 2.7.7ubuntu5.3 | GPL-2.0-or-later (parts permissive) |
+| dconf-cli (also installed by `harden_desktop` and `harden_storage` for their dconf locks) | 0.40.0-4ubuntu0.1 | LGPL-2.0-or-later (parts GPL-3.0) |
+| dosfstools | 4.2-1.1build1 | GPL-3.0-or-later (parts public domain) |
+| e2fsprogs | 1.47.0-2.4~exp1ubuntu4.1 | GPL-2.0 (parts LGPL-2.0, BSD-3-Clause, MIT, Apache-2.0) |
+| locales (GNU C Library data) | 2.39-0ubuntu8 | LGPL-2.1-or-later (parts GPL-2.0, BSD, MIT) |
+| openssl | 3.0.13-0ubuntu3 | Apache-2.0 (parts Artistic or GPL-1.0-or-later in the Perl build scripts) |
+| tzdata | 2026e-0ubuntu0.24.04.1 | Public domain (parts ICU) |
+| util-linux | 2.39.3-9ubuntu6.6 | GPL-2.0-or-later (parts LGPL-2.1-or-later, BSD-3-Clause, BSD-4-Clause, MIT, public domain) |
+| libvulkan1 (Vulkan loader; also in `tools_ai`) | 1.3.275.0-1build1 | Apache-2.0 (parts MIT) |
+| ubuntu-desktop-minimal (`desktop_package`; GNOME desktop metapackage, each component carries its own copyright file) | 1.539.2 | GPL-2.0-or-later (metapackage) |
+| nftables (role `harden_network`, drop-all firewall) | 1.0.9-1ubuntu0.1 | GPL-2.0 (parts GPL-2.0-or-later, CC-BY-SA-4.0 docs) |
 
 ## Session helpers (role `session_tools`; Ubuntu 24.04 packages, decision log 2026-11-15)
 
@@ -47,6 +68,81 @@ The licence of every third-party component AIRLOCK installs, downloads, or calls
 | iproute2 | 6.1.0-1ubuntu6.4 | GPL-2.0 |
 | ntfs-3g (read-only NTFS mounts) | 2022.10.3-1.2ubuntu3.2 | GPL-2.0-or-later (libfuse-lite LGPL-2.0-or-later) |
 | gnome-terminal (login launcher) | 3.52.0-1ubuntu2 | GPL-3.0-or-later |
+
+## Forensic tool roles (Milestone 4; Ubuntu 24.04 packages, decision log 2026-11-15)
+
+Every package in the `*_packages` lists of `tools_acquire`, `tools_filesystem`, `tools_carve`,
+`tools_media`, `tools_registry` and `tools_eztools`. Packages that also appear in a table above
+(ewf-tools, gddrescue, sleuthkit, libvshadow-utils, testdisk, ntfs-3g, ffmpeg, exiftool,
+hashdeep, ssdeep) keep their row there.
+
+| Component | Role | Version seen (noble) | Licence |
+|---|---|---|---|
+| libewf2 (EWF library under ewf-tools) | `tools_acquire`, `tools_carve` | 20140814-1build3 | LGPL-3.0-or-later |
+| dc3dd (imaging) | `tools_acquire` | 7.3.1-2 | GPL-3.0-or-later (parts GPL-2.0-or-later, GFDL-1.2-or-later docs, public domain) |
+| afflib-tools (AFF images) | `tools_acquire` | 3.7.20-1.1ubuntu5 | Public domain (`Files: *`), with BSD-4-Clause, BSD-3-Clause, ISC, MIT, CPL-1.0 or LGPL-2.1 (bundled LZMA) and GPL-3.0-or-later with Autoconf exception parts |
+| guymager (imaging GUI) | `tools_acquire` | 0.8.13-2build2 | GPL-2.0-or-later (md5 code zlib-style) |
+| libfsntfs-utils, python3-libfsntfs (`fsntfsinfo`; NTFS cross-check) | `tools_filesystem` | 20200921-2.1build1 | LGPL-3.0-or-later |
+| scalpel (header carving) | `tools_carve` | 1.60+git20240110.6960eb2-1build1 | GPL-2.0-or-later |
+| foremost (header carving) | `tools_carve` | 1.5.7-11 | Public domain (US Government work), GPL-2.0-or-later parts |
+| build-essential, flex, pkg-config, libewf-dev, libexpat1-dev, libssl-dev, zlib1g-dev, libncurses-dev, libsqlite3-dev (bulk_extractor build; left installed) | `tools_carve` | noble | GPL-2.0-or-later (build-essential metapackage; GCC GPL-3.0-or-later), Flex licence (BSD-style; flex), ISC (pkg-config/pkgconf), LGPL-3.0-or-later (libewf-dev), MIT (expat), Apache-2.0 (OpenSSL), Zlib, MIT/X11 (ncurses), public domain (SQLite) |
+| libexpat1, zlib1g, libtinfo6, libssl3t64 (bulk_extractor run time) | `tools_carve` | noble | MIT, Zlib, MIT/X11, Apache-2.0 |
+| mediainfo | `tools_media` | 24.01.1-1build2 | BSD-2-Clause (parts CC-BY-3.0) |
+| exiv2 | `tools_media` | 0.27.6-1ubuntu0.3 | GPL-2.0-or-later (parts BSD-3-Clause, MIT) |
+| vinetto (thumbs.db) | `tools_media` | 1:0.8.0-3 | GPL-3.0 (parts GPL-2.0-or-later) |
+| regripper (`rip.pl`) | `tools_registry` | 3.0~git20221205.d588019+dfsg-1.1 | MIT |
+| libregf-utils (`regfexport`, `regfinfo`) | `tools_registry` | 20201007-2.1build2 | LGPL-3.0-or-later |
+| libhivex-bin (`hivexsh`, `hivexregedit`) | `tools_registry` | 1.3.23-1build7 | GPL-2.0-or-later (the tools); LGPL-2.1 (libhivex) |
+| unzip (unpacks the EZ Tools and Autopsy zips) | `tools_eztools`, `tools_autopsy` | 6.0-28ubuntu4.1 | Info-ZIP licence (BSD-style) |
+| python3-venv (the Dissect, Plaso, usncarve, classifier and speech venvs) | `tools_dissect`, `tools_timeline`, `tools_carve`, `tools_ai` | 3.12.3-0ubuntu2.1 | PSF-2.0 (Python) |
+
+## Autopsy prerequisites (role `base` in every image; checked by `tools_autopsy`, task 4.9)
+
+`base_autopsy_prerequisites` and `tools_autopsy_packages` (the same list). Autopsy itself and
+the Sleuth Kit Java .deb are in the pins table below.
+
+| Component | Version seen (noble) | Licence |
+|---|---|---|
+| openjdk-17-jre (Java 17) | 17.0.21.0.3+1-1~24.04.1 | GPL-2.0 with the Classpath exception (parts BSD-3-Clause, MIT, LGPL-2.1 and others listed in the copyright file of openjdk-17-jre-headless) |
+| testdisk (PhotoRec; Autopsy's unix_setup.sh checks for it) | 7.1-5+nmu1build2 | GPL-2.0-or-later |
+| libafflib-dev | 3.7.20-1.1ubuntu5 | as afflib-tools above |
+| libewf-dev | 20140814-1build3 | LGPL-3.0-or-later |
+| libvhdi-dev | 20210425-1build5 | LGPL-3.0-or-later |
+| libvmdk-dev | 20200926-2build5 | LGPL-3.0-or-later |
+| libsqlite3-dev | 3.45.1-1ubuntu2.9 | Public domain (parts GPL-2.0-or-later) |
+| libc3p0-java | 0.9.1.2-10ubuntu2 | LGPL-2.1 |
+| libde265-0 | 1.0.15-1ubuntu0.2 | LGPL-3.0-or-later (parts GPL-3.0-or-later, BSD-4-Clause, public domain) |
+| libheif1 | 1.17.6-1ubuntu4.9 | LGPL-3.0-or-later (parts GPL-3.0-or-later, BSD-3-Clause, BSD-4-Clause, MIT, BSL-1.0) |
+| libpq5 | 16.15-0ubuntu0.24.04.1 | PostgreSQL licence (parts BSD-2-Clause, BSD-3-Clause, Tcl) |
+| libgstreamer1.0-0, gstreamer1.0-plugins-base, gstreamer1.0-plugins-good, gstreamer1.0-libav, gstreamer1.0-gtk3 | 1.24.x | LGPL-2.0-or-later / LGPL-2.1-or-later (parts GPL-2.0-or-later, BSD, MIT); gstreamer1.0-libav links ffmpeg (above) |
+
+## Plaso and Dissect venvs (baked into the image; decision log 2026-11-15)
+
+Every package of each pinned closure (`tools_timeline/files/requirements.txt`,
+`tools_dissect/files/requirements.txt`), with the licence its PyPI metadata (licence
+expression, licence field or classifier) gives for the pinned version, read 2026-11-15. Task 6.6
+checks each wheel's own licence file before a prebuilt image is published.
+
+| Venv | Licence | Packages |
+|---|---|---|
+| `/opt/plaso` | Apache-2.0 | plaso, acstore, artifacts, dfdatetime, dfvfs, dfwinreg, dtfabric, grpcio, opensearch-py, opensearch-protobufs, pytsk3, requests, tzdata, yara-python |
+| `/opt/plaso` | LGPL-3.0-or-later | the 35 libyal bindings: libbde-python, libcaes-python, libcreg-python, libesedb-python, libevt-python, libevtx-python, libewf-python, libfcrypto-python, libfsapfs-python, libfsext-python, libfsfat-python, libfshfs-python, libfsntfs-python, libfsxfs-python, libfvde-python, libfwnt-python, libfwsi-python, liblnk-python, libluksde-python, libmodi-python, libmsiecf-python, libolecf-python, libphdi-python, libqcow-python, libregf-python, libscca-python, libsigscan-python, libsmdev-python, libsmraw-python, libvhdi-python, libvmdk-python, libvsapm-python, libvsgpt-python, libvshadow-python, libvslvm-python |
+| `/opt/plaso` | BSD (2- or 3-Clause) | events, flor, idna, lz4, protobuf, psutil, pycparser, python-dateutil, pyzmq, xlsxwriter (BSD-2-Clause), zstd |
+| `/opt/plaso` | MIT | charset-normalizer, pefile, pyparsing, pytz, pyyaml, redis, urllib3, xattr |
+| `/opt/plaso` | MIT-0 | cffi |
+| `/opt/plaso` | MPL-2.0 | certifi |
+| `/opt/plaso` | PSF-2.0 | defusedxml, typing-extensions |
+| `/opt/plaso` | BitTorrent Open Source Licence 1.1 (PyPI classifier "Other/Proprietary License"; verify in 6.6) | bencode-py |
+| `/opt/dissect` | AGPL-3.0-or-later | dissect, dissect-apfs, dissect-archive, dissect-btrfs, dissect-cim, dissect-clfs, dissect-cramfs, dissect-etl, dissect-eventlog, dissect-evidence, dissect-executable, dissect-extfs, dissect-fat, dissect-ffs, dissect-fve, dissect-hypervisor, dissect-jffs, dissect-ntfs, dissect-ole, dissect-qnxfs, dissect-regf, dissect-shellitem, dissect-squashfs, dissect-target, dissect-thumbcache, dissect-vmfs, dissect-volume, dissect-xfs, flow-record |
+| `/opt/dissect` | Apache-2.0 | dissect-cstruct, dissect-database, dissect-util, asttokens, msgpack |
+| `/opt/dissect` | Apache-2.0 OR MIT | structlog |
+| `/opt/dissect` | BSD (2- or 3-Clause) | ipython, ipython-pygments-lexers, matplotlib-inline, prompt-toolkit, psutil, pygments (BSD-2-Clause), traitlets |
+| `/opt/dissect` | BSD-2-Clause AND Unlicense AND MIT | pycryptodome |
+| `/opt/dissect` | ISC | fusepy, pexpect, ptyprocess |
+| `/opt/dissect` | MIT | asn1crypto, executing, jedi, parso, pure-eval, ruamel-yaml, stack-data, wcwidth |
+| `/opt/dissect` | PSF-2.0 | backports-zstd, defusedxml |
+| `/opt/usncarve` | Apache-2.0 | usncarve (pin `usncarve_pypi`) |
+| all three (build backend, `files/build-requirements.txt`) | MIT; MIT; Apache-2.0 OR BSD-2-Clause | setuptools 84.2.1, wheel 0.48.0, packaging 26.3 |
 
 ## Hash sets and signatures (role `tools_hashsets`, Milestone 4A; decision log 2026-11-15)
 
@@ -101,7 +197,9 @@ Exact versions and hashes are in `ansible/group_vars/all/pins.yml`.
 | huggingface-hub, hf-xet | 2.4.0, 1.8.0 | Apache-2.0 | `/opt/whisper` (imported by faster-whisper; offline) |
 | httpx2, httpcore2, anyio, h11, idna, truststore | 2.16.0, 2.16.0, 4.16.0, 0.16.0, 3.20, 0.10.5 | BSD-3-Clause, BSD-3-Clause, MIT, MIT, BSD-3-Clause, MIT | `/opt/whisper` |
 | click, filelock, fsspec, pyyaml, tqdm, typing-extensions | 8.5.1, 4.2.10, 2026.9.0, 6.0.3, 4.70.1, 4.16.0 | BSD-3-Clause, MIT, BSD-3-Clause, MIT, MPL-2.0 AND MIT, PSF-2.0 | `/opt/whisper` |
-| mesa-vulkan-drivers, vulkan-tools, ffmpeg, poppler-utils | noble | MIT (Mesa), Apache-2.0 (vulkan-tools), LGPL-2.1-or-later/GPL-2.0-or-later (ffmpeg), GPL-2.0-or-later (poppler-utils) | image |
+| mesa-vulkan-drivers, libvulkan1, vulkan-tools, ffmpeg, poppler-utils, python3-venv | noble | MIT (Mesa), Apache-2.0 (Vulkan loader, vulkan-tools; parts MIT), LGPL-2.1-or-later/GPL-2.0-or-later (ffmpeg), GPL-2.0 or GPL-3.0 (poppler-utils, as its copyright file states; parts Apache-2.0), PSF-2.0 (python3-venv) | image |
+| LibreOffice without a GUI: libreoffice-writer-nogui, libreoffice-calc-nogui, libreoffice-impress-nogui (pull in libreoffice-core-nogui, libreoffice-draw-nogui, libreoffice-common, which provides `/usr/bin/soffice`); `soffice --headless --convert-to` for Office documents (4B.9) | 4:24.2.7-0ubuntu0.24.04.7 | MPL-2.0 (parts Apache-2.0, MIT, BSD-2-Clause, BSD-3-Clause, LGPL-3.0-or-later, GPL-2.0-or-later, CC0-1.0, CC-BY-SA-3.0) | image |
+| build-essential, cmake, glslc, libvulkan-dev, spirv-headers, pkg-config (llama.cpp build; left installed) | noble | GPL-2.0-or-later (build-essential metapackage), BSD-3-Clause (CMake; parts Apache-2.0, BSD-2-Clause, ISC), Apache-2.0 (glslc/shaderc; parts BSD-3-Clause, GPL-2.0-or-later), Apache-2.0 (libvulkan-dev; parts MIT), MIT (spirv-headers), ISC (pkg-config/pkgconf) | image |
 | linux-modules-nvidia (optional, off by default, 4B.15) | per kernel | NVIDIA proprietary (Ubuntu-signed, redistributable by Canonical) | ASSETS, installed offline only when turned on |
 
 ## Every pinned download and where it may live (task 2B.18; licence review 6.6)

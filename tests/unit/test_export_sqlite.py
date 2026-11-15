@@ -74,10 +74,38 @@ def test_views(tmp_path: Path) -> None:
             "malware": [
                 base_row(category="malware", message="mw"),
                 base_row(category="hash", message="hs"),
+                # An ssdeep similarity hit has a label and a score: not a screening result.
+                base_row(
+                    category="malware",
+                    artifact_type="hash_hit",
+                    message="ssdeep",
+                    label="known-sample",
+                    score=0.8,
+                    threshold=0.5,
+                ),
             ],
             "images": [
-                base_row(category="images", message="img", label="flagged", score=0.9),
-                base_row(category="video", message="vid", sensitive_flag=True),
+                base_row(
+                    category="images",
+                    artifact_type="screen_labels",
+                    message="img",
+                    label="flagged",
+                    score=0.9,
+                ),
+                base_row(
+                    category="video",
+                    artifact_type="carved_media_removed",
+                    message="vid",
+                    sensitive_flag=True,
+                ),
+                # A media row that is not a screening result never counts as a flag.
+                base_row(
+                    category="images",
+                    artifact_type="image_metadata",
+                    message="meta",
+                    score=0.4,
+                    label="x",
+                ),
                 base_row(category="audio", message="aud", sensitive_flag=False),
                 base_row(category="documents", message="doc", label="yara-rule"),
             ],
@@ -98,8 +126,8 @@ def test_views(tmp_path: Path) -> None:
     assert msgs("v_timeline") == ["t-whole", "t-zeros", "t-tenth", "t-half", "t-late"]
     assert msgs("v_deleted") == ["t-whole", "del"]
     assert msgs("v_recycle_bin") == ["rb"]
-    assert msgs("v_media") == ["img", "vid", "aud"]
-    assert msgs("v_hash_hits") == ["mw", "hs"]
+    assert msgs("v_media") == ["img", "vid", "meta", "aud"]
+    assert msgs("v_hash_hits") == ["mw", "hs", "ssdeep"]
     assert msgs("v_flags") == ["img", "vid"]
     assert msgs("v_disagreements") == ["dis"]
 

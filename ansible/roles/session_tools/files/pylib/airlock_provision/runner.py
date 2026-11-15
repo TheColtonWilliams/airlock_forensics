@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import contextlib
 import fcntl
+import hashlib
 import json
 import os
 import secrets
@@ -171,28 +172,62 @@ def change_reason() -> tuple[str | None, str]:
 # --------------------------------------------------------------------------- steps
 
 
-def build_vars(report: assets.AssetReport, profile: dict[str, Any]) -> dict[str, Any]:
-    """Extra variables for ansible-playbook (docs/assets.md, 'Provisioning variables')."""
-    features = assets.effective_features(report.features, report.disabled_features)
-    return {
+def build_vars(report: assets.AssetReport) -> dict[str, Any]:
+    """Extra variables for ansible-playbook (docs/assets.md, 'Provisioning variables').
+
+    Ansible templates every string it is given, so nothing here may carry free text from the
+    unsigned profile.json. Features are rebuilt from the fixed schema (booleans and known AI
+    tiers only), the profile name must be a plain name, and free text (``case_defaults``, the
+    reasons in the problem list) is not passed at all: forensic-analyze reads case_defaults
+    from profile.json as data, and the problems are in the step results and the report. As a
+    last check any string with template markup refuses the run.
+    """
+    clean, off, _ = assets.sanitize_features(report.features)
+    disabled = sorted(set(report.disabled_features) | set(off))
+    if clean.get("autopsy") is True and not system.autopsy_prerequisites_present():
+        # The image lacks Java 17 (built before base baked it in): turn Autopsy off rather
+        # than let apt try the network (it would fail offline and stop provisioning).
+        disabled = sorted({*disabled, "autopsy"})
+    features = assets.effective_features(clean, disabled)
+    data = {
         "airlock_phase": "provision",
-        "airlock_profile": report.profile,
+        "airlock_profile": assets.profile_name(report.profile) or "",
         "airlock_features": features,
         # Same value under the name the tools_ai role reads (its profile_features.yml).
         "airlock_profile_features": features,
-        "airlock_disabled_features": list(report.disabled_features),
-        "airlock_asset_problems": [[a, r] for a, r in report.problems],
+        "airlock_disabled_features": disabled,
         "airlock_assets": {k: dict(v) for k, v in sorted(report.verified.items())},
-        "airlock_case_defaults": dict(profile.get("case_defaults") or {}),
-        "install_autopsy": bool(features.get("autopsy")),
+        "install_autopsy": features.get("autopsy") is True,
     }
+    marked = assets.template_markup(data)
+    if marked:
+        raise StepFailed(
+            f"refusing to pass template text to Ansible ({len(marked)} value(s), first "
+            f"{marked[0][:80]!r}). Rerun the fetcher on the host computer to restage the drive."
+        )
+    return data
 
 
 def step_verify(run: Run) -> dict[str, Any]:
+    profile = assets.read_profile() or {}
+    marked = assets.template_markup(profile)
+    if marked:
+        sessionlog.log_event(run.tool, "profile_refused", run_id=run.run_id,
+                             reason="template markup", count=len(marked))  # fmt: skip
+        raise StepFailed(
+            f"ASSETS/profile.json holds template text in {len(marked)} value(s) (first "
+            f"{marked[0][:80]!r}); it was refused and nothing was applied. profile.json is not "
+            "signed: someone may have edited the drive. Rerun the fetcher on the host computer "
+            "to restage it, then boot again."
+        )
     report = assets.verify_staged(deep=True, for_apply=True)
     assets.log_report(report, run.tool)
-    profile = assets.read_profile() or {}
-    data = build_vars(report, profile)
+    data = build_vars(report)
+    if "autopsy" in data["airlock_disabled_features"] and "autopsy" not in report.disabled_features:
+        reason = "this image has no Java 17 for Autopsy; reflash with a current image"
+        report.problems.append(("autopsy", reason))
+        report.disabled_features = list(data["airlock_disabled_features"])
+        report.ok = False
     jsonio.dump_json(vars_path(), data)
     os.chmod(vars_path(), 0o600)
     print(report.summary())
@@ -235,29 +270,73 @@ def step_ansible(run: Run) -> dict[str, Any]:
     return {"log": str(log), "rc": res.returncode}
 
 
+class ManifestChanged(Exception):
+    """The ASSETS manifest is no longer the one the verify step chose."""
+
+
 def _adopt_manifest(report: dict[str, Any]) -> None:
-    """Keep a newer signed manifest from ASSETS as the trusted one (it verified already)."""
+    """Keep the newer signed ASSETS manifest the verify step chose as the trusted one.
+
+    Only the exact bytes verify accepted are adopted: they are read once, their SHA-256 must
+    equal the one recorded by verify, the signature is checked again over that same copy, and
+    an older release than the trusted one is refused. The copy is what gets installed, so a
+    manifest swapped on ASSETS after verify (say before a resumed run) is never adopted.
+    """
     if report.get("manifest_source") != "assets":
         return
     src = paths.assets_dir() / "manifest.json"
     sig = paths.assets_dir() / "manifest.json.sig"
     dest = paths.baked_manifest()
-    if not (src.is_file() and sig.is_file()):
-        return
-    if not assets.verify_signature(src, sig, paths.manifest_public_key()):
-        return
-    if dest.is_file():
-        shutil.copyfile(dest, dest.with_name(dest.name + ".previous"))
-    for s, d in ((src, dest), (sig, dest.with_name(dest.name + ".sig"))):
-        tmp = d.with_name(f".{d.name}.tmp")
-        shutil.copyfile(s, tmp)
-        os.chmod(tmp, 0o644)
-        tmp.replace(d)
+    try:
+        body, signature = src.read_bytes(), sig.read_bytes()
+    except OSError as exc:
+        raise ManifestChanged(f"the ASSETS manifest or its signature is gone ({exc})") from exc
+    if hashlib.sha256(body).hexdigest() != report.get("manifest_sha256"):
+        raise ManifestChanged("the ASSETS manifest changed since it was verified")
+    try:
+        candidate = json.loads(body)
+    except ValueError as exc:
+        raise ManifestChanged("the ASSETS manifest is not valid JSON") from exc
+    release = str(candidate.get("release", "")) if isinstance(candidate, dict) else ""
+    if release != str(report.get("manifest_release") or ""):
+        raise ManifestChanged("the ASSETS manifest release differs from the verified one")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dest.with_name(f".{dest.name}.adopt")
+    tmp_sig = dest.with_name(f".{dest.name}.sig.adopt")
+    try:
+        for path, data in ((tmp, body), (tmp_sig, signature)):
+            path.write_bytes(data)
+            os.chmod(path, 0o644)
+        if not assets.verify_signature(tmp, tmp_sig, paths.manifest_public_key()):
+            raise ManifestChanged("the ASSETS manifest signature does not verify")
+        current = ""
+        with contextlib.suppress(OSError, ValueError, AttributeError):
+            current = str(jsonio.load_json(dest).get("release", ""))
+        if assets.is_older_release(release, current):
+            raise ManifestChanged(f"ASSETS manifest {release} is older than the trusted {current}")
+        if dest.is_file():
+            shutil.copyfile(dest, dest.with_name(dest.name + ".previous"))
+        tmp.replace(dest)
+        tmp_sig.replace(dest.with_name(dest.name + ".sig"))
+    finally:
+        for path in (tmp, tmp_sig):
+            path.unlink(missing_ok=True)
 
 
 def step_record(run: Run) -> dict[str, Any]:
     verify = run.result("verify")
     report = verify.get("report") or {}
+    try:
+        _adopt_manifest(report)
+    except ManifestChanged as exc:
+        # Start again from verify next time, so the manifest now on ASSETS is checked afresh.
+        for name in STEPS[run.mode]:
+            run.step_file(name).unlink(missing_ok=True)
+        sessionlog.log_event(run.tool, "manifest_not_adopted", reason=str(exc), run_id=run.run_id)
+        raise StepFailed(
+            f"{exc}; nothing was recorded and the trusted manifest is unchanged. Run "
+            f"'sudo {run.tool}' again: it checks ASSETS again from the start."
+        ) from exc
     previous = (assets.load_applied() or {}).get("files") or {}
     current: dict[str, Any] = report.get("verified") or {}
     changes = []
@@ -300,7 +379,6 @@ def step_record(run: Run) -> dict[str, Any]:
         "files": current,
     }
     jsonio.dump_json(assets.applied_path(), applied)
-    _adopt_manifest(report)
     counts = {s: sum(1 for c in changes if c["status"] == s) for s in
               ("new", "changed", "unchanged", "removed")}  # fmt: skip
     print(

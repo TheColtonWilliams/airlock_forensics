@@ -16,6 +16,13 @@ package:
     installed: true
   python3-venv:
     installed: true
+  # 4B.9: headless LibreOffice for Office documents (soffice --headless --convert-to).
+  libreoffice-writer-nogui:
+    installed: true
+  libreoffice-calc-nogui:
+    installed: true
+  libreoffice-impress-nogui:
+    installed: true
   # 4B.1, 4B.15: no vendor compute stacks; no DKMS build.
   nvidia-cuda-toolkit:
     installed: false
@@ -123,6 +130,25 @@ command:
       - '!/0\.0\.0\.0:8088/'
       - '!/\*:8088/'
       - '!/\[::\]:8088/'
+  'soffice runs':
+    title: '4B.9: headless LibreOffice is on the PATH and starts'
+    exec: "command -v soffice && soffice --headless --version"
+    exit-status: 0
+    stdout:
+      - '/^LibreOffice [0-9]+\./'
+  'soffice converts a document':
+    title: '4B.9: soffice turns a generated word-processor file into text, offline'
+    exec: >-
+      d=$(mktemp -d) && printf 'Blue square.\n' > "$d/shapes.txt" &&
+      soffice -env:UserInstallation=file://$d/profile --headless --norestore --nologo --nodefault
+      --convert-to odt --outdir "$d/odt" "$d/shapes.txt" >/dev/null 2>&1 &&
+      soffice -env:UserInstallation=file://$d/profile --headless --norestore --nologo --nodefault
+      --convert-to txt:Text --outdir "$d/txt" "$d/odt/shapes.odt" >/dev/null 2>&1 &&
+      cat "$d/txt/shapes.txt"; rc=$?; rm -rf "$d"; exit $rc
+    exit-status: 0
+    timeout: 120000
+    stdout:
+      - 'Blue square.'
   'ai-probe chooses a tier':
     title: '4B.3: ai-probe runs (tier0 on a machine with no GPU, as in QEMU)'
     exec: /usr/local/bin/ai-probe --json --no-model-check

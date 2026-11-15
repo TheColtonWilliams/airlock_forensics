@@ -1,4 +1,7 @@
 {
+  "image": {
+    "max_frames": 64
+  },
   "label_template": "a photo of {label}.",
   "labels": {
     "blood": 0.3,

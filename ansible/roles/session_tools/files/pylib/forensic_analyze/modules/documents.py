@@ -1,7 +1,12 @@
 """Module ``documents`` (task 4C.11): export, metadata, text extraction, summary.
 
 Each document is exported read-only and read by exiftool for its metadata (author fields are
-kept in the raw record only; rows never name a person). Text comes from ``pdftotext`` or a
+kept in the raw record only; rows never name a person). A file whose content is a picture,
+video, or sound despite its document extension (exiftool MIME type, or magic bytes when
+exiftool cannot name it) is screened like an image or a video and kept only if cleared; it gets
+no text extraction or summary. A file whose type nobody can name, and that does not look like a
+document or text, is not kept. Pictures embedded in a document are not screened (see
+docs/known-limitations.md). Text comes from ``pdftotext`` or a
 headless LibreOffice conversion in the sandbox (``airlock_ai.documents``). Scanned PDF pages
 are rendered, screened like images, and only cleared pages are read by the model's OCR
 prompt. The summary uses the fixed ``summarize_document`` prompt with the document text inside
@@ -41,6 +46,33 @@ class DocumentsModule(media.MediaModule):
             item.meta = data[0]
             item.meta_record = f"modules/{ctx.module}/metadata/{stem}.exiftool.json#0"
 
+    def content_route(self, ctx: ModuleContext, item: media.MediaItem) -> tuple[str, str]:
+        mime = str(item.meta.get("File:MIMEType") or "") if item.meta else ""
+        major = mime.split("/", 1)[0].lower()
+        kind = {"image": "image", "video": "av", "audio": "av"}.get(major, "")
+        source = f"exiftool reports {mime}"
+        if not mime:
+            kind = media.sniff(media.need_path(item))
+            source = "exiftool could not name the type and its first bytes are "
+            source += {"image": "a picture format", "av": "an audio or video container"}.get(
+                kind, ""
+            )
+            if kind in {"document", "text"}:
+                return "", ""
+            if kind not in {"image", "av"}:
+                return "unknown", (
+                    "exiftool could not name the type and it does not look like a document or text"
+                )
+        if kind == "image":
+            return "image", source
+        if kind == "av":
+            fp = media.ffprobe_json(ctx, item)
+            if fp is None:
+                return "unknown", f"{source}, and ffprobe could not read it"
+            route, why = media.av_route(fp)
+            return (route, f"{source}; {why}") if route else ("", "")
+        return "", ""
+
     def metadata_rows(self, ctx: ModuleContext, item: media.MediaItem) -> list[dict[str, Any]]:
         if not item.meta:
             return []
@@ -64,6 +96,8 @@ class DocumentsModule(media.MediaModule):
     ) -> list[dict[str, Any] | DescribeResult]:
         """Text extraction needs no model: it runs even when no tier is staged."""
         path = media.need_path(item)
+        if item.route:
+            return []  # picture, video, or sound content: screened, never read as a document
         doc = aidocs.extract_text(path, media.ctx_runner(ctx), ctx.workdir / "ai-work" / "x")
         item.meta["_doctext"] = doc
         if doc.error:
@@ -105,6 +139,8 @@ class DocumentsModule(media.MediaModule):
         self, ctx: ModuleContext, item: media.MediaItem, d: Describer, counts: Counter[str]
     ) -> list[DescribeResult]:
         path = media.need_path(item)
+        if item.route:
+            return []
         doc = item.meta.get("_doctext")
         if doc is not None and doc.error:
             return []

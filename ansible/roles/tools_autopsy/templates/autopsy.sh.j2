@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Start Autopsy {{ pins[tools_autopsy_zip_pin].version }} on Java 17. Written by the tools_autopsy role (task 4.9).
 # Autopsy is optional. It reads evidence through The Sleuth Kit; attached disks stay under the
-# software read-only policy. While a case is open it runs a search server on this computer only.
+# software read-only policy. While a case is open it runs a Solr search server; SOLR_JETTY_HOST
+# (also set in Autopsy's autopsy-solr.in.sh) binds it to this computer only.
 set -euo pipefail
 export JAVA_HOME={{ tools_autopsy_java_home | quote }}
+export SOLR_JETTY_HOST={{ tools_autopsy_solr_host | quote }}
+export ENABLE_REMOTE_JMX_OPTS=false
 exec {{ (tools_autopsy_prefix ~ '/bin/autopsy') | quote }} --nosplash "$@"

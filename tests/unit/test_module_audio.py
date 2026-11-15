@@ -53,3 +53,48 @@ def test_transcript_without_description_server(run_dir: Path, monkeypatch, ai_se
     kinds = [r["artifact_type"] for r in rows]
     assert "ai_audio_transcript" in kinds and "ai_audio_summary" not in kinds
     assert ai_setup.requests() == []
+
+
+def test_pictures_and_video_under_audio_names_are_screened(
+    run_dir: Path,  # noqa: F811
+    monkeypatch,
+    ai_setup,  # noqa: F811
+    tmp_path: Path,
+):
+    """Finding 9: content type, not extension, decides whether a file is screened."""
+    from test_module_video import make_video  # noqa: PLC0415
+
+    clip = make_video(tmp_path / "clip.mp4", NEUTRAL / "landscape.png", seconds=2)
+    blob = tmp_path / "blob.bin"
+    blob.write_bytes(bytes(range(256)) * 16)  # no audio, no picture: type cannot be confirmed
+    stage_inventory(
+        run_dir,
+        {
+            "/Music/tone.wav": NEUTRAL / "tone-440hz.wav",
+            "/Music/clip.m4a": clip,  # a video renamed: screened as a video, cleared
+            "/Music/squares.mp3": NEUTRAL / "shapes-squares.png",  # a picture; stub: flagged
+            "/Music/blob.mp3": blob,
+        },
+        monkeypatch,
+    )
+    ctx, rows = media_ctx(run_dir, "audio")
+    res = audio.MODULE.run(ctx)
+    assert res.status == "ok", res.reason
+    assert res.counts["content_mismatch"] == 3
+    assert (res.counts["kept"], res.counts["cleared"]) == (1, 1)
+    assert (res.counts["flagged"], res.counts["not_screened"]) == (1, 1)
+    kept = sorted(p.name for p in (ctx.workdir / "export").iterdir() if p.is_file())
+    assert len(kept) == 2  # the tone and the cleared video; the picture and the blob are gone
+    errs = {r["path"]: r for r in rows if r["artifact_type"] == "screen_error"}
+    assert set(errs) == {"/Music/blob.mp3"}
+    assert "content type mismatch" in errs["/Music/blob.mp3"]["message"]
+    labels = {r["path"]: r for r in rows if r["artifact_type"] == "screen_labels"}
+    assert labels["/Music/clip.m4a"]["sensitive_flag"] is False
+    assert "content type mismatch" in labels["/Music/clip.m4a"]["text"]
+    assert "covering" in labels["/Music/clip.m4a"]["text"]
+    nud = {r["path"]: r for r in rows if r["artifact_type"] == "screen_nudity"}
+    assert nud["/Music/squares.mp3"]["sensitive_flag"] is True
+    # Nothing flagged or unscreened was transcribed or summarised.
+    ai_paths = {r["path"] for r in rows if r["artifact_type"].startswith("ai_audio")}
+    assert ai_paths <= {"/Music/tone.wav", "/Music/clip.m4a"}
+    assert "/Music/tone.wav" in ai_paths

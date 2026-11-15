@@ -36,9 +36,12 @@ VIEWS: dict[str, str] = {
         "SELECT * FROM findings WHERE category IN ('images', 'video', 'audio') ORDER BY rowid"
     ),
     "v_hash_hits": "SELECT * FROM findings WHERE category IN ('malware', 'hash') ORDER BY rowid",
+    # Media screening results only: a hash or malware hit also has a label and a score, but
+    # it is not a classifier screening result (docs/schema.md).
     "v_flags": (
-        "SELECT * FROM findings WHERE sensitive_flag = 1 "
-        "OR (label IS NOT NULL AND score IS NOT NULL) ORDER BY rowid"
+        "SELECT * FROM findings WHERE category IN ('images', 'video', 'audio', 'documents') "
+        "AND (substr(artifact_type, 1, 7) = 'screen_' OR artifact_type = 'carved_media_removed') "
+        "AND (sensitive_flag = 1 OR (label IS NOT NULL AND score IS NOT NULL)) ORDER BY rowid"
     ),
     "v_disagreements": "SELECT * FROM findings WHERE xval_status = 'disagree' ORDER BY rowid",
 }

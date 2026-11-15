@@ -39,6 +39,8 @@ the cross-check (`xval`) compares them; a missing optional tool is named in the 
 * `grub-install` (`grub-pc-bin`, `grub-efi-amd64-signed`, `shim-signed`): portable boot (1.9).
 * `growpart` (`cloud-guest-utils`), `resize2fs`, `systemd-machine-id-setup`: first boot (1.10).
 * `openssl pkcs7`: reads shim's signers for the Secure Boot check (1.13).
+* `apt` (Ubuntu archive, dated snapshot 6.1): installs packages in the image build only; when provisioning offline the roles only ask `dpkg-query` what is installed and never refresh the index or download (1.5).
+* `java` (noble `openjdk-17-jre`) and the libraries optional Autopsy needs (`tools_autopsy_packages`): installed in every image build so the `autopsy` feature can be turned on offline later (1.5, 4.9).
 
 ## Local AI (role `tools_ai`, Milestone 4B)
 
@@ -104,7 +106,7 @@ archive (from the dated snapshot, task 6.1). Runbook using them in order:
 * `regripper`, `rip.pl` (noble `regripper` 3.0): registry hive reports (4.8).
 * `regfinfo`, `regfexport` (noble `libregf-utils`): registry hive structure (4.8).
 * `hivexget`, `hivexml`, `hivexsh` (noble `libhivex-bin`): registry values; open hives without `-w` (4.8).
-* `autopsy` (optional, `install_autopsy=false`; Autopsy 4.23.1 zip and Sleuth Kit Java .deb staged on ASSETS, Java 17 from noble): GUI case manager; while a case is open it runs its search server on this computer only (4.9).
+* `autopsy` (optional, `install_autopsy=false`; Autopsy 4.23.1 zip and Sleuth Kit Java .deb staged on ASSETS with the profile feature `autopsy`; Java 17 and the libraries it needs from noble are on every image, so it installs offline): GUI case manager; while a case is open it runs its Solr 8 search server bound to 127.0.0.1 (set in the zip's `autopsy-solr.in.sh` and by the launcher) (4.9).
 * `cast` (optional, `install_sift=false`; Cast 1.0.13 .deb): installs SANS SIFT in server mode at image build only; hardening re-applies after it (6.5).
 
 ## CI, release, and repository tools (host side; never on the image)

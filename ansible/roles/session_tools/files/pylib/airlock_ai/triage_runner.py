@@ -7,12 +7,17 @@ only. The caller runs it as a sandboxed child process (no network, seccomp, limi
     /opt/triage/bin/python -I triage_runner.py REQUEST.json RESPONSE.json
 
 REQUEST: ``{"images": [paths], "labels": [...], "prompts": [one per label],
-"nudenet_classes": [...], "models": {"nudenet": {"model": path|null, "id"},
-"siglip": {"model", "tokenizer", "preprocessor", "id"}}}``.
+"nudenet_classes": [...], "max_image_frames": N, "models": {"nudenet": {"model": path|null,
+"id"}, "siglip": {"model", "tokenizer", "preprocessor", "id"}}}``.
 
 RESPONSE: ``{"results": [{"path", "nudity", "nudenet": {class: score}, "labels": {label:
-score}, "error"}], "model_ids": {...}, "model_sha256": {...}, "versions": {...}}`` or
-``{"fatal": "reason"}``. Scores are rounded to 6 decimals. Nothing is written but RESPONSE.
+score}, "frames", "frames_total", "incomplete", "error"}], "model_ids": {...},
+"model_sha256": {...}, "versions": {...}}`` or ``{"fatal": "reason"}``. Scores are rounded to
+6 decimals. Nothing is written but RESPONSE.
+
+Every frame or page of a file is scored (animated GIF, WebP and PNG, multi-page TIFF), up to
+``max_image_frames``. Each score is the highest over the frames, so a file flags when any
+frame would. A file with more frames than that sets ``incomplete``: the caller never clears it.
 """
 
 from __future__ import annotations
@@ -29,6 +34,7 @@ DEFAULT_SIZE = 224
 DEFAULT_MEAN = (0.5, 0.5, 0.5)
 DEFAULT_STD = (0.5, 0.5, 0.5)
 MAX_TOKENS = 64
+DEFAULT_MAX_IMAGE_FRAMES = 64
 
 
 def _sha256(path: str) -> str:
@@ -113,18 +119,63 @@ def _nudenet(spec: dict[str, Any]) -> tuple[Any, str]:
     return nudenet.NudeDetector(model_path=model, inference_resolution=resolution), model
 
 
-def _load_rgb(path: str) -> Any:
-    from PIL import Image  # noqa: PLC0415
+def score_file(  # noqa: PLR0917
+    path: str,
+    detector: Any,
+    siglip: Any,
+    labels: list[str],
+    exposed: set[str],
+    max_frames: int,
+) -> dict[str, Any]:
+    """Scores for every frame (or page) of one image, up to ``max_frames``; highest wins.
+
+    A single-frame file is one frame. When the file holds more frames than ``max_frames``,
+    the record carries ``incomplete`` and the caller treats the file as not screened unless a
+    screened frame already flags it.
+    """
+    import numpy as np  # noqa: PLC0415
+    from PIL import Image, ImageSequence  # noqa: PLC0415
 
     Image.MAX_IMAGE_PIXELS = MAX_PIXELS
+    limit = max(1, int(max_frames))
+    per_class: dict[str, float] = {}
+    label_max: dict[str, float] = {}
+    screened = 0
+    more = False
     with Image.open(path) as im:
-        im.seek(0)
-        return im.convert("RGB")
+        declared = int(getattr(im, "n_frames", 1) or 1)
+        for frame in ImageSequence.Iterator(im):
+            if screened >= limit:
+                more = True
+                break
+            rgb = frame.convert("RGB")
+            bgr = np.asarray(rgb)[:, :, ::-1].copy()
+            for d in detector.detect(bgr):
+                cls, score = str(d.get("class")), float(d.get("score", 0.0))
+                per_class[cls] = round(max(per_class.get(cls, 0.0), score), 6)
+            for label, score in zip(labels, siglip.scores(rgb), strict=True):
+                label_max[label] = round(max(label_max.get(label, 0.0), float(score)), 6)
+            screened += 1
+    if screened == 0:
+        raise ValueError("no frame could be read")
+    total = max(declared, screened + (1 if more else 0))
+    rec: dict[str, Any] = {
+        "path": path,
+        "nudenet": per_class,
+        "nudity": max((s for c, s in per_class.items() if c in exposed), default=0.0),
+        "labels": label_max,
+        "frames": screened,
+        "frames_total": total,
+    }
+    if total > screened:
+        rec["incomplete"] = (
+            f"the file has {total} frames or pages; only the first {screened} were screened "
+            f"(limit {limit})"
+        )
+    return rec
 
 
 def run(request: dict[str, Any]) -> dict[str, Any]:
-    import numpy as np  # noqa: PLC0415
-
     models = request["models"]
     labels: list[str] = request["labels"]
     prompts: list[str] = request["prompts"]
@@ -136,20 +187,11 @@ def run(request: dict[str, Any]) -> dict[str, Any]:
         siglip = SigLIP(models["siglip"], prompts)
     except Exception as exc:  # report and stop: nothing may be cleared without both models
         return {"fatal": f"{type(exc).__name__}: {exc}"}
+    max_frames = int(request.get("max_image_frames") or DEFAULT_MAX_IMAGE_FRAMES)
     results: list[dict[str, Any]] = []
     for path in request["images"]:
-        rec: dict[str, Any] = {"path": path}
         try:
-            rgb = _load_rgb(path)
-            bgr = np.asarray(rgb)[:, :, ::-1].copy()
-            dets = detector.detect(bgr)
-            per_class: dict[str, float] = {}
-            for d in dets:
-                cls, score = str(d.get("class")), float(d.get("score", 0.0))
-                per_class[cls] = round(max(per_class.get(cls, 0.0), score), 6)
-            rec["nudenet"] = per_class
-            rec["nudity"] = max((s for c, s in per_class.items() if c in exposed), default=0.0)
-            rec["labels"] = dict(zip(labels, siglip.scores(rgb), strict=True))
+            rec = score_file(path, detector, siglip, labels, exposed, max_frames)
         except Exception as exc:  # one bad file must not stop the batch
             rec = {"path": path, "error": f"{type(exc).__name__}: {exc}"[:300]}
         results.append(rec)

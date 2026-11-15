@@ -186,6 +186,18 @@ def tool_versions() -> dict[str, str]:
     return dict(sorted(out.items()))
 
 
+def java_home() -> Path:
+    """Java 17, which optional Autopsy needs (``AIRLOCK_JAVA_HOME`` moves it for tests)."""
+    return Path(os.environ.get("AIRLOCK_JAVA_HOME") or "/usr/lib/jvm/java-17-openjdk-amd64")
+
+
+def autopsy_prerequisites_present() -> bool:
+    """Java 17 is on the image. The base role installs it, with the libraries Autopsy needs,
+    in every image build; images built before that have none, and provisioning cannot
+    download it."""
+    return (java_home() / "bin" / "java").is_file()
+
+
 def build_info() -> dict[str, Any]:
     try:
         data = jsonio.load_json(paths.build_info())

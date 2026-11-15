@@ -1,9 +1,30 @@
 # Control 4.9: Java 17 (the version Autopsy 4.23.1's Running_Linux_OSX.md names) and the
-# libraries the Sleuth Kit Java package and Autopsy need, from the Ubuntu archive, so the
-# offline first boot can install Autopsy without a network.
+# libraries the Sleuth Kit Java package and Autopsy need. The base role installs them in every
+# image build (base/tasks/packages.yml), so this role never asks apt to download anything: it
+# only checks they are there. Provisioning runs offline, and apt there would need the network.
 # Test: tests/goss/tools.yaml (autopsy-installed: java -version shows 17 when Autopsy is
-# installed); tests/unit/test_tools_autopsy.py (Java version, optional role).
-- name: Autopsy | Install Java 17 and the libraries Autopsy needs (4.9)
-  ansible.builtin.apt:
-    name: "{{ tools_autopsy_packages }}"
-    state: present
+# installed); tests/unit/test_tools_autopsy.py (no apt install here, same list as base);
+# tests/unit/test_offline_phase.py (nothing that downloads can run when provisioning).
+- name: Autopsy | Ask dpkg which of Autopsy's packages are installed, offline (4.9)
+  ansible.builtin.command:
+    argv: "{{ tools_autopsy_dpkg_query + tools_autopsy_packages }}"
+  vars:
+    tools_autopsy_dpkg_query: [dpkg-query, -W, "-f=${Package} ${db:Status-Status}\\n"]
+  register: tools_autopsy_dpkg
+  changed_when: false
+  failed_when: false
+
+- name: Autopsy | Check Java 17 and the libraries Autopsy needs are on the image (4.9)
+  ansible.builtin.assert:
+    that:
+      - tools_autopsy_missing | length == 0
+    fail_msg: >-
+      This image has no {{ tools_autopsy_missing | join(', ') }}, which Autopsy needs.
+      Provisioning never downloads packages: reflash the drive with a current image, or stage a
+      profile without the autopsy feature.
+    quiet: true
+  vars:
+    tools_autopsy_installed: >-
+      {{ tools_autopsy_dpkg.stdout_lines | select('search', ' installed$')
+         | map('regex_replace', ' installed$', '') | list }}
+    tools_autopsy_missing: "{{ tools_autopsy_packages | reject('in', tools_autopsy_installed) | list }}"

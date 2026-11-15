@@ -49,9 +49,27 @@ inventory -> export (read-only, icat) -> hash -> metadata -> SCREEN -> cleared? 
    * NudeNet, a detector of exposed body parts; its highest confidence is the *nudity score*;
    * SigLIP zero-shot labels: nudity, sexual activity, violence, weapon, gore, blood, injury,
      neutral. Each label gets a score from 0 to 1 (the scores add up to 1).
-   Videos: one frame every 2 seconds plus every scene change, each frame scored like an image;
-   any flagged frame flags the video, and the screening row lists the times of the flagged
-   frames. Frames are deleted as soon as they are scored.
+   Images with several frames or pages (animated GIF, WebP and PNG, multi-page TIFF): every
+   frame is scored, up to 64 (`image.max_frames`); any frame at or above a threshold flags the
+   file. A file with more frames than that is not cleared (verdict *error*) unless a scored
+   frame already flags it.
+   Videos: frames from start to end of the video stream, one every 2 seconds
+   (`video.frame_interval_s`), or further apart when the video is too long for 900 frames
+   (`video.max_frames`) at that rate: a two-hour video is sampled about every 8 seconds. Scene
+   changes fill what is left of the 900, and cover art (attached pictures) is scored too. Each
+   frame is scored like an image; any flagged frame flags the video, and the screening row lists
+   the times of the flagged frames and the span the frames cover ("one frame every 8.02 s,
+   covering 0.0 to 7196.4 s of 7200.0 s"). A video is **not cleared** (verdict *error*) when the
+   frames do not reach its end: ffmpeg stopped with an error, the video runs past the length its
+   header records, the length is unknown and the frame limit ran out, or it has more than one
+   video stream. Frames are deleted as soon as they are scored.
+   Audio and documents are not screened, but their real content type is checked first
+   (ffprobe streams, exiftool MIME type, magic bytes). A picture or video under an audio or
+   document name (a video renamed `.m4a`, a photo renamed `.txt`, an MP3 with cover art) is
+   screened like an image or a video and kept only if cleared; it gets no text extraction. A
+   file whose type cannot be confirmed (ffprobe cannot read an "audio" file; exiftool cannot
+   name a "document" that does not look like a document or text) is deleted like an unscreened
+   picture, with a `screen_error` row "Not screened (content type mismatch: ...)".
 3. **Verdict.**
    * *flagged*: the nudity score, or any label score other than neutral, is at or above its
      threshold;
@@ -132,6 +150,18 @@ a fixed prompt that says the block is data and never instructions.
 ## Limits
 
 * The classifiers see pictures only. Audio is transcribed, not screened.
+* Video screening samples frames; content shorter than the gap between two frames can fall
+  between them. The gap grows with the length (2 s up to 30 minutes, about 8 s at two hours,
+  about 16 s at four hours with the shipped limit of 900 frames). Raise `video.max_frames` for
+  closer sampling at the cost of time.
+* Pictures inside documents are not screened. A PDF page that has text, or a word-processor,
+  spreadsheet or presentation file with pictures in it, is kept unscreened; only near-empty
+  ("scanned") PDF pages are rendered and screened before OCR. The same holds for pictures inside
+  archives, e-mails (`.eml` attachments) and HTML (`data:` images). Treat kept documents with
+  the same care as unscreened media. See docs/known-limitations.md.
+* `v_flags` in `case.sqlite` and the report's media screening table hold media screening rows
+  only (`screen_*` and `carved_media_removed` rows of the images, video, audio and documents
+  categories). Hash and malware similarity hits are in `v_hash_hits`.
 * A copy of a file exists in `export/.pending/` for the seconds between export and screening.
   A flagged copy is deleted then, but deletion on a flash drive does not guarantee the bytes are
   gone from the flash cells. Keep output drives under the same control as the evidence.

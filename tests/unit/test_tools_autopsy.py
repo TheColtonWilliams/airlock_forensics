@@ -7,8 +7,19 @@ pins before anything is installed, and only when the profile staged the autopsy 
 
 from __future__ import annotations
 
+import hashlib
+import json
+import os
+import re
+import shlex
+import shutil
+import subprocess
+import sys
+import zipfile
 from pathlib import Path
 
+import jinja2
+import pytest
 import yaml
 
 REPO = Path(__file__).resolve().parents[2]
@@ -73,3 +84,207 @@ def test_role_is_off_by_default() -> None:
         if isinstance(e, dict) and e.get("role") == "tools_autopsy"
     )
     assert entry["when"] == "install_autopsy | bool"
+
+
+# ------------------------------------------------------------------ offline: Java 17 (finding 2)
+
+
+def test_role_never_asks_apt_for_java_or_libraries() -> None:
+    """Provisioning is offline: Java 17 and the libraries are baked by base, only checked here."""
+    for path in (ROLE / "tasks").glob("*.yml"):
+        for t in yaml.safe_load(path.read_text()):
+            apt = t.get("ansible.builtin.apt")
+            if apt is not None:
+                assert set(apt) == {"deb", "state"}, (path.name, t["name"])  # local .deb only
+                assert apt["deb"].startswith("{{ airlock_assets_files }}/"), t["name"]
+    java = tasks("java.yml")
+    assert [next(k for k in t if k.startswith("ansible.builtin.")) for t in java] == [
+        "ansible.builtin.command",
+        "ansible.builtin.assert",
+    ]
+    assert java[0]["ansible.builtin.command"]["argv"].startswith("{{ tools_autopsy_dpkg_query")
+    assert "tools_autopsy_packages" in java[1]["vars"]["tools_autopsy_missing"]
+
+
+def test_base_bakes_the_same_autopsy_packages_into_every_image() -> None:
+    base = yaml.safe_load(
+        (REPO / "ansible" / "roles" / "base" / "tasks" / "packages.yml").read_text()
+    )
+    task = next(t for t in base if "Autopsy" in t["name"])
+    assert task["when"] == "airlock_phase == 'image'"
+    assert task["vars"]["base_autopsy_prerequisites"] == DEFAULTS["tools_autopsy_packages"]
+    assert task["ansible.builtin.apt"]["name"] == "{{ base_autopsy_prerequisites }}"
+
+
+# ------------------------------------------------------------------ profile.json (finding 11)
+
+
+def test_role_never_reads_profile_json() -> None:
+    """Only forensic-provision's schema-checked features turn Autopsy on, never profile.json."""
+    for path in (ROLE / "tasks").glob("*.yml"):
+        text = path.read_text()
+        assert "ansible.builtin.slurp" not in text, path.name
+        assert "from_json" not in text, path.name
+    fact = tasks("profile_features.yml")[0]["ansible.builtin.set_fact"]["tools_autopsy_staged"]
+    assert "is sameas true" in fact["autopsy"]
+
+
+# ------------------------------------------------------------------ search server (finding 3)
+
+
+def _render(name: str, **extra: object) -> str:
+    env = jinja2.Environment(undefined=jinja2.StrictUndefined, autoescape=False)  # noqa: S701
+    env.filters["quote"] = shlex.quote
+    ctx: dict[str, object] = {**DEFAULTS, "pins": PINS, **extra}
+    for _ in range(3):  # defaults refer to each other
+        ctx = {
+            k: env.from_string(v).render(**ctx) if isinstance(v, str) and "{{" in v else v
+            for k, v in ctx.items()
+        }
+    return env.from_string((ROLE / "templates" / name).read_text()).render(**ctx)
+
+
+def test_launcher_binds_the_search_server_to_loopback(tmp_path: Path) -> None:
+    prefix = tmp_path / "autopsy"
+    (prefix / "bin").mkdir(parents=True)
+    fake = prefix / "bin" / "autopsy"
+    fake.write_text(
+        '#!/usr/bin/env bash\necho "host=$SOLR_JETTY_HOST jmx=$ENABLE_REMOTE_JMX_OPTS $*"\n'
+    )
+    fake.chmod(0o755)
+    launcher = tmp_path / "launcher.sh"
+    launcher.write_text(_render("autopsy.sh.j2", tools_autopsy_prefix=str(prefix)))
+    env = {**os.environ, "SOLR_JETTY_HOST": "0.0.0.0"}  # noqa: S104 - the launcher overrides it
+    out = subprocess.run(["bash", str(launcher)], capture_output=True, text=True, env=env,
+                         check=True).stdout  # fmt: skip
+    assert out.strip() == "host=127.0.0.1 jmx=false --nosplash"
+
+
+def test_solr_settings_block_wins_over_the_zip_settings(tmp_path: Path) -> None:
+    """The block appended to autopsy-solr.in.sh overrides anything set above it."""
+    include = tmp_path / "autopsy-solr.in.sh"
+    block = jinja2.Template(DEFAULTS["tools_autopsy_solr_bind"]).render(
+        tools_autopsy_solr_host=DEFAULTS["tools_autopsy_solr_host"]
+    )
+    include.write_text('SOLR_JETTY_HOST="0.0.0.0"\nSOLR_OPTS="$SOLR_OPTS -Xss256k"\n' + block)
+    script = f'source {shlex.quote(str(include))}; echo "$SOLR_JETTY_HOST|$SOLR_OPTS"'
+    out = subprocess.run(["bash", "-c", script], capture_output=True, text=True, check=True)
+    host, opts = out.stdout.strip().split("|")
+    assert host == "127.0.0.1"
+    assert opts.split()[-1] == "-Djetty.host=127.0.0.1"
+    assert DEFAULTS["tools_autopsy_solr_include_names"][0] == "autopsy-solr.in.sh"
+
+
+def _fake_zip(tmp_path: Path, *, with_include: bool) -> Path:
+    version = PINS[DEFAULTS["tools_autopsy_zip_pin"]]["version"]
+    top = f"autopsy-{version}"
+    path = tmp_path / "assets" / "files" / "autopsy.zip"
+    path.parent.mkdir(parents=True)
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr(f"{top}/unix_setup.sh", "#!/bin/bash\nmkdir -p autopsy/modules/ext\n")
+        z.writestr(f"{top}/bin/autopsy", "#!/bin/bash\n")
+        if with_include:
+            z.writestr(f"{top}/autopsy/solr/bin/autopsy-solr.in.sh", 'SOLR_JAVA_MEM="-Xmx2g"\n')
+    return path
+
+
+def _play_autopsy(tmp_path: Path, zip_path: Path) -> subprocess.CompletedProcess[str]:
+    pins = dict(PINS)
+    pins[DEFAULTS["tools_autopsy_zip_pin"]] = {
+        **PINS[DEFAULTS["tools_autopsy_zip_pin"]],
+        "sha256": hashlib.sha256(zip_path.read_bytes()).hexdigest(),
+        "target": zip_path.name,
+    }
+    data = {
+        "airlock_phase": "provision",
+        "airlock_assets_files": str(zip_path.parent),
+        "tools_autopsy_install_root": str(tmp_path / "opt"),
+        "tools_autopsy_staged": {"autopsy": True},
+        "pins": pins,
+    }
+    (tmp_path / "opt").mkdir(exist_ok=True)
+    (tmp_path / "vars.json").write_text(json.dumps(data), encoding="utf-8")
+    play = tmp_path / "play.yml"
+    play.write_text(
+        "- name: Autopsy zip steps into a temporary folder\n"
+        "  hosts: localhost\n  connection: local\n  gather_facts: false\n  become: false\n"
+        "  tasks:\n    - name: Run autopsy.yml\n      ansible.builtin.include_role:\n"
+        "        name: tools_autopsy\n        tasks_from: autopsy.yml\n",
+        encoding="utf-8",
+    )
+    env = {
+        **os.environ,
+        "ANSIBLE_ROLES_PATH": str(REPO / "ansible" / "roles"),
+        "ANSIBLE_NOCOLOR": "1",
+        "ANSIBLE_RETRY_FILES_ENABLED": "0",
+        "ANSIBLE_LOCALHOST_WARNING": "0",
+        "ANSIBLE_INVENTORY_UNPARSED_WARNING": "0",
+        "ANSIBLE_PYTHON_INTERPRETER": sys.executable,
+    }
+    return subprocess.run(
+        ["ansible-playbook", "-i", "localhost,", str(play), "-e", f"@{tmp_path / 'vars.json'}"],
+        capture_output=True, text=True, env=env, check=False, timeout=600,
+    )  # fmt: skip
+
+
+needs_ansible = pytest.mark.skipif(
+    shutil.which("ansible-playbook") is None or shutil.which("unzip") is None or os.geteuid(),
+    reason="needs ansible-playbook, unzip and root (files are installed owned by root)",
+)
+
+
+@needs_ansible
+def test_role_binds_solr_to_loopback_in_the_unpacked_zip(tmp_path: Path) -> None:
+    res = _play_autopsy(tmp_path, _fake_zip(tmp_path, with_include=True))
+    assert res.returncode == 0, res.stdout[-3000:] + res.stderr[-2000:]
+    include = next((tmp_path / "opt").glob("autopsy-*/autopsy/solr/bin/autopsy-solr.in.sh"))
+    text = include.read_text()
+    assert 'SOLR_JETTY_HOST="127.0.0.1"' in text
+    assert "-Djetty.host=127.0.0.1" in text
+    again = _play_autopsy(tmp_path, tmp_path / "assets" / "files" / "autopsy.zip")
+    assert again.returncode == 0, again.stdout[-3000:]
+    assert re.search(r"localhost\s*:\s*ok=\d+\s+changed=0", again.stdout), again.stdout[-2000:]
+    assert include.read_text() == text
+
+
+@needs_ansible
+def test_role_stops_when_the_solr_settings_file_is_missing(tmp_path: Path) -> None:
+    res = _play_autopsy(tmp_path, _fake_zip(tmp_path, with_include=False))
+    assert res.returncode != 0
+    assert "autopsy-solr.in.sh was not found" in res.stdout
+
+
+def _play_java(tmp_path: Path, packages: list[str]) -> subprocess.CompletedProcess[str]:
+    play = tmp_path / "java.yml"
+    play.write_text(
+        "- name: Autopsy prerequisite check\n"
+        "  hosts: localhost\n  connection: local\n  gather_facts: false\n  become: false\n"
+        "  tasks:\n    - name: Run java.yml\n      ansible.builtin.include_role:\n"
+        "        name: tools_autopsy\n        tasks_from: java.yml\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "java.json").write_text(json.dumps({"tools_autopsy_packages": packages}))
+    env = {
+        **os.environ,
+        "ANSIBLE_ROLES_PATH": str(REPO / "ansible" / "roles"),
+        "ANSIBLE_NOCOLOR": "1",
+        "ANSIBLE_LOCALHOST_WARNING": "0",
+        "ANSIBLE_INVENTORY_UNPARSED_WARNING": "0",
+        "ANSIBLE_PYTHON_INTERPRETER": sys.executable,
+    }
+    return subprocess.run(
+        ["ansible-playbook", "-i", "localhost,", str(play), "-e", f"@{tmp_path / 'java.json'}"],
+        capture_output=True, text=True, env=env, check=False, timeout=600,
+    )  # fmt: skip
+
+
+@pytest.mark.skipif(
+    shutil.which("ansible-playbook") is None or shutil.which("dpkg-query") is None,
+    reason="needs ansible-playbook and dpkg-query",
+)
+def test_java_check_passes_offline_and_names_what_is_missing(tmp_path: Path) -> None:
+    ok = _play_java(tmp_path, ["bash", "coreutils"])
+    assert ok.returncode == 0, ok.stdout[-3000:]
+    bad = _play_java(tmp_path, ["bash", "no-such-package-for-autopsy"])
+    assert bad.returncode != 0
+    assert "This image has no no-such-package-for-autopsy" in bad.stdout

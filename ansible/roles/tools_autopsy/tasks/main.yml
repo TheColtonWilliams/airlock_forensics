@@ -1,6 +1,6 @@
 # tools_autopsy: one control per file. Each file names its test in its first comment.
 # Controls and tests are listed in docs/controls.md (section "Forensic tools").
-- name: Autopsy | Java 17 and libraries (image)
+- name: Autopsy | Java 17 and libraries (baked by base; checked here)
   ansible.builtin.import_tasks: java.yml
 
 - name: Autopsy | Staged features from the profile

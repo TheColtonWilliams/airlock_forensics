@@ -1,9 +1,10 @@
 # tools_autopsy: Autopsy, optional and off by default (task 4.9; site.yml runs this role only
-# when install_autopsy is true). Image phase: Java 17 and the libraries the Sleuth Kit Java
-# package needs, from the Ubuntu archive. Provision phase (offline): the Autopsy zip and the
-# Sleuth Kit Java .deb staged on ASSETS (profile feature "autopsy") are checked against their
-# pins, installed, and set up with Autopsy's own unix_setup.sh. Controls and tests:
-# docs/controls.md (section "Forensic tools").
+# when install_autopsy is true). Java 17 and the libraries the Sleuth Kit Java package needs
+# come from the Ubuntu archive and are installed by the base role in every image build, so a
+# profile can turn Autopsy on later; this role only checks they are there. Provision phase
+# (offline): the Autopsy zip and the Sleuth Kit Java .deb staged on ASSETS (profile feature
+# "autopsy") are checked against their pins, installed, and set up with Autopsy's own
+# unix_setup.sh. Controls and tests: docs/controls.md (section "Forensic tools").
 
 tools_autopsy_zip_pin: autopsy_zip
 tools_autopsy_tsk_java_pin: sleuthkit_java_deb
@@ -19,7 +20,8 @@ tools_autopsy_prefix: "{{ tools_autopsy_install_root }}/autopsy-{{ pins[tools_au
 
 # Java 17, PhotoRec (unix_setup.sh checks for it), the run-time and -dev libraries the
 # sleuthkit-java .deb depends on, and the HEIF and GStreamer libraries Autopsy's media viewer uses
-# (from Autopsy's install_prereqs_ubuntu.sh, run-time parts only).
+# (from Autopsy's install_prereqs_ubuntu.sh, run-time parts only). The base role installs this
+# same list in every image build (base/tasks/packages.yml); test_tools_autopsy.py keeps them equal.
 tools_autopsy_packages:
   - openjdk-17-jre
   - testdisk
@@ -40,3 +42,15 @@ tools_autopsy_packages:
   - gstreamer1.0-gtk3
 
 tools_autopsy_features: "{{ airlock_profile_features | default({}) }}"
+
+# Autopsy starts Solr 8 itself while a case is open (standalone mode, no ZooKeeper). Solr 8 binds
+# every interface unless SOLR_JETTY_HOST or jetty.host says otherwise; these lines are added to
+# its settings file in the zip (the first name must exist) so it listens on 127.0.0.1 only.
+tools_autopsy_solr_include_names:
+  - autopsy-solr.in.sh
+  - solr.in.sh
+tools_autopsy_solr_host: 127.0.0.1
+tools_autopsy_solr_bind: |
+  SOLR_JETTY_HOST="{{ tools_autopsy_solr_host }}"
+  SOLR_OPTS="$SOLR_OPTS -Djetty.host={{ tools_autopsy_solr_host }}"
+  ENABLE_REMOTE_JMX_OPTS="false"

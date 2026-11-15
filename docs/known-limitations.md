@@ -43,6 +43,13 @@ what the validation suite (`docs/validation.md`) measured.
   task 4B.16), so flag counts are unvalidated. Violence detection is weaker than nudity
   detection and gives false positives on medical, sports, and news pictures (risk 10). A file
   that is not flagged was "not flagged by this model at this threshold", not "safe".
+* **Media screening samples video and skips pictures inside documents.** A video is screened
+  from start to end, but only at sampled frames: one every 2 seconds, further apart for videos
+  longer than 30 minutes (about 8 seconds at two hours), so a short scene between two frames can
+  be missed. Videos whose frames do not reach the end, images with more than 64 frames or pages,
+  and audio or document files whose content type cannot be confirmed are not cleared and not
+  kept. Pictures embedded in documents (PDF pages with text, Office files, e-mail attachments,
+  HTML) are not screened, and those documents are kept (docs/workflows/media-screening.md).
 * **No one views flagged media, and AIRLOCK never estimates age.** Nothing in the pipeline would
   recognise child sexual abuse material unless the operator sees a sign elsewhere (risks 11
   and 31). If you suspect it: stop, do not open or copy the file, preserve the drive, and contact
@@ -57,6 +64,14 @@ what the validation suite (`docs/validation.md`) measured.
   and logging is not enforcement (risk 1). The write tracer counts write requests to the target;
   a count of zero is evidence, not a guarantee. Use a hardware write blocker with a NIST CFTT
   report on real evidence. The policy's own test results are in `validation/cftt/`.
+* **An output-drive unlock is tied to one attach of one drive, as far as sysfs can tell.** The
+  marker matches the disk's `diskseq`, WWN, serial and size. On kernels with `diskseq` (5.15 and
+  later, including the image's) any re-plug or media change ends the unlock; a card reader that
+  reports a media change re-locks the card. A drive with no `diskseq`, WWN or serial is refused.
+* **The live ISO stops booting rather than scan other disks.** If the AIRLOCK medium is not
+  found within 60 seconds, or an attached disk cannot be set read-only in the initramfs, the
+  boot stops at the initramfs shell. When the read-only step failed, leaving that shell retries
+  it; it does not skip it.
 * **Mounting a hostile file system exposes kernel code.** `evidence-mount` is a convenience;
   analysis without mounting is the safe path (risk 2).
 * **Read-directly mode leaves nothing to re-examine.** If the drive fails or is returned, no copy
@@ -74,6 +89,18 @@ what the validation suite (`docs/validation.md`) measured.
   your own validation before relying on it.
 * **Actions are attributed to account SIDs, never people.** A SID shows which account owned or
   changed something, not who used the keyboard.
+* **The run signature checks consistency, not who held the output drive.** The private key is on
+  the AIRLOCK drive's root filesystem (root only), but the public key travels with the run.
+  Anyone holding the output drive can change files, write a new `outputs.sha256` and sign it with
+  a key of their own, and the commands in the run folder then pass. Only comparing the public-key
+  SHA-256 with a record kept off the output drive (the `signing_key_created` and `outputs_signed`
+  entries in the session log of the AIRLOCK drive that made the run, or your case notes) shows
+  the key is AIRLOCK's. Root on the AIRLOCK drive, or anyone who can read its unencrypted root
+  filesystem, can sign with the real key. Runs signed before the key moved used a key stored on
+  the output drive, and their signatures prove nothing against a drive holder. Re-signing
+  (`evidence-report`, `--purge-run`) refuses changed runs unless `--force` is given; a forced
+  re-sign is logged and the earlier lists are kept as `outputs.sha256.prev-<n>`, but someone who
+  can edit the drive can also delete those.
 
 ## What the validation suite does not cover yet
 
@@ -84,3 +111,7 @@ what the validation suite (`docs/validation.md`) measured.
   journal parser is checked by unit tests only; carved USN records are checked.
 * EZ Tools and the AI models could not be obtained in the authoring environment; their rows
   were validated with stand-ins only.
+* Autopsy's search server (Solr 8) is bound to 127.0.0.1 through the zip's
+  `autopsy-solr.in.sh` and the launcher's `SOLR_JETTY_HOST`. This is checked against a stand-in
+  zip only; no VM test yet opens a case and checks that nothing listens off loopback (the goss
+  listener check runs with no case open).

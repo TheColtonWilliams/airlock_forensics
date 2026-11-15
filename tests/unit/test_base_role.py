@@ -6,7 +6,12 @@ checked by tests/goss/base.yaml; these tests catch mistakes before a build.
 
 from __future__ import annotations
 
+import json
+import os
 import re
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 import jinja2
@@ -265,3 +270,55 @@ def test_vm_test_hook_is_installed_and_wired_into_the_default_args() -> None:
     tasks = yaml.safe_load((ROLE / "tasks" / "grub_cmdline.yml").read_text())
     copies = [t["ansible.builtin.copy"] for t in tasks if "ansible.builtin.copy" in t]
     assert any(c["src"] == "06_airlock_vm_test" and c["mode"] == "0755" for c in copies)
+
+
+# ------------------------------------------------------------------ 1.5 offline (finding 1)
+
+
+def test_packages_install_and_refresh_only_in_the_image_phase() -> None:
+    steps = yaml.safe_load((ROLE / "tasks" / "packages.yml").read_text())
+    for t in steps:
+        apt = t.get("ansible.builtin.apt")
+        if apt is not None:
+            assert t["when"] == "airlock_phase == 'image'", t["name"]
+        else:
+            assert t["when"] == "airlock_phase != 'image'", t["name"]
+            assert "ansible.builtin.package_facts" not in t  # needs python3-apt; dpkg-query not
+
+
+def _play_packages(tmp_path: Path, phase: str, pkgs: list[str]) -> subprocess.CompletedProcess:
+    play = tmp_path / "play.yml"
+    play.write_text(
+        "- name: Base packages\n  hosts: localhost\n  connection: local\n"
+        "  gather_facts: false\n  become: false\n  tasks:\n    - name: Run packages.yml\n"
+        f"      ansible.builtin.import_tasks: {ROLE / 'tasks' / 'packages.yml'}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "vars.json").write_text(
+        json.dumps({"airlock_phase": phase, "base_packages": pkgs}), encoding="utf-8"
+    )
+    env = {
+        **os.environ,
+        "ANSIBLE_NOCOLOR": "1",
+        "ANSIBLE_LOCALHOST_WARNING": "0",
+        "ANSIBLE_INVENTORY_UNPARSED_WARNING": "0",
+        "ANSIBLE_PYTHON_INTERPRETER": sys.executable,
+    }
+    return subprocess.run(
+        ["ansible-playbook", "-i", "localhost,", str(play), "-e", f"@{tmp_path / 'vars.json'}"],
+        capture_output=True, text=True, env=env, check=False, timeout=600,
+    )  # fmt: skip
+
+
+@pytest.mark.skipif(
+    shutil.which("ansible-playbook") is None or shutil.which("dpkg-query") is None,
+    reason="needs ansible-playbook and dpkg-query",
+)
+def test_provision_phase_checks_packages_without_apt(tmp_path: Path) -> None:
+    ok = _play_packages(tmp_path, "provision", ["bash", "coreutils"])
+    assert ok.returncode == 0, ok.stdout[-3000:]
+    assert "apt" not in re.findall(r"TASK \[([^\]]*)\]", ok.stdout)
+    bad = _play_packages(tmp_path, "provision", ["bash", "no-such-base-package"])
+    assert bad.returncode != 0
+    assert "This image is missing no-such-base-package" in bad.stdout
+    assert "Reflash the drive" in bad.stdout

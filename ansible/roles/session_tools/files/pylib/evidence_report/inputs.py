@@ -337,11 +337,18 @@ class CaseDB:
         return [str(r[0]) for r in cur]
 
     def flag_summary(self) -> list[dict[str, Any]]:
-        """Counts per category and label from ``v_flags`` (task 4E.8: counts and scores only)."""
+        """Counts per category and label from ``v_flags`` (task 4E.8: counts and scores only).
+
+        Media screening rows only. The filter is repeated here because a ``case.sqlite`` built
+        by an older release has a ``v_flags`` that also holds hash and malware hits.
+        """
         cur = self.con.execute(
             "SELECT category, COALESCE(label, ''), COUNT(*), "
             "SUM(CASE WHEN sensitive_flag = 1 THEN 1 ELSE 0 END), MAX(score) "
-            "FROM v_flags GROUP BY category, COALESCE(label, '') ORDER BY 1, 2"
+            "FROM v_flags WHERE category IN ('images', 'video', 'audio', 'documents') "
+            "AND (substr(artifact_type, 1, 7) = 'screen_' "
+            "OR artifact_type = 'carved_media_removed') "
+            "GROUP BY category, COALESCE(label, '') ORDER BY 1, 2"
         )
         return [
             {
