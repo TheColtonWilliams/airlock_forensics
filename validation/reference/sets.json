@@ -1,0 +1,120 @@
+{
+  "note": "Public reference sets with published ground truth (task 4F.2). Fetched on the host by validation/reference/fetch.sh, never on the AIRLOCK drive. sha256 null = not pinned yet: the hosts were not reachable from the authoring environment on 2026-11-15, so no hash and no size could be computed and each URL is the publisher's address as documented, not yet checked. A person with access runs 'fetch.sh --record --only ID' once, checks the publisher's page, and commits the recorded hash. scoring_truth names the file validation/run.sh scores against; it is written by hand from the published ground truth (format: docs/validation.md).",
+  "schema": 1,
+  "sets": [
+    {
+      "archive": "bz2",
+      "classes": [
+        "live_files",
+        "deleted_files",
+        "timestamps"
+      ],
+      "description": "NIST CFReDS deleted file recovery test image: a small NTFS file system with files deleted in a known order.",
+      "fs_type": "ntfs",
+      "ground_truth": {
+        "format": "per-image table of deleted files (name, size, MD5) on the publisher's page",
+        "published": "https://cfreds-archive.nist.gov/dfr-test-images.html",
+        "scoring_truth": "validation/reference/truth/cfreds-dfr-01-ntfs.json"
+      },
+      "id": "cfreds-dfr-01-ntfs",
+      "image_name": "dfr-01-ntfs.dd",
+      "license": "US Government work (NIST), public",
+      "publisher": "NIST CFReDS",
+      "sha256": null,
+      "size": null,
+      "url": "https://cfreds-archive.nist.gov/dfr-images/dfr-01-ntfs.dd.bz2",
+      "url_checked": "not reachable from the authoring environment on 2026-11-15",
+      "verify": "sha256"
+    },
+    {
+      "archive": "bz2",
+      "classes": [
+        "deleted_files"
+      ],
+      "description": "NIST CFReDS deleted file recovery test image: NTFS with fragmented deleted files.",
+      "fs_type": "ntfs",
+      "ground_truth": {
+        "format": "per-image table of deleted files (name, size, MD5) on the publisher's page",
+        "published": "https://cfreds-archive.nist.gov/dfr-test-images.html",
+        "scoring_truth": "validation/reference/truth/cfreds-dfr-02-ntfs.json"
+      },
+      "id": "cfreds-dfr-02-ntfs",
+      "image_name": "dfr-02-ntfs.dd",
+      "license": "US Government work (NIST), public",
+      "publisher": "NIST CFReDS",
+      "sha256": null,
+      "size": null,
+      "url": "https://cfreds-archive.nist.gov/dfr-images/dfr-02-ntfs.dd.bz2",
+      "url_checked": "not reachable from the authoring environment on 2026-11-15",
+      "verify": "sha256"
+    },
+    {
+      "archive": "bz2",
+      "classes": [
+        "carving"
+      ],
+      "description": "NIST CFReDS graphic file carving test image: picture files laid out in unallocated space with no file system metadata.",
+      "fs_type": "unknown",
+      "ground_truth": {
+        "format": "list of embedded files with offsets and hashes on the publisher's page",
+        "published": "https://cfreds-archive.nist.gov/FileCarving/index.html",
+        "scoring_truth": "validation/reference/truth/cfreds-fc-graphic-l0.json"
+      },
+      "id": "cfreds-fc-graphic-l0",
+      "image_name": "L0_Graphic.dd",
+      "license": "US Government work (NIST), public",
+      "publisher": "NIST CFReDS",
+      "sha256": null,
+      "size": null,
+      "url": "https://cfreds-archive.nist.gov/FileCarving/Images/L0_Graphic.dd.bz2",
+      "url_checked": "not reachable from the authoring environment on 2026-11-15",
+      "verify": "sha256"
+    },
+    {
+      "archive": "none",
+      "classes": [
+        "live_files",
+        "deleted_files",
+        "timestamps"
+      ],
+      "description": "Digital Corpora nps-2009-ntfs1, generation 1: a small NTFS image made by a scripted sequence of file operations.",
+      "fs_type": "ntfs",
+      "ground_truth": {
+        "format": "DFXML file listing per generation, published with the set",
+        "published": "https://digitalcorpora.org/corpora/disk-images/",
+        "scoring_truth": "validation/reference/truth/nps-2009-ntfs1-gen1.json"
+      },
+      "id": "nps-2009-ntfs1-gen1",
+      "image_name": "ntfs1-gen1.E01",
+      "license": "Digital Corpora: free for research and education, see the publisher's terms",
+      "publisher": "Digital Corpora",
+      "sha256": null,
+      "size": null,
+      "url": "https://downloads.digitalcorpora.org/corpora/drives/nps-2009-ntfs1/ntfs1-gen1.E01",
+      "url_checked": "not reachable from the authoring environment on 2026-11-15",
+      "verify": "sha256"
+    },
+    {
+      "archive": "none",
+      "classes": [
+        "carving"
+      ],
+      "description": "Digital Corpora nps-2009-canon2, generation 6: a FAT camera card with deleted pictures, used for carving tests.",
+      "fs_type": "fat",
+      "ground_truth": {
+        "format": "per-generation file listing published with the set",
+        "published": "https://digitalcorpora.org/corpora/disk-images/",
+        "scoring_truth": "validation/reference/truth/nps-2009-canon2-gen6.json"
+      },
+      "id": "nps-2009-canon2-gen6",
+      "image_name": "canon2-gen6.raw",
+      "license": "Digital Corpora: free for research and education, see the publisher's terms",
+      "publisher": "Digital Corpora",
+      "sha256": null,
+      "size": null,
+      "url": "https://downloads.digitalcorpora.org/corpora/drives/nps-2009-canon2/canon2-gen6.raw",
+      "url_checked": "not reachable from the authoring environment on 2026-11-15",
+      "verify": "sha256"
+    }
+  ]
+}

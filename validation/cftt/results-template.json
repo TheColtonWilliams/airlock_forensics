@@ -1,0 +1,43 @@
+{
+  "cases": [
+    {
+      "description": "",
+      "expected": "blocked",
+      "id": "",
+      "notes": "",
+      "result": "not_run"
+    },
+    {
+      "description": "quick forensic-analyze run; write_requests_total in run.json",
+      "expected": "0 write requests",
+      "id": "AIRLOCK-TRACER",
+      "notes": "",
+      "result": "not_run"
+    },
+    {
+      "description": "dd if=/dev/zero of=/dev/sdX bs=512 count=1 oflag=direct",
+      "expected": "refused",
+      "id": "AIRLOCK-DD",
+      "notes": "",
+      "result": "not_run"
+    },
+    {
+      "description": "blkdiscard -o 0 -l 1048576 /dev/sdX",
+      "expected": "refused",
+      "id": "AIRLOCK-DISCARD",
+      "notes": "",
+      "result": "not_run"
+    }
+  ],
+  "date": "",
+  "hash_after": "",
+  "hash_before": "",
+  "image_sha256": "",
+  "pc": "",
+  "release": "",
+  "schema": 1,
+  "suite": "NIST CFTT Federated Testing",
+  "test_drive": "",
+  "tested_by": "",
+  "title": "software read-only policy test results"
+}

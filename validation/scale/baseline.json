@@ -1,0 +1,52 @@
+{
+  "baselines": {
+    "quick-300": {
+      "baseline_key": "quick-300",
+      "deleted": 12,
+      "exit_code": 0,
+      "files": 300,
+      "findings_rows": 652,
+      "generator": "validation/scale/scale.py 1",
+      "host": {
+        "cpus": 4,
+        "kernel": "6.18.44-fc-v470",
+        "mem_total_kib": 16473776,
+        "python": "3.13.18"
+      },
+      "measured_utc": "2026-11-15T02:42:48Z",
+      "modules": {
+        "deletion_history": {
+          "duration_s": 1.57,
+          "peak_tree_rss_kib": 113164,
+          "status": "ok"
+        },
+        "inventory": {
+          "duration_s": 19.311,
+          "peak_tree_rss_kib": 121212,
+          "status": "ok"
+        },
+        "recycle_bin": {
+          "duration_s": 0.003,
+          "peak_tree_rss_kib": null,
+          "status": "ok"
+        }
+      },
+      "peak_rss_kib": 39624,
+      "peak_tree_rss_kib": 121212,
+      "preset": "quick",
+      "run_id": "R-20261115T024226Z-6ce7d9",
+      "run_status": "complete",
+      "sample_interval_s": 0.2,
+      "samples": 110,
+      "schema": 1,
+      "total_s": 22.21
+    }
+  },
+  "schema": 1,
+  "tolerance": {
+    "memory": 0.3,
+    "slack_kib": 131072,
+    "slack_s": 5.0,
+    "time": 0.5
+  }
+}
