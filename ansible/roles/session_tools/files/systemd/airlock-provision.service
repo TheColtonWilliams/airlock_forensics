@@ -1,0 +1,24 @@
+# Managed by the AIRLOCK session_tools role (tasks 2B.4, 2B.7; ansible task file
+# tasks/provision_unit.yml). On every boot, before the desktop starts: provisions a new drive
+# from its ASSETS partition, resumes a run cut short by a power loss, or applies a changed
+# ASSETS set. Does nothing (and exits at once) when nothing changed. Never uses a network.
+# Boot with "airlock.noprovision" on the kernel command line to skip it (VM test harness).
+# Test: tests/unit/test_provision_unit.py
+[Unit]
+Description=AIRLOCK offline provisioning from the ASSETS partition
+After=local-fs.target airlock-firstboot.service srv-airlock-assets.mount srv-airlock-output.mount
+Wants=local-fs.target
+Before=display-manager.service
+RequiresMountsFor=/var/lib/airlock
+ConditionKernelCommandLine=!airlock.noprovision
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/forensic-provision --if-changed
+StandardOutput=journal+console
+StandardError=journal+console
+TimeoutStartSec=infinity
+RemainAfterExit=no
+
+[Install]
+WantedBy=multi-user.target

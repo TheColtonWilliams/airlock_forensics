@@ -1,0 +1,10 @@
+#!/usr/bin/python3
+"""forensic-import: check and apply files restaged on ASSETS, offline (task 4A.7)."""
+
+import os
+import sys
+
+sys.path.insert(0, os.environ.get("AIRLOCK_PYLIB", "/opt/airlock/lib/python"))
+from airlock_provision.cli import main_import
+
+raise SystemExit(main_import())

@@ -1,0 +1,10 @@
+#!/usr/bin/python3
+"""forensic-provision: set this drive up offline from its ASSETS partition (tasks 2B.4-2B.7)."""
+
+import os
+import sys
+
+sys.path.insert(0, os.environ.get("AIRLOCK_PYLIB", "/opt/airlock/lib/python"))
+from airlock_provision.cli import main_provision
+
+raise SystemExit(main_provision())

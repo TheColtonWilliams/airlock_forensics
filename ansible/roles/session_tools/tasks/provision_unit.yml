@@ -1,0 +1,19 @@
+---
+# Control 2B.4 / 2B.7: the boot unit that runs 'forensic-provision --if-changed' offline before
+# the desktop starts (first boot, resume after power loss, changed ASSETS set).
+# Test: tests/unit/test_provision_unit.py (unit and task file); tests/unit/test_provision.py and
+# tests/functional/test_assets.sh (the command it runs).
+- name: Install the airlock-provision unit
+  ansible.builtin.copy:
+    src: systemd/airlock-provision.service
+    dest: /etc/systemd/system/airlock-provision.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: session_tools_provision_unit
+
+- name: Enable the airlock-provision unit
+  ansible.builtin.systemd_service:
+    name: airlock-provision.service
+    enabled: true
+    daemon_reload: "{{ session_tools_provision_unit is changed }}"
