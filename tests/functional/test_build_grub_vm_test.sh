@@ -67,5 +67,8 @@ assert_contains " ${QEMU_ARGV[*]} " " -smbios type=11,value=airlock.noprovision 
 Q_NOPROVISION=0
 airlock_qemu_argv
 assert_not_contains " ${QEMU_ARGV[*]} " "smbios" "provisioning boot"
+unset Q_NOPROVISION
+airlock_qemu_argv
+assert_not_contains " ${QEMU_ARGV[*]} " "smbios" "direct callers (CI provisioning boot) still provision"
 
 pass "VM test hook (airlock.noprovision)"
